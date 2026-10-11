@@ -4,7 +4,7 @@ using SelfStorage.Api.Data.Entities;
 namespace SelfStorage.Api.Data;
 
 /// <summary>
-/// Maps onto the existing SelfStorageDB schema (database/01_schema.sql + 02_pin_access.sql).
+/// Maps onto the existing SelfStorageDB schema (database/01_schema.sql), which must not be changed.
 /// The database is created by those scripts, not by EF migrations.
 /// Only the tables used by the current API are mapped; add the rest the same way.
 /// </summary>

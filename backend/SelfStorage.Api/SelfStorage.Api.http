@@ -1,8 +1,11 @@
 @api = http://localhost:5080
 
-### Kiosk: nhập mã kho + PIN
-POST {{api}}/api/kiosk/pin
-X-Kiosk-Key: dev-kiosk-key-q7
+### Nhân viên đăng nhập (lấy token)
+POST {{api}}/api/auth/login
 Content-Type: application/json
 
-{ "unitCode": "B-01", "pin": "246810" }
+{ "username": "staff1", "password": "Demo@12345" }
+
+### Tra cứu khách tại cổng theo mã kho / CCCD / SĐT / số hợp đồng
+GET {{api}}/api/gate/facilities/1/lookup?q=B-01
+Authorization: Bearer <token>

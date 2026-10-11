@@ -10,7 +10,7 @@ using SelfStorage.Api.Services;
 
 namespace SelfStorage.Api.Controllers;
 
-/// <summary>Flow 3: the customer manages rented units, the gate PIN and who may enter on their behalf.</summary>
+/// <summary>Flow 3: the customer manages rented units and who may enter on their behalf.</summary>
 [ApiController]
 [Route("api/contracts")]
 [Authorize]
@@ -18,7 +18,7 @@ public class ContractsController(SelfStorageDbContext db, AccessService access, 
 {
     public static readonly Expression<Func<Contract, ContractDto>> ToDto = c => new ContractDto(
         c.ContractId, c.ContractNumber, c.Unit.FacilityId, c.Unit.Facility.FacilityName, c.Unit.UnitCode,
-        c.StartDate, c.EndDate, c.MonthlyRentFee, c.Status, c.AccessPinHash != null, c.PinLockedUntil);
+        c.StartDate, c.EndDate, c.MonthlyRentFee, c.Status);
 
     [HttpGet("my")]
     [Authorize(Roles = AppRoles.Customer)]
@@ -26,15 +26,6 @@ public class ContractsController(SelfStorageDbContext db, AccessService access, 
     {
         var me = User.GetUserId();
         return db.Contracts.Where(c => c.CustomerId == me).OrderByDescending(c => c.StartDate).Select(ToDto).ToListAsync(ct);
-    }
-
-    /// <summary>Set or change the 6-digit gate PIN for this unit.</summary>
-    [HttpPut("{id:int}/pin")]
-    [Authorize(Roles = AppRoles.Customer)]
-    public async Task<IActionResult> SetPin(int id, SetPinRequest req, CancellationToken ct)
-    {
-        await access.SetPinAsync(User.GetUserId(), id, req, ct);
-        return NoContent();
     }
 
     [HttpGet("{id:int}/authorized-persons")]

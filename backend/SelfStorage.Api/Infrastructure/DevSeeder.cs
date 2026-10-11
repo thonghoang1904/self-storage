@@ -2,25 +2,22 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using SelfStorage.Api.Data;
 using SelfStorage.Api.Data.Entities;
-using SelfStorage.Api.Services;
 
 namespace SelfStorage.Api.Infrastructure;
 
 /// <summary>
-/// Development only: fills an empty database with one facility, demo accounts and a rented unit with a PIN,
+/// Development only: fills an empty database with one facility, demo accounts and a rented unit,
 /// so the whole entry/exit flow can be tried right away. Runs only when there is no facility yet.
 /// </summary>
 public static class DevSeeder
 {
     public const string DemoPassword = "Demo@12345";
-    public const string DemoPin = "246810";
 
     public static async Task SeedAsync(IServiceProvider services)
     {
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SelfStorageDbContext>();
         var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher<User>>();
-        var pins = scope.ServiceProvider.GetRequiredService<PinService>();
         var log = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("DevSeeder");
 
         if (await db.Facilities.AnyAsync()) return;
@@ -95,9 +92,7 @@ public static class DevSeeder
             EndDate = today.AddMonths(6),
             MonthlyRentFee = rentedUnit.MonthlyPrice,
             DepositPaid = rentedUnit.MonthlyPrice,
-            PinUpdatedAt = DateTime.Now,
         };
-        contract.AccessPinHash = pins.Hash(contract, DemoPin);
         contract.AuthorizedPersons.Add(new AuthorizedPerson
         {
             FullName = "Nguyễn Thị Người Nhà",
@@ -110,8 +105,8 @@ public static class DevSeeder
 
         log.LogInformation(
             "Seeded demo data. Accounts (password {Password}): admin, manager1, staff1, customer1. " +
-            "Facility {FacilityId}, unit {Unit} with PIN {Pin}.",
-            DemoPassword, facility.FacilityId, rentedUnit.UnitCode, DemoPin);
+            "Facility {FacilityId}, rented unit {Unit}.",
+            DemoPassword, facility.FacilityId, rentedUnit.UnitCode);
         _ = admin;
     }
 }

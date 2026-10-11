@@ -38,12 +38,6 @@ public class Contract
     public DateTime SignedDate { get; set; }
     public string? TermsConditions { get; set; }
 
-    // Added by database/02_pin_access.sql
-    public string? AccessPinHash { get; set; }
-    public int PinFailedAttempts { get; set; }
-    public DateTime? PinLockedUntil { get; set; }
-    public DateTime? PinUpdatedAt { get; set; }
-
     public User Customer { get; set; } = null!;
     public StorageUnit Unit { get; set; } = null!;
     public ICollection<AuthorizedPerson> AuthorizedPersons { get; set; } = new List<AuthorizedPerson>();

@@ -42,16 +42,11 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
     } catch {
       /* empty body */
     }
-    if (res.status === 401 && token && !path.startsWith('/api/kiosk')) tokenStore.clear()
+    if (res.status === 401 && token) tokenStore.clear()
     throw new ApiError(res.status, message)
   }
   if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
-}
-
-/** Calls made by the gate kiosk, authenticated with the device key instead of a user login. */
-export function kioskApi<T>(path: string, body?: unknown): Promise<T> {
-  return api<T>(path, { body, headers: { 'X-Kiosk-Key': import.meta.env.VITE_KIOSK_KEY ?? '' } })
 }
 
 export const fmtMoney = (n: number) => n.toLocaleString('vi-VN') + ' ₫'

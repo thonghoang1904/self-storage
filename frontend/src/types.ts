@@ -81,8 +81,6 @@ export interface Contract {
   endDate: string
   monthlyRentFee: number
   status: string
-  hasPin: boolean
-  pinLockedUntil: string | null
 }
 
 export interface Person {
@@ -93,35 +91,38 @@ export interface Person {
   relationship: string | null
 }
 
-export interface PendingAccess {
-  requestId: number
-  pinEnteredAt: string
-  unitCode: string
+export interface AccessIssue {
+  code: string
+  message: string
+}
+
+/** A contract the visitor may be coming for, found by the staff lookup at the gate. */
+export interface VisitCandidate {
+  contractId: number
   contractNumber: string
-  contractEndDate: string
+  contractStatus: string
+  startDate: string
+  endDate: string
+  unitCode: string
+  unitStatus: string
   customer: Person
   authorizedPersons: Person[]
+  peopleInside: string[]
+  issues: AccessIssue[]
+  canEnter: boolean
 }
 
 export interface AccessRecord {
-  requestId: number
+  accessRecordId: number
   unitCode: string
   contractNumber: string
   visitorName: string
-  result: 'Pending' | 'Granted' | 'Denied'
+  result: 'Granted' | 'Denied'
   denyReason: string | null
   purpose: string | null
-  pinEnteredAt: string | null
   entryTime: string
   exitTime: string | null
-  verifiedBy: string | null
-}
-
-export interface KioskStatus {
-  requestId: number
-  unitCode: string
-  status: 'Pending' | 'Granted' | 'Denied'
-  message: string
+  verifiedBy: string
 }
 
 export const DenyReasons: Record<string, string> = {

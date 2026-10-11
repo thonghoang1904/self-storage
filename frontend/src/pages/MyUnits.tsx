@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { DenyReasons, type AccessRecord, type Contract, type Person } from '../types'
 
-/** Customer: rented units, gate PIN, authorized persons and entry history. */
+/** Customer: rented units, authorized persons and entry history. */
 export default function MyUnits() {
   const [contracts, setContracts] = useState<Contract[]>([])
   const [error, setError] = useState('')
@@ -17,13 +17,13 @@ export default function MyUnits() {
       <h2>Kho của tôi</h2>
       {error && <p className="error">{error}</p>}
       {contracts.length === 0 && <p className="muted">Bạn chưa thuê kho nào.</p>}
-      {contracts.map((c) => <ContractCard key={c.contractId} contract={c} onChanged={load} />)}
+      {contracts.map((c) => <ContractCard key={c.contractId} contract={c} />)}
     </div>
   )
 }
 
-function ContractCard({ contract: c, onChanged }: { contract: Contract; onChanged: () => void }) {
-  const [tab, setTab] = useState<'pin' | 'people' | 'history'>('pin')
+function ContractCard({ contract: c }: { contract: Contract }) {
+  const [tab, setTab] = useState<'people' | 'history'>('people')
   return (
     <div className="card">
       <div className="row between">
@@ -36,55 +36,13 @@ function ContractCard({ contract: c, onChanged }: { contract: Contract; onChange
         <span className={`badge ${c.status === 'Active' ? 'ok' : 'warn'}`}>{c.status}</span>
       </div>
       <div className="tabs">
-        <button className={tab === 'pin' ? 'active' : ''} onClick={() => setTab('pin')}>Mã PIN</button>
         <button className={tab === 'people' ? 'active' : ''} onClick={() => setTab('people')}>Người được ủy quyền</button>
         <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>Lịch sử ra vào</button>
       </div>
-      {tab === 'pin' && <PinForm contract={c} onChanged={onChanged} />}
+      <p className="muted">Khi đến kho, bạn hoặc người được ủy quyền xuất trình CCCD cho nhân viên trực cổng để được vào.</p>
       {tab === 'people' && <AuthorizedPeople contractId={c.contractId} />}
       {tab === 'history' && <History contractId={c.contractId} />}
     </div>
-  )
-}
-
-function PinForm({ contract: c, onChanged }: { contract: Contract; onChanged: () => void }) {
-  const [currentPin, setCurrentPin] = useState('')
-  const [newPin, setNewPin] = useState('')
-  const [msg, setMsg] = useState('')
-  const [error, setError] = useState('')
-
-  const save = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setMsg('')
-    setError('')
-    try {
-      await api(`/api/contracts/${c.contractId}/pin`, { method: 'PUT', body: { currentPin: currentPin || null, newPin } })
-      setMsg('Đã lưu PIN mới.')
-      setCurrentPin('')
-      setNewPin('')
-      onChanged()
-    } catch (err) {
-      setError((err as Error).message)
-    }
-  }
-
-  return (
-    <form onSubmit={save} className="stack">
-      <p className="muted">
-        {c.hasPin ? 'Kho đã có PIN.' : 'Kho chưa có PIN, hãy đặt PIN để vào cổng.'} Khi đến kho, nhập mã kho và PIN tại cổng,
-        sau đó xuất trình CCCD cho nhân viên.
-        {c.pinLockedUntil && new Date(c.pinLockedUntil) > new Date() && ` PIN đang bị khóa đến ${fmtTime(c.pinLockedUntil)}.`}
-      </p>
-      {c.hasPin && (
-        <input type="password" inputMode="numeric" maxLength={6} placeholder="PIN hiện tại"
-          value={currentPin} onChange={(e) => setCurrentPin(e.target.value)} />
-      )}
-      <input type="password" inputMode="numeric" maxLength={6} placeholder="PIN mới (6 chữ số)"
-        value={newPin} onChange={(e) => setNewPin(e.target.value)} required />
-      {error && <p className="error">{error}</p>}
-      {msg && <p className="success">{msg}</p>}
-      <button className="btn primary" type="submit">{c.hasPin ? 'Đổi PIN' : 'Đặt PIN'}</button>
-    </form>
   )
 }
 
@@ -118,7 +76,7 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
 
   return (
     <div className="stack">
-      <p className="muted">Những người này dùng PIN của bạn và xuất trình CCCD của chính họ cho nhân viên.</p>
+      <p className="muted">Những người này được vào kho thay bạn khi xuất trình CCCD của chính họ cho nhân viên.</p>
       <table>
         <tbody>
           {people.map((p) => (
@@ -153,15 +111,14 @@ function History({ contractId }: { contractId: number }) {
       <thead><tr><th>Người vào</th><th>Kết quả</th><th>Vào</th><th>Ra</th><th>Nhân viên</th></tr></thead>
       <tbody>
         {rows.map((r) => (
-          <tr key={r.requestId}>
+          <tr key={r.accessRecordId}>
             <td>{r.visitorName}</td>
             <td>
-              {r.result === 'Granted' ? 'Được vào' : r.result === 'Pending' ? 'Chờ xác nhận'
-                : `Từ chối: ${r.denyReason === 'Expired' ? 'Hết thời gian chờ' : DenyReasons[r.denyReason ?? 'Other'] ?? r.denyReason}`}
+              {r.result === 'Granted' ? 'Được vào' : `Từ chối: ${DenyReasons[r.denyReason ?? 'Other'] ?? r.denyReason}`}
             </td>
-            <td>{r.result === 'Granted' ? fmtTime(r.entryTime) : fmtTime(r.pinEnteredAt ?? r.entryTime)}</td>
+            <td>{fmtTime(r.entryTime)}</td>
             <td>{r.exitTime ? fmtTime(r.exitTime) : '—'}</td>
-            <td>{r.verifiedBy ?? '—'}</td>
+            <td>{r.verifiedBy}</td>
           </tr>
         ))}
         {rows.length === 0 && <tr><td colSpan={5} className="muted">Chưa có lượt ra vào.</td></tr>}

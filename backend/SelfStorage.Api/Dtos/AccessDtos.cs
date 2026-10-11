@@ -2,29 +2,30 @@ using System.ComponentModel.DataAnnotations;
 
 namespace SelfStorage.Api.Dtos;
 
-// ---- Kiosk at the gate ----
-
-public record KioskPinRequest(
-    [Required, StringLength(30)] string UnitCode,
-    [Required, StringLength(6, MinimumLength = 6)] string Pin);
-
-// Status: Pending | Granted | Denied
-public record KioskRequestStatus(long RequestId, string UnitCode, string Status, string Message);
-
 // ---- Staff at the gate ----
 
 public record PersonDto(int? AuthorizedPersonId, string FullName, string? CitizenId, string? PhoneNumber, string? Relationship);
 
-public record PendingAccessDto(
-    long RequestId,
-    DateTime PinEnteredAt,
-    string UnitCode,
-    string ContractNumber,
-    DateOnly ContractEndDate,
-    PersonDto Customer,
-    IReadOnlyList<PersonDto> AuthorizedPersons);
+// Code is one of the DenyReason values in the schema, so staff can deny with it directly.
+public record AccessIssueDto(string Code, string Message);
 
-public record ApproveAccessRequest(
+// One contract the visitor may be coming for, found by the staff lookup.
+public record VisitCandidateDto(
+    int ContractId,
+    string ContractNumber,
+    string ContractStatus,
+    DateOnly StartDate,
+    DateOnly EndDate,
+    string UnitCode,
+    string UnitStatus,
+    PersonDto Customer,
+    IReadOnlyList<PersonDto> AuthorizedPersons,
+    IReadOnlyList<string> PeopleInside,
+    IReadOnlyList<AccessIssueDto> Issues,
+    bool CanEnter);
+
+public record GrantEntryRequest(
+    [Required] int ContractId,
     // Null = the contract's customer came in person.
     int? AuthorizedPersonId,
     [Required] string VerificationMethod,
@@ -33,24 +34,21 @@ public record ApproveAccessRequest(
     [StringLength(255)] string? Purpose,
     [StringLength(500)] string? Notes);
 
-public record DenyAccessRequest([Required] string Reason, [StringLength(500)] string? Notes);
+public record DenyEntryRequest(
+    [Required] int ContractId,
+    int? AuthorizedPersonId,
+    [Required] string VerificationMethod,
+    [Required] string Reason,
+    [StringLength(500)] string? Notes);
 
 public record AccessRecordDto(
-    long RequestId,
+    long AccessRecordId,
     string UnitCode,
     string ContractNumber,
     string VisitorName,
     string Result,
     string? DenyReason,
     string? Purpose,
-    DateTime? PinEnteredAt,
     DateTime EntryTime,
     DateTime? ExitTime,
-    string? VerifiedBy);
-
-// ---- Customer ----
-
-public record SetPinRequest(
-    // Required when a PIN is already set.
-    string? CurrentPin,
-    [Required] string NewPin);
+    string VerifiedBy);

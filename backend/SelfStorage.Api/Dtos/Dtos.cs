@@ -49,7 +49,7 @@ public record CheckInRequest([Required] int UnitId);
 // ---- Contracts ----
 
 public record ContractDto(int ContractId, string ContractNumber, int FacilityId, string FacilityName, string UnitCode,
-    DateOnly StartDate, DateOnly EndDate, decimal MonthlyRentFee, string Status, bool HasPin, DateTime? PinLockedUntil);
+    DateOnly StartDate, DateOnly EndDate, decimal MonthlyRentFee, string Status);
 
 public record AddAuthorizedPersonRequest(
     [Required, StringLength(100)] string FullName,

@@ -82,7 +82,7 @@ public class ReservationsController(SelfStorageDbContext db, AccessService acces
         return await Project(db.Reservations.Where(x => x.ReservationId == id)).SingleAsync(ct);
     }
 
-    /// <summary>Staff: customer arrived; assign a unit and create the rental contract. The customer then sets the gate PIN.</summary>
+    /// <summary>Staff: customer arrived; assign a unit and create the rental contract.</summary>
     [HttpPost("reservations/{id:int}/check-in")]
     [Authorize(Roles = AppRoles.GateRoles)]
     public async Task<ContractDto> CheckIn(int id, CheckInRequest req, CancellationToken ct)

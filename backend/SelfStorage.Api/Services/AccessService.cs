@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using SelfStorage.Api.Data;
 using SelfStorage.Api.Data.Entities;
 using SelfStorage.Api.Dtos;
@@ -7,166 +6,74 @@ using SelfStorage.Api.Infrastructure;
 
 namespace SelfStorage.Api.Services;
 
-public class AccessOptions
-{
-    /// <summary>Wrong PIN attempts before the contract's PIN is locked.</summary>
-    public int MaxPinAttempts { get; set; } = 5;
-    public int PinLockMinutes { get; set; } = 15;
-    /// <summary>A PIN entry nobody verified within this time expires and the visitor must re-enter.</summary>
-    public int PendingTimeoutMinutes { get; set; } = 15;
-}
-
 /// <summary>
-/// Entry/exit flow: PIN at the kiosk -> Pending -> staff checks ID -> Granted/Denied -> staff confirms exit.
+/// Entry/exit verified by staff only (no PIN), stored in AccessRecords exactly as the original schema allows:
+/// the visitor arrives -> staff looks up the contract and checks the ID card -> Granted or Denied row
+/// -> staff confirms exit (ExitTime). "Waiting for verification" exists only on the staff screen.
 /// </summary>
-public class AccessService(SelfStorageDbContext db, PinService pins, IOptions<AccessOptions> options, TimeProvider clock)
+public class AccessService(SelfStorageDbContext db, TimeProvider clock)
 {
-    private readonly AccessOptions _opt = options.Value;
     private DateTime Now => clock.GetLocalNow().DateTime;   // DB defaults use SYSDATETIME() (server local time)
 
-    private static readonly string[] UsableContractStatuses =
-        [ContractStatus.Active, ContractStatus.Renewed, ContractStatus.Overdue];
+    // ---------------------------------------------------------------- lookup
 
-    // ---------------------------------------------------------------- kiosk
-
-    public async Task<KioskRequestStatus> EnterPinAsync(int facilityId, KioskPinRequest req, CancellationToken ct)
-    {
-        const string wrong = "Mã kho hoặc PIN không đúng";
-        var today = DateOnly.FromDateTime(Now);
-
-        var contract = await db.Contracts
-            .Include(c => c.Unit)
-            .Where(c => c.Unit.FacilityId == facilityId && c.Unit.UnitCode == req.UnitCode
-                        && UsableContractStatuses.Contains(c.Status)
-                        && c.StartDate <= today && c.EndDate >= today)
-            .OrderByDescending(c => c.EndDate)
-            .FirstOrDefaultAsync(ct)
-            ?? throw new AppException(StatusCodes.Status401Unauthorized, wrong);
-
-        if (contract.PinLockedUntil > Now)
-            throw new AppException(StatusCodes.Status423Locked,
-                $"PIN đã bị khóa tạm thời do nhập sai nhiều lần. Thử lại sau {contract.PinLockedUntil:HH:mm} hoặc liên hệ nhân viên.");
-
-        if (contract.AccessPinHash is null)
-            throw new AppException(StatusCodes.Status401Unauthorized, "Kho này chưa có PIN. Vui lòng đặt PIN trong ứng dụng hoặc liên hệ nhân viên.");
-
-        if (!pins.Verify(contract, req.Pin))
-        {
-            contract.PinFailedAttempts++;
-            if (contract.PinFailedAttempts >= _opt.MaxPinAttempts)
-            {
-                contract.PinFailedAttempts = 0;
-                contract.PinLockedUntil = Now.AddMinutes(_opt.PinLockMinutes);
-            }
-            await db.SaveChangesAsync(ct);
-            throw new AppException(StatusCodes.Status401Unauthorized, wrong);
-        }
-
-        contract.PinFailedAttempts = 0;
-        contract.PinLockedUntil = null;
-
-        // Correct PIN, but the unit cannot be opened: tell the visitor to see the staff.
-        if (contract.Unit.Status == UnitStatus.OverdueLocked || contract.Status == ContractStatus.Overdue)
-        {
-            await db.SaveChangesAsync(ct);
-            throw AppException.Forbidden("Hợp đồng đang quá hạn thanh toán. Vui lòng liên hệ nhân viên tại quầy.");
-        }
-        if (contract.Unit.Status == UnitStatus.UnderMaintenance)
-        {
-            await db.SaveChangesAsync(ct);
-            throw AppException.Forbidden("Kho đang được bảo trì. Vui lòng liên hệ nhân viên tại quầy.");
-        }
-
-        var pending = await db.AccessRecords
-            .FirstOrDefaultAsync(r => r.ContractId == contract.ContractId && r.Result == AccessResult.Pending, ct);
-        if (pending is not null && !IsExpired(pending))
-        {
-            await db.SaveChangesAsync(ct);
-            return ToKioskStatus(pending, contract.Unit.UnitCode);
-        }
-        if (pending is not null)
-        {
-            Expire(pending);
-            await db.SaveChangesAsync(ct);   // free the one-pending-per-contract index first
-        }
-
-        var record = new AccessRecord
-        {
-            ContractId = contract.ContractId,
-            FacilityId = facilityId,
-            UnitId = contract.UnitId,
-            Result = AccessResult.Pending,
-            PinEnteredAt = Now,
-            EntryTime = Now,   // overwritten with the real entry time when staff grants access
-        };
-        db.AccessRecords.Add(record);
-        await db.SaveChangesAsync(ct);
-        return ToKioskStatus(record, contract.Unit.UnitCode);
-    }
-
-    public async Task<KioskRequestStatus> GetKioskStatusAsync(int facilityId, long requestId, CancellationToken ct)
-    {
-        var record = await db.AccessRecords.Include(r => r.Unit)
-            .FirstOrDefaultAsync(r => r.AccessRecordId == requestId && r.FacilityId == facilityId, ct)
-            ?? throw AppException.NotFound("Không tìm thấy yêu cầu");
-
-        if (record.Result == AccessResult.Pending && IsExpired(record))
-        {
-            Expire(record);
-            await db.SaveChangesAsync(ct);
-        }
-        return ToKioskStatus(record, record.Unit.UnitCode);
-    }
-
-    // ---------------------------------------------------------------- staff
-
-    public async Task<IReadOnlyList<PendingAccessDto>> GetPendingAsync(int staffId, int facilityId, CancellationToken ct)
+    /// <summary>Find contracts at this facility by unit code, contract number, CCCD or phone of the customer or an authorized person.</summary>
+    public async Task<IReadOnlyList<VisitCandidateDto>> LookupAsync(int staffId, int facilityId, string query, CancellationToken ct)
     {
         await EnsureAssignedAsync(staffId, facilityId, ct);
-        var since = Now.AddMinutes(-_opt.PendingTimeoutMinutes);
+        var q = query.Trim();
+        if (q.Length < 2) throw AppException.BadRequest("Nhập ít nhất 2 ký tự để tìm");
 
-        var rows = await db.AccessRecords
-            .Where(r => r.FacilityId == facilityId && r.Result == AccessResult.Pending && r.PinEnteredAt >= since)
-            .OrderBy(r => r.PinEnteredAt)
+        var contracts = await db.Contracts
+            .Include(c => c.Unit)
+            .Include(c => c.Customer)
+            .Include(c => c.AuthorizedPersons)
+            .Where(c => c.Unit.FacilityId == facilityId)
+            .Where(c => c.Unit.UnitCode == q || c.ContractNumber == q
+                        || c.Customer.CitizenId == q || c.Customer.PhoneNumber == q
+                        || c.AuthorizedPersons.Any(p => p.Status == "Active" && (p.CitizenId == q || p.PhoneNumber == q)))
+            .OrderByDescending(c => c.EndDate)
+            .Take(10)
+            .ToListAsync(ct);
+
+        var ids = contracts.Select(c => c.ContractId).ToList();
+        var inside = await db.AccessRecords
+            .Where(r => ids.Contains(r.ContractId) && r.Result == AccessResult.Granted && r.ExitTime == null)
             .Select(r => new
             {
-                r.AccessRecordId,
-                r.PinEnteredAt,
-                r.Unit.UnitCode,
-                r.Contract.ContractNumber,
-                r.Contract.EndDate,
-                Customer = new PersonDto(null, r.Contract.Customer.FullName, r.Contract.Customer.CitizenId,
-                    r.Contract.Customer.PhoneNumber, "Chủ hợp đồng"),
-                Authorized = r.Contract.AuthorizedPersons
-                    .Where(p => p.Status == "Active")
-                    .Select(p => new PersonDto(p.AuthorizedPersonId, p.FullName, p.CitizenId, p.PhoneNumber, p.Relationship))
-                    .ToList(),
+                r.ContractId,
+                Name = r.AuthorizedPerson != null ? r.AuthorizedPerson.FullName : r.Contract.Customer.FullName,
             })
             .ToListAsync(ct);
 
-        return rows.Select(r => new PendingAccessDto(r.AccessRecordId, r.PinEnteredAt!.Value, r.UnitCode,
-            r.ContractNumber, r.EndDate, r.Customer, r.Authorized)).ToList();
+        return contracts.Select(c =>
+        {
+            var issues = FindIssues(c);
+            return new VisitCandidateDto(
+                c.ContractId, c.ContractNumber, c.Status, c.StartDate, c.EndDate, c.Unit.UnitCode, c.Unit.Status,
+                new PersonDto(null, c.Customer.FullName, c.Customer.CitizenId, c.Customer.PhoneNumber, "Chủ hợp đồng"),
+                c.AuthorizedPersons.Where(p => p.Status == "Active")
+                    .Select(p => new PersonDto(p.AuthorizedPersonId, p.FullName, p.CitizenId, p.PhoneNumber, p.Relationship))
+                    .ToList(),
+                inside.Where(i => i.ContractId == c.ContractId).Select(i => i.Name).ToList(),
+                issues,
+                issues.Count == 0);
+        }).ToList();
     }
 
-    public async Task<AccessRecordDto> ApproveAsync(int staffId, long requestId, ApproveAccessRequest req, CancellationToken ct)
+    // ---------------------------------------------------------------- entry / exit
+
+    public async Task<AccessRecordDto> GrantEntryAsync(int staffId, int facilityId, GrantEntryRequest req, CancellationToken ct)
     {
-        var record = await LoadPendingAsync(staffId, requestId, ct);
+        await EnsureAssignedAsync(staffId, facilityId, ct);
+        EnsureMethod(req.VerificationMethod);
+        var contract = await LoadContractAsync(facilityId, req.ContractId, ct);
 
-        if (!VerificationMethods.All.Contains(req.VerificationMethod))
-            throw AppException.BadRequest("Loại giấy tờ không hợp lệ: " + string.Join(", ", VerificationMethods.All));
+        var issues = FindIssues(contract);
+        if (issues.Count > 0)
+            throw AppException.Conflict($"Không thể cho vào: {issues[0].Message}. Hãy ghi nhận từ chối với lý do {issues[0].Code}.");
 
-        string? expectedCitizenId;
-        if (req.AuthorizedPersonId is { } apId)
-        {
-            var person = record.Contract.AuthorizedPersons
-                .FirstOrDefault(p => p.AuthorizedPersonId == apId && p.Status == "Active")
-                ?? throw AppException.BadRequest("Người này không có trong danh sách được ủy quyền của hợp đồng");
-            expectedCitizenId = person.CitizenId;
-        }
-        else
-        {
-            expectedCitizenId = record.Contract.Customer.CitizenId;
-        }
+        var expectedCitizenId = ResolveVisitor(contract, req.AuthorizedPersonId);
 
         // Staff types the number printed on the visitor's ID card; it must match what we have on file.
         if (req.VerificationMethod == "CitizenID")
@@ -177,29 +84,54 @@ public class AccessService(SelfStorageDbContext db, PinService pins, IOptions<Ac
                 throw AppException.BadRequest("Số CCCD không khớp với hồ sơ. Hãy kiểm tra lại hoặc từ chối với lý do IdentityMismatch.");
         }
 
-        record.Result = AccessResult.Granted;
-        record.AuthorizedPersonId = req.AuthorizedPersonId;
-        record.VerificationMethod = req.VerificationMethod;
-        record.VerifiedByStaffId = staffId;
-        record.VerifiedAt = Now;
-        record.EntryTime = Now;
-        record.Purpose = req.Purpose;
-        record.Notes = req.Notes;
+        var alreadyInside = await db.AccessRecords.AnyAsync(r => r.ContractId == contract.ContractId
+            && r.AuthorizedPersonId == req.AuthorizedPersonId
+            && r.Result == AccessResult.Granted && r.ExitTime == null, ct);
+        if (alreadyInside)
+            throw AppException.Conflict("Người này đang ở trong kho, hãy xác nhận ra trước");
+
+        var record = new AccessRecord
+        {
+            ContractId = contract.ContractId,
+            FacilityId = facilityId,
+            UnitId = contract.UnitId,
+            AuthorizedPersonId = req.AuthorizedPersonId,
+            VerifiedByStaffId = staffId,
+            VerificationMethod = req.VerificationMethod,
+            Result = AccessResult.Granted,
+            Purpose = req.Purpose,
+            EntryTime = Now,
+            Notes = req.Notes,
+        };
+        db.AccessRecords.Add(record);
         await db.SaveChangesAsync(ct);
         return await GetRecordDtoAsync(record.AccessRecordId, ct);
     }
 
-    public async Task<AccessRecordDto> DenyAsync(int staffId, long requestId, DenyAccessRequest req, CancellationToken ct)
+    public async Task<AccessRecordDto> DenyEntryAsync(int staffId, int facilityId, DenyEntryRequest req, CancellationToken ct)
     {
+        await EnsureAssignedAsync(staffId, facilityId, ct);
+        EnsureMethod(req.VerificationMethod);
         if (!DenyReasons.All.Contains(req.Reason))
             throw AppException.BadRequest("Lý do không hợp lệ: " + string.Join(", ", DenyReasons.All));
 
-        var record = await LoadPendingAsync(staffId, requestId, ct);
-        record.Result = AccessResult.Denied;
-        record.DenyReason = req.Reason;
-        record.VerifiedByStaffId = staffId;
-        record.VerifiedAt = Now;
-        record.Notes = req.Notes;
+        var contract = await LoadContractAsync(facilityId, req.ContractId, ct);
+        if (req.AuthorizedPersonId is not null) ResolveVisitor(contract, req.AuthorizedPersonId);
+
+        var record = new AccessRecord
+        {
+            ContractId = contract.ContractId,
+            FacilityId = facilityId,
+            UnitId = contract.UnitId,
+            AuthorizedPersonId = req.AuthorizedPersonId,
+            VerifiedByStaffId = staffId,
+            VerificationMethod = req.VerificationMethod,
+            Result = AccessResult.Denied,
+            DenyReason = req.Reason,
+            EntryTime = Now,   // time of the attempt
+            Notes = req.Notes,
+        };
+        db.AccessRecords.Add(record);
         await db.SaveChangesAsync(ct);
         return await GetRecordDtoAsync(record.AccessRecordId, ct);
     }
@@ -213,9 +145,19 @@ public class AccessService(SelfStorageDbContext db, PinService pins, IOptions<Ac
             .ToListAsync(ct);
     }
 
-    public async Task<AccessRecordDto> ConfirmExitAsync(int staffId, long requestId, CancellationToken ct)
+    public async Task<IReadOnlyList<AccessRecordDto>> GetTodayAsync(int staffId, int facilityId, CancellationToken ct)
     {
-        var record = await db.AccessRecords.FirstOrDefaultAsync(r => r.AccessRecordId == requestId, ct)
+        await EnsureAssignedAsync(staffId, facilityId, ct);
+        var today = Now.Date;
+        return await ProjectRecords(db.AccessRecords
+                .Where(r => r.FacilityId == facilityId && r.EntryTime >= today)
+                .OrderByDescending(r => r.EntryTime))
+            .ToListAsync(ct);
+    }
+
+    public async Task<AccessRecordDto> ConfirmExitAsync(int staffId, long accessRecordId, CancellationToken ct)
+    {
+        var record = await db.AccessRecords.FirstOrDefaultAsync(r => r.AccessRecordId == accessRecordId, ct)
                      ?? throw AppException.NotFound("Không tìm thấy lượt ra vào");
         await EnsureAssignedAsync(staffId, record.FacilityId, ct);
 
@@ -235,38 +177,6 @@ public class AccessService(SelfStorageDbContext db, PinService pins, IOptions<Ac
                 .Take(100))
             .ToListAsync(ct);
 
-    // ---------------------------------------------------------------- customer
-
-    public async Task SetPinAsync(int customerId, int contractId, SetPinRequest req, CancellationToken ct)
-    {
-        var contract = await db.Contracts.FirstOrDefaultAsync(c => c.ContractId == contractId && c.CustomerId == customerId, ct)
-                       ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
-
-        if (contract.AccessPinHash is not null && (req.CurrentPin is null || !pins.Verify(contract, req.CurrentPin)))
-            throw AppException.BadRequest("PIN hiện tại không đúng. Nếu quên PIN, hãy nhờ nhân viên đặt lại.");
-
-        pins.EnsureStrong(req.NewPin);
-        contract.AccessPinHash = pins.Hash(contract, req.NewPin);
-        contract.PinFailedAttempts = 0;
-        contract.PinLockedUntil = null;
-        contract.PinUpdatedAt = Now;
-        await db.SaveChangesAsync(ct);
-    }
-
-    /// <summary>Staff clears a forgotten PIN after checking the customer's ID at the counter; the customer then sets a new one.</summary>
-    public async Task ResetPinAsync(int staffId, int contractId, CancellationToken ct)
-    {
-        var contract = await db.Contracts.Include(c => c.Unit).FirstOrDefaultAsync(c => c.ContractId == contractId, ct)
-                       ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
-        await EnsureAssignedAsync(staffId, contract.Unit.FacilityId, ct);
-
-        contract.AccessPinHash = null;
-        contract.PinFailedAttempts = 0;
-        contract.PinLockedUntil = null;
-        contract.PinUpdatedAt = Now;
-        await db.SaveChangesAsync(ct);
-    }
-
     // ---------------------------------------------------------------- helpers
 
     public Task<List<FacilityDto>> GetAssignedFacilitiesAsync(int staffId, CancellationToken ct) =>
@@ -284,43 +194,47 @@ public class AccessService(SelfStorageDbContext db, PinService pins, IOptions<Ac
         if (!assigned) throw AppException.Forbidden("Bạn không được phân công tại cơ sở này");
     }
 
-    private async Task<AccessRecord> LoadPendingAsync(int staffId, long requestId, CancellationToken ct)
+    /// <summary>Reasons the contract's unit cannot be opened right now; codes match AccessRecords.DenyReason.</summary>
+    private List<AccessIssueDto> FindIssues(Contract c)
     {
-        var record = await db.AccessRecords
-            .Include(r => r.Contract).ThenInclude(c => c.Customer)
-            .Include(r => r.Contract).ThenInclude(c => c.AuthorizedPersons)
-            .FirstOrDefaultAsync(r => r.AccessRecordId == requestId, ct)
-            ?? throw AppException.NotFound("Không tìm thấy yêu cầu");
-        await EnsureAssignedAsync(staffId, record.FacilityId, ct);
+        var today = DateOnly.FromDateTime(Now);
+        var issues = new List<AccessIssueDto>();
 
-        if (record.Result != AccessResult.Pending)
-            throw AppException.Conflict("Yêu cầu này đã được xử lý");
-        if (IsExpired(record))
-        {
-            Expire(record);
-            await db.SaveChangesAsync(ct);
-            throw AppException.Conflict("Yêu cầu đã hết hạn, khách cần nhập lại PIN");
-        }
-        return record;
+        if (c.Status is ContractStatus.Terminated or ContractStatus.Liquidated || c.EndDate < today)
+            issues.Add(new("ContractEnded", "Hợp đồng đã kết thúc"));
+        else if (c.StartDate > today)
+            issues.Add(new("ContractEnded", $"Hợp đồng chưa bắt đầu (từ {c.StartDate:dd/MM/yyyy})"));
+
+        if (c.Status == ContractStatus.Overdue || c.Unit.Status == UnitStatus.OverdueLocked)
+            issues.Add(new("OverdueLocked", "Hợp đồng quá hạn thanh toán, kho đang bị khóa"));
+        if (c.Unit.Status == UnitStatus.UnderMaintenance)
+            issues.Add(new("UnitUnderMaintenance", "Kho đang bảo trì"));
+        return issues;
     }
 
-    private bool IsExpired(AccessRecord r) =>
-        r.PinEnteredAt is { } t && t.AddMinutes(_opt.PendingTimeoutMinutes) < Now;
+    private async Task<Contract> LoadContractAsync(int facilityId, int contractId, CancellationToken ct) =>
+        await db.Contracts
+            .Include(c => c.Unit)
+            .Include(c => c.Customer)
+            .Include(c => c.AuthorizedPersons)
+            .FirstOrDefaultAsync(c => c.ContractId == contractId && c.Unit.FacilityId == facilityId, ct)
+        ?? throw AppException.NotFound("Không tìm thấy hợp đồng tại cơ sở này");
 
-    private static void Expire(AccessRecord r)
+    /// <summary>Returns the CCCD on file for the visitor (customer, or an active authorized person).</summary>
+    private static string? ResolveVisitor(Contract contract, int? authorizedPersonId)
     {
-        r.Result = AccessResult.Denied;
-        r.DenyReason = "Expired";
+        if (authorizedPersonId is null) return contract.Customer.CitizenId;
+        var person = contract.AuthorizedPersons
+                         .FirstOrDefault(p => p.AuthorizedPersonId == authorizedPersonId && p.Status == "Active")
+                     ?? throw AppException.BadRequest("Người này không có trong danh sách được ủy quyền của hợp đồng");
+        return person.CitizenId;
     }
 
-    private static KioskRequestStatus ToKioskStatus(AccessRecord r, string unitCode) => new(
-        r.AccessRecordId, unitCode, r.Result, r.Result switch
-        {
-            AccessResult.Pending => "PIN đúng. Vui lòng xuất trình CCCD cho nhân viên để được xác nhận.",
-            AccessResult.Granted => "Đã xác nhận. Mời bạn vào kho.",
-            _ when r.DenyReason == "Expired" => "Yêu cầu đã hết hạn. Vui lòng nhập lại PIN.",
-            _ => "Không được phép vào. Vui lòng liên hệ nhân viên.",
-        });
+    private static void EnsureMethod(string method)
+    {
+        if (!VerificationMethods.All.Contains(method))
+            throw AppException.BadRequest("Loại giấy tờ không hợp lệ: " + string.Join(", ", VerificationMethods.All));
+    }
 
     private Task<AccessRecordDto> GetRecordDtoAsync(long id, CancellationToken ct) =>
         ProjectRecords(db.AccessRecords.Where(r => r.AccessRecordId == id)).FirstAsync(ct);
@@ -334,8 +248,7 @@ public class AccessService(SelfStorageDbContext db, PinService pins, IOptions<Ac
             r.Result,
             r.DenyReason,
             r.Purpose,
-            r.PinEnteredAt,
             r.EntryTime,
             r.ExitTime,
-            r.VerifiedByStaff != null ? r.VerifiedByStaff.FullName : null));
+            r.VerifiedByStaff.FullName));
 }

@@ -2,7 +2,6 @@ import type { ReactNode } from 'react'
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth'
 import Gate from './pages/Gate'
-import Kiosk from './pages/Kiosk'
 import { Login, Register } from './pages/Login'
 import MyUnits from './pages/MyUnits'
 import Rent from './pages/Rent'
@@ -61,7 +60,7 @@ function Home() {
   return (
     <div className="page">
       <h2>Kho tự phục vụ</h2>
-      <p>Thuê kho theo tháng, ra vào bằng mã PIN và xác nhận danh tính tại cổng.</p>
+      <p>Thuê kho theo tháng. Khi đến kho, bạn xuất trình CCCD để nhân viên xác nhận và cho vào.</p>
       <p><NavLink to="/register" className="btn primary">Đăng ký thuê kho</NavLink></p>
     </div>
   )
@@ -72,8 +71,6 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          {/* Kiosk runs full screen on the tablet at the gate, without a user login. */}
-          <Route path="/kiosk" element={<Kiosk />} />
           <Route element={<Layout />}>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />

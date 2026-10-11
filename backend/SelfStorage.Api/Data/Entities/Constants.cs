@@ -1,6 +1,6 @@
 namespace SelfStorage.Api.Data.Entities;
 
-// String values must match the CHECK constraints in database/*.sql
+// String values must match the CHECK constraints in database/01_schema.sql
 
 public static class AppRoles
 {
@@ -43,7 +43,6 @@ public static class ContractStatus
 
 public static class AccessResult
 {
-    public const string Pending = "Pending";
     public const string Granted = "Granted";
     public const string Denied = "Denied";
 }
@@ -53,7 +52,7 @@ public static class DenyReasons
     public static readonly string[] All =
     [
         "IdentityMismatch", "NotAuthorized", "ContractEnded", "OverdueLocked",
-        "OutsideOperatingHours", "UnitUnderMaintenance", "Expired", "Other",
+        "OutsideOperatingHours", "UnitUnderMaintenance", "Other",
     ];
 }
 

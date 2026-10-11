@@ -4,48 +4,38 @@ Khung dự án gồm:
 
 | Thư mục | Nội dung |
 |---|---|
-| `database/` | `01_schema.sql` (file `sqlquery.txt` của bạn, giữ nguyên) và `02_pin_access.sql` (bổ sung PIN và trạng thái chờ xác nhận) |
+| `database/` | `01_schema.sql`: đúng file `sqlquery.txt` của bạn, **không sửa gì**. Backend dùng nguyên database này. |
 | `backend/` | ASP.NET Core Web API (.NET 10), EF Core cho SQL Server, Swagger, JWT |
-| `frontend/` | React + TypeScript (Vite): trang khách hàng, màn hình nhân viên tại cổng, màn hình kiosk nhập PIN |
+| `frontend/` | React + TypeScript (Vite): trang khách hàng và màn hình nhân viên trực cổng |
 
-## 1. Luồng ra vào kho (PIN + nhân viên xác nhận danh tính)
+## 1. Luồng ra vào kho (chỉ nhân viên xác thực, không dùng PIN)
+
+Theo sơ đồ trạng thái "Unit Access Visit": `PendingVerification → InsideFacility → Exited`, hoặc `PendingVerification → Denied`.
 
 ```
-Khách đến cổng                 Hệ thống                         Nhân viên trực cổng
-──────────────                 ────────                         ───────────────────
-Nhập mã kho + PIN ───────────► Kiểm tra PIN với hợp đồng
-  (tablet kiosk)               • sai 5 lần → khóa PIN 15 phút
-                               • hợp đồng quá hạn/bảo trì → báo gặp nhân viên
-                               • đúng → tạo lượt ra vào "Pending"
-Màn hình: "Xuất trình CCCD" ◄─┘                                  │
-                                                                 ▼
-                               Hiện yêu cầu chờ: tên chủ HĐ,   Xem CCCD thật của khách,
-                               CCCD trong hồ sơ, danh sách      chọn người (chủ HĐ hoặc
-                               người được ủy quyền              người được ủy quyền),
-                                                                gõ số CCCD trên thẻ
-                               So khớp số CCCD ◄──────────────── Bấm "Cho vào" / "Từ chối"
-Màn hình: "Mời vào" ◄───────── Granted (lưu nhân viên duyệt, giờ vào)
-  hoặc "Không được vào"        Denied (lưu lý do)
-...
-Khách ra về ─────────────────────────────────────────────────► Bấm "Xác nhận ra" (lưu giờ ra)
+Khách / người được ủy quyền          Nhân viên trực cổng (màn hình "Cổng ra vào")
+───────────────────────────          ────────────────────────────────────────────
+Đến cổng, đưa CCCD ────────────────► Tìm theo mã kho, số CCCD, SĐT hoặc số hợp đồng
+  (PendingVerification:               Hệ thống hiện: hợp đồng, kho, chủ HĐ + CCCD trong hồ sơ,
+   chỉ là bước trên màn hình,         người được ủy quyền, ai đang ở trong, và cảnh báo
+   chưa ghi vào database)             (HĐ đã kết thúc, quá hạn/kho bị khóa, kho bảo trì)
+                                     Chọn đúng người, gõ số CCCD trên thẻ
+                                       ├─ khớp và không có cảnh báo → "Cho vào"
+                                       │    → AccessRecords: Granted, EntryTime, VerifiedByStaffID
+                                       └─ không khớp / có cảnh báo → "Ghi nhận từ chối"
+                                            → AccessRecords: Denied + DenyReason
+Khách ra về ───────────────────────► Bấm "Xác nhận ra" → ExitTime, ExitConfirmedByStaffID
 ```
 
 Quy tắc chính:
 
-- PIN 6 số, gắn với **hợp đồng** (mỗi kho đang thuê một PIN), chỉ lưu dạng băm. Không chấp nhận PIN kiểu `111111`, `123456`.
-- Khách tự đặt/đổi PIN trong trang "Kho của tôi". Quên PIN: nhân viên kiểm tra CCCD tại quầy rồi xóa PIN (`reset-pin`), khách đặt PIN mới.
-- Người được ủy quyền dùng PIN của chủ hợp đồng nhưng phải xuất trình **CCCD của chính họ**; nhân viên chọn đúng người trên màn hình.
-- Với CCCD, nhân viên phải gõ số trên thẻ và hệ thống so khớp với hồ sơ, tránh việc bấm "Cho vào" mà không kiểm tra.
-- Yêu cầu chờ quá 15 phút tự hết hạn (`Denied / Expired`), khách nhập lại PIN.
-- Kiosk xác thực bằng khóa thiết bị (`X-Kiosk-Key`), mỗi khóa gắn với một cơ sở, nên kiosk ở cơ sở A không mở được kho ở cơ sở B. Có giới hạn 20 lần/phút/kiosk.
-- Nhân viên chỉ thấy và duyệt yêu cầu ở cơ sở mình được phân công (`FacilityStaffAssignments`).
-
-### Thay đổi so với `sqlquery.txt`
-
-Bảng `AccessRecords` gốc bắt buộc `VerifiedByStaffID` và chỉ có `Granted/Denied`, nên không lưu được bước "đã nhập PIN, đang chờ nhân viên". `02_pin_access.sql`:
-
-- Thêm vào `Contracts`: `AccessPinHash`, `PinFailedAttempts`, `PinLockedUntil`, `PinUpdatedAt`.
-- `AccessRecords`: thêm trạng thái `Pending`, cột `PinEnteredAt`, `VerifiedAt`; `VerifiedByStaffID` cho phép NULL khi đang chờ; thêm lý do `Expired`; mỗi hợp đồng chỉ có tối đa một yêu cầu đang chờ.
+- Không có PIN hay thiết bị kiosk. Mọi lượt vào đều do nhân viên xác nhận và ghi tên nhân viên vào `VerifiedByStaffID`.
+- Người được ủy quyền (bảng `AuthorizedPersons`) vào thay chủ hợp đồng bằng **CCCD của chính họ**. Khách tự thêm/thu hồi người được ủy quyền trong trang "Kho của tôi".
+- Với CCCD, nhân viên phải gõ số trên thẻ và hệ thống so khớp với hồ sơ, tránh việc bấm "Cho vào" mà không kiểm tra. Hộ chiếu/bằng lái thì nhân viên tự đối chiếu.
+- Hệ thống không cho bấm "Cho vào" khi hợp đồng đã kết thúc/chưa bắt đầu, quá hạn thanh toán, kho bị khóa hoặc đang bảo trì; mã cảnh báo trùng với `DenyReason` để nhân viên ghi nhận từ chối luôn.
+- Một người đang ở trong kho thì không thể được cho vào lần nữa trước khi xác nhận ra.
+- Nhân viên chỉ thao tác ở cơ sở mình được phân công (`FacilityStaffAssignments`).
+- Lượt bị từ chối được lưu với `EntryTime` là thời điểm khách đến, `ExitTime` để trống, đúng ràng buộc `CK_AccessRec_DenyReason` của database.
 
 ## 2. API (xem đầy đủ trên Swagger)
 
@@ -55,20 +45,17 @@ Bảng `AccessRecords` gốc bắt buộc `VerifiedByStaffID` và chỉ có `Gra
 | Danh mục | `GET /api/facilities`, `GET /api/unit-types`, `GET /api/facilities/{id}/availability`, `GET /api/facilities/{id}/units` | Công khai |
 | Đặt kho | `POST /api/reservations`, `GET /api/reservations/my` | Khách |
 | Nhận kho | `GET /api/facilities/{id}/reservations`, `POST /api/reservations/{id}/confirm-deposit`, `POST /api/reservations/{id}/check-in` | Nhân viên, quản lý cơ sở |
-| Kho của tôi | `GET /api/contracts/my`, `PUT /api/contracts/{id}/pin`, `GET/POST/DELETE /api/contracts/{id}/authorized-persons`, `GET /api/contracts/{id}/access-history` | Khách |
-| Kiosk | `POST /api/kiosk/pin`, `GET /api/kiosk/requests/{id}` | Thiết bị kiosk (`X-Kiosk-Key`) |
-| Cổng | `GET /api/gate/my-facilities`, `GET /api/gate/facilities/{id}/pending`, `GET /api/gate/facilities/{id}/inside`, `POST /api/gate/requests/{id}/approve`, `.../deny`, `.../exit`, `POST /api/gate/contracts/{id}/reset-pin` | Nhân viên, quản lý cơ sở |
+| Kho của tôi | `GET /api/contracts/my`, `GET/POST/DELETE /api/contracts/{id}/authorized-persons`, `GET /api/contracts/{id}/access-history` | Khách |
+| Cổng | `GET /api/gate/my-facilities`, `GET /api/gate/facilities/{id}/lookup?q=`, `POST /api/gate/facilities/{id}/entries`, `POST /api/gate/facilities/{id}/denials`, `GET /api/gate/facilities/{id}/inside`, `GET /api/gate/facilities/{id}/today`, `POST /api/gate/access-records/{id}/exit` | Nhân viên, quản lý cơ sở |
 
 ## 3. Chạy thử trên máy
 
 Cần: .NET SDK 10, Node.js 20+, SQL Server (Express/Developer đều được).
 
-**Database.** Mở SSMS, chạy lần lượt `database/01_schema.sql` rồi `database/02_pin_access.sql`.
-Nếu dùng `sqlcmd` thì thêm `-I` (bật QUOTED_IDENTIFIER, cần cho filtered index):
+**Database.** Mở SSMS, chạy `database/01_schema.sql`. Nếu dùng `sqlcmd` thì thêm `-I` (bật QUOTED_IDENTIFIER, cần cho filtered index):
 
 ```
 sqlcmd -S localhost -E -C -I -i database/01_schema.sql
-sqlcmd -S localhost -E -C -I -i database/02_pin_access.sql
 ```
 
 **Backend.** Sửa chuỗi kết nối `ConnectionStrings:SelfStorageDB` trong `backend/SelfStorage.Api/appsettings.json` nếu cần (mặc định: `localhost`, Windows Authentication).
@@ -82,7 +69,7 @@ Mở Swagger tại http://localhost:5080/swagger. Ở môi trường Development
 
 | Tài khoản | Mật khẩu | Vai trò |
 |---|---|---|
-| `customer1` | `Demo@12345` | Khách, đang thuê kho `B-01`, PIN `246810`, CCCD `079200000123` |
+| `customer1` | `Demo@12345` | Khách, đang thuê kho `B-01`, CCCD `079200000123` |
 | `staff1` | `Demo@12345` | Nhân viên cơ sở Quận 7 |
 | `manager1` | `Demo@12345` | Quản lý cơ sở Quận 7 |
 | `admin` | `Demo@12345` | Quản trị hệ thống |
@@ -97,16 +84,15 @@ npm install
 npm run dev
 ```
 
-- http://localhost:5173 : khách đăng nhập/đăng ký, nhân viên đăng nhập để vào "Cổng ra vào".
-- http://localhost:5173/kiosk : màn hình kiosk đặt ở cổng (mở trên tablet, toàn màn hình).
+Mở http://localhost:5173. Khách đăng nhập/đăng ký; nhân viên đăng nhập sẽ vào thẳng "Cổng ra vào".
 
-Thử nhanh: mở `/kiosk`, nhập `B-01` rồi `246810`; ở cửa sổ khác đăng nhập `staff1`, nhập CCCD `079200000123`, bấm cho vào; kiosk chuyển sang "Mời bạn vào kho".
+Thử nhanh: đăng nhập `staff1`, tìm `B-01` (hoặc `079300000456`), chọn người, gõ đúng số CCCD, bấm "Xác nhận đúng người, cho vào"; người đó hiện trong "Đang ở trong kho", bấm "Xác nhận ra" khi họ về.
 
-**Cấu hình quan trọng khi triển khai thật** (`appsettings.json`): `Jwt:SigningKey` (chuỗi bí mật dài), `Kiosk:Devices` (mỗi kiosk một khóa riêng), `Cors:Origins` (địa chỉ frontend), `Access` (số lần nhập sai, thời gian khóa, thời gian chờ).
+**Cấu hình quan trọng khi triển khai thật** (`appsettings.json`): `Jwt:SigningKey` (chuỗi bí mật dài), `Cors:Origins` (địa chỉ frontend).
 
 ## 4. Đã có và chưa có
 
-Đã có: đăng ký/đăng nhập theo vai trò, xem cơ sở và loại kho, đặt kho, nhân viên xác nhận cọc và bàn giao (tạo hợp đồng), PIN, người được ủy quyền, toàn bộ luồng ra vào và lịch sử.
+Đã có: đăng ký/đăng nhập theo vai trò, xem cơ sở và loại kho, đặt kho, nhân viên xác nhận cọc và bàn giao (tạo hợp đồng), người được ủy quyền, toàn bộ luồng ra vào do nhân viên xác thực và lịch sử.
 
 Chưa làm (bảng đã có trong SQL, cần thêm entity vào `SelfStorageDbContext` và controller):
 
