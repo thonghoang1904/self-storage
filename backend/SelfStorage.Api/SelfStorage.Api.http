@@ -1,0 +1,8 @@
+@api = http://localhost:5080
+
+### Kiosk: nhập mã kho + PIN
+POST {{api}}/api/kiosk/pin
+X-Kiosk-Key: dev-kiosk-key-q7
+Content-Type: application/json
+
+{ "unitCode": "B-01", "pin": "246810" }
