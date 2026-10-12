@@ -126,7 +126,7 @@ export interface AccessRecord {
 }
 
 export const DenyReasons: Record<string, string> = {
-  IdentityMismatch: 'Giấy tờ không khớp',
+  IdentityMismatch: 'CCCD không khớp',
   NotAuthorized: 'Không có quyền vào kho',
   ContractEnded: 'Hợp đồng đã kết thúc',
   OverdueLocked: 'Quá hạn thanh toán',

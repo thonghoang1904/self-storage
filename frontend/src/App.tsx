@@ -56,7 +56,14 @@ function Layout() {
 function Home() {
   const { user, loading } = useAuth()
   if (loading) return null
-  if (user) return <Navigate to={homeFor(user.role)} replace />
+  if (user && homeFor(user.role) !== '/') return <Navigate to={homeFor(user.role)} replace />
+  if (user)
+    return (
+      <div className="page">
+        <h2>Xin chào {user.fullName}</h2>
+        <p className="muted">Vai trò "{user.role}" chưa có màn hình làm việc trên trang này.</p>
+      </div>
+    )
   return (
     <div className="page">
       <h2>Kho tự phục vụ</h2>

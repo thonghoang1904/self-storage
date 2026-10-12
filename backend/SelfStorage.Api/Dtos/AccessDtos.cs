@@ -28,16 +28,14 @@ public record GrantEntryRequest(
     [Required] int ContractId,
     // Null = the contract's customer came in person.
     int? AuthorizedPersonId,
-    [Required] string VerificationMethod,
-    // Number read off the visitor's ID card. Required for CitizenID and compared with the stored one.
-    [StringLength(25)] string? DocumentNumber,
+    // CCCD number read off the visitor's card, compared with the one on file.
+    [Required, StringLength(25)] string CitizenId,
     [StringLength(255)] string? Purpose,
     [StringLength(500)] string? Notes);
 
 public record DenyEntryRequest(
     [Required] int ContractId,
     int? AuthorizedPersonId,
-    [Required] string VerificationMethod,
     [Required] string Reason,
     [StringLength(500)] string? Notes);
 

@@ -22,6 +22,9 @@ public static class DevSeeder
 
         if (await db.Facilities.AnyAsync()) return;
 
+        // All or nothing: a half-seeded database would never be seeded again.
+        await using var tx = await db.Database.BeginTransactionAsync();
+
         var roles = await db.Roles.ToDictionaryAsync(r => r.RoleName);
         var unitTypes = await db.UnitTypes.OrderBy(t => t.BaseMonthlyRate).ToListAsync();
 
@@ -102,6 +105,7 @@ public static class DevSeeder
         });
         db.Contracts.Add(contract);
         await db.SaveChangesAsync();
+        await tx.CommitAsync();
 
         log.LogInformation(
             "Seeded demo data. Accounts (password {Password}): admin, manager1, staff1, customer1. " +

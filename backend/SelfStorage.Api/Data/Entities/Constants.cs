@@ -56,7 +56,8 @@ public static class DenyReasons
     ];
 }
 
+// Entry is verified by CCCD only.
 public static class VerificationMethods
 {
-    public static readonly string[] All = ["CitizenID", "Passport", "DriverLicense"];
+    public const string CitizenId = "CitizenID";
 }

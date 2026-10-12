@@ -66,7 +66,6 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
     public async Task<AccessRecordDto> GrantEntryAsync(int staffId, int facilityId, GrantEntryRequest req, CancellationToken ct)
     {
         await EnsureAssignedAsync(staffId, facilityId, ct);
-        EnsureMethod(req.VerificationMethod);
         var contract = await LoadContractAsync(facilityId, req.ContractId, ct);
 
         var issues = FindIssues(contract);
@@ -75,14 +74,13 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
 
         var expectedCitizenId = ResolveVisitor(contract, req.AuthorizedPersonId);
 
-        // Staff types the number printed on the visitor's ID card; it must match what we have on file.
-        if (req.VerificationMethod == "CitizenID")
-        {
-            if (string.IsNullOrWhiteSpace(req.DocumentNumber))
-                throw AppException.BadRequest("Vui lòng nhập số CCCD trên giấy tờ của khách");
-            if (!string.Equals(req.DocumentNumber.Trim(), expectedCitizenId, StringComparison.OrdinalIgnoreCase))
-                throw AppException.BadRequest("Số CCCD không khớp với hồ sơ. Hãy kiểm tra lại hoặc từ chối với lý do IdentityMismatch.");
-        }
+        // Staff types the number printed on the visitor's CCCD; it must match what we have on file.
+        if (string.IsNullOrWhiteSpace(expectedCitizenId))
+            throw AppException.BadRequest("Người này chưa có số CCCD trong hồ sơ, không thể xác thực. Hãy từ chối với lý do IdentityMismatch.");
+        if (string.IsNullOrWhiteSpace(req.CitizenId))
+            throw AppException.BadRequest("Vui lòng nhập số CCCD trên thẻ của khách");
+        if (!string.Equals(req.CitizenId.Trim(), expectedCitizenId.Trim(), StringComparison.OrdinalIgnoreCase))
+            throw AppException.BadRequest("Số CCCD không khớp với hồ sơ. Hãy kiểm tra lại hoặc từ chối với lý do IdentityMismatch.");
 
         var alreadyInside = await db.AccessRecords.AnyAsync(r => r.ContractId == contract.ContractId
             && r.AuthorizedPersonId == req.AuthorizedPersonId
@@ -97,7 +95,7 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
             UnitId = contract.UnitId,
             AuthorizedPersonId = req.AuthorizedPersonId,
             VerifiedByStaffId = staffId,
-            VerificationMethod = req.VerificationMethod,
+            VerificationMethod = VerificationMethods.CitizenId,
             Result = AccessResult.Granted,
             Purpose = req.Purpose,
             EntryTime = Now,
@@ -111,7 +109,6 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
     public async Task<AccessRecordDto> DenyEntryAsync(int staffId, int facilityId, DenyEntryRequest req, CancellationToken ct)
     {
         await EnsureAssignedAsync(staffId, facilityId, ct);
-        EnsureMethod(req.VerificationMethod);
         if (!DenyReasons.All.Contains(req.Reason))
             throw AppException.BadRequest("Lý do không hợp lệ: " + string.Join(", ", DenyReasons.All));
 
@@ -125,7 +122,7 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
             UnitId = contract.UnitId,
             AuthorizedPersonId = req.AuthorizedPersonId,
             VerifiedByStaffId = staffId,
-            VerificationMethod = req.VerificationMethod,
+            VerificationMethod = VerificationMethods.CitizenId,
             Result = AccessResult.Denied,
             DenyReason = req.Reason,
             EntryTime = Now,   // time of the attempt
@@ -228,12 +225,6 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
                          .FirstOrDefault(p => p.AuthorizedPersonId == authorizedPersonId && p.Status == "Active")
                      ?? throw AppException.BadRequest("Người này không có trong danh sách được ủy quyền của hợp đồng");
         return person.CitizenId;
-    }
-
-    private static void EnsureMethod(string method)
-    {
-        if (!VerificationMethods.All.Contains(method))
-            throw AppException.BadRequest("Loại giấy tờ không hợp lệ: " + string.Join(", ", VerificationMethods.All));
     }
 
     private Task<AccessRecordDto> GetRecordDtoAsync(long id, CancellationToken ct) =>

@@ -8,7 +8,7 @@ Khung dự án gồm:
 | `backend/` | ASP.NET Core Web API (.NET 10), EF Core cho SQL Server, Swagger, JWT |
 | `frontend/` | React + TypeScript (Vite): trang khách hàng và màn hình nhân viên trực cổng |
 
-## 1. Luồng ra vào kho (chỉ nhân viên xác thực, không dùng PIN)
+## 1. Luồng ra vào kho (chỉ xác thực bằng CCCD, không dùng PIN)
 
 Theo sơ đồ trạng thái "Unit Access Visit": `PendingVerification → InsideFacility → Exited`, hoặc `PendingVerification → Denied`.
 
@@ -31,7 +31,7 @@ Quy tắc chính:
 
 - Không có PIN hay thiết bị kiosk. Mọi lượt vào đều do nhân viên xác nhận và ghi tên nhân viên vào `VerifiedByStaffID`.
 - Người được ủy quyền (bảng `AuthorizedPersons`) vào thay chủ hợp đồng bằng **CCCD của chính họ**. Khách tự thêm/thu hồi người được ủy quyền trong trang "Kho của tôi".
-- Với CCCD, nhân viên phải gõ số trên thẻ và hệ thống so khớp với hồ sơ, tránh việc bấm "Cho vào" mà không kiểm tra. Hộ chiếu/bằng lái thì nhân viên tự đối chiếu.
+- Chỉ chấp nhận CCCD (`VerificationMethod` luôn là `CitizenID`). Nhân viên phải gõ số trên thẻ và hệ thống so khớp với hồ sơ, tránh việc bấm "Cho vào" mà không kiểm tra. Người chưa có CCCD trong hồ sơ thì không thể được cho vào.
 - Hệ thống không cho bấm "Cho vào" khi hợp đồng đã kết thúc/chưa bắt đầu, quá hạn thanh toán, kho bị khóa hoặc đang bảo trì; mã cảnh báo trùng với `DenyReason` để nhân viên ghi nhận từ chối luôn.
 - Một người đang ở trong kho thì không thể được cho vào lần nữa trước khi xác nhận ra.
 - Nhân viên chỉ thao tác ở cơ sở mình được phân công (`FacilityStaffAssignments`).
@@ -52,10 +52,10 @@ Quy tắc chính:
 
 Cần: .NET SDK 10, Node.js 20+, SQL Server (Express/Developer đều được).
 
-**Database.** Mở SSMS, chạy `database/01_schema.sql`. Nếu dùng `sqlcmd` thì thêm `-I` (bật QUOTED_IDENTIFIER, cần cho filtered index):
+**Database.** Mở SSMS, chạy `database/01_schema.sql`. Nếu dùng `sqlcmd` thì thêm `-I` (bật QUOTED_IDENTIFIER, cần cho filtered index) và `-f 65001` (đọc file dạng UTF-8; thiếu tham số này tiếng Việt trong dữ liệu mẫu sẽ bị lỗi font):
 
 ```
-sqlcmd -S localhost -E -C -I -i database/01_schema.sql
+sqlcmd -S localhost -E -C -I -f 65001 -i database/01_schema.sql
 ```
 
 **Backend.** Sửa chuỗi kết nối `ConnectionStrings:SelfStorageDB` trong `backend/SelfStorage.Api/appsettings.json` nếu cần (mặc định: `localhost`, Windows Authentication).

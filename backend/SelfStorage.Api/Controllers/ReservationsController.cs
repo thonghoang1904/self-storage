@@ -26,9 +26,14 @@ public class ReservationsController(SelfStorageDbContext db, AccessService acces
 
         var unitType = await db.UnitTypes.FindAsync([req.UnitTypeId], ct)
                        ?? throw AppException.NotFound("Không tìm thấy loại kho");
+        var now = Now;
         var available = await db.StorageUnits.CountAsync(u => u.FacilityId == req.FacilityId
             && u.UnitTypeId == req.UnitTypeId && u.Status == UnitStatus.Available, ct);
-        if (available == 0)
+        // Open reservations already hold a unit each, so they count against what is still bookable.
+        var held = await db.Reservations.CountAsync(r => r.FacilityId == req.FacilityId && r.UnitTypeId == req.UnitTypeId
+            && (r.Status == ReservationStatus.Confirmed
+                || (r.Status == ReservationStatus.PendingDeposit && r.DepositDeadline > now)), ct);
+        if (available - held <= 0)
             throw AppException.Conflict("Cơ sở này đã hết kho trống thuộc loại đã chọn");
 
         // TODO: read DepositPercent / grace hours from RentalPolicies. Default policy: deposit = 1 month (100%), 24h to pay.
@@ -77,6 +82,12 @@ public class ReservationsController(SelfStorageDbContext db, AccessService acces
         await access.EnsureAssignedAsync(User.GetUserId(), r.FacilityId, ct);
         if (r.Status != ReservationStatus.PendingDeposit)
             throw AppException.Conflict("Đơn không ở trạng thái chờ đặt cọc");
+        if (r.DepositDeadline <= Now)
+        {
+            r.Status = ReservationStatus.Expired;
+            await db.SaveChangesAsync(ct);
+            throw AppException.Conflict("Đơn đã quá hạn đặt cọc, khách cần đặt lại");
+        }
         r.Status = ReservationStatus.Confirmed;
         await db.SaveChangesAsync(ct);
         return await Project(db.Reservations.Where(x => x.ReservationId == id)).SingleAsync(ct);

@@ -156,8 +156,7 @@ function VisitCard({ facilityId, visit: v, query, onRecorded }: {
   // Searched by someone's CCCD or phone: preselect that person.
   const [personIdx, setPersonIdx] = useState(() =>
     Math.max(0, people.findIndex((p) => p.citizenId === query || p.phoneNumber === query)))
-  const [method, setMethod] = useState('CitizenID')
-  const [documentNumber, setDocumentNumber] = useState('')
+  const [citizenId, setCitizenId] = useState('')
   const [purpose, setPurpose] = useState('')
   const [denyReason, setDenyReason] = useState(v.issues[0]?.code ?? 'IdentityMismatch')
   const [error, setError] = useState('')
@@ -182,8 +181,7 @@ function VisitCard({ facilityId, visit: v, query, onRecorded }: {
         body: {
           contractId: v.contractId,
           authorizedPersonId: person.authorizedPersonId,
-          verificationMethod: method,
-          documentNumber: documentNumber || null,
+          citizenId: citizenId.trim(),
           purpose: purpose || null,
         },
       }),
@@ -195,7 +193,6 @@ function VisitCard({ facilityId, visit: v, query, onRecorded }: {
         body: {
           contractId: v.contractId,
           authorizedPersonId: person.authorizedPersonId,
-          verificationMethod: method,
           reason: denyReason,
         },
       }),
@@ -220,23 +217,16 @@ function VisitCard({ facilityId, visit: v, query, onRecorded }: {
         <div><span className="muted">SĐT</span><b>{person.phoneNumber ?? '—'}</b></div>
       </div>
 
-      <div className="row">
-        <select value={method} onChange={(e) => setMethod(e.target.value)}>
-          <option value="CitizenID">CCCD</option>
-          <option value="Passport">Hộ chiếu</option>
-          <option value="DriverLicense">Bằng lái</option>
-        </select>
-        <input
-          className="grow"
-          placeholder={method === 'CitizenID' ? 'Nhập số CCCD trên thẻ' : 'Số giấy tờ (tùy chọn)'}
-          value={documentNumber}
-          onChange={(e) => setDocumentNumber(e.target.value)}
-        />
-      </div>
+      <input
+        placeholder="Nhập số CCCD trên thẻ của khách"
+        inputMode="numeric"
+        value={citizenId}
+        onChange={(e) => setCitizenId(e.target.value)}
+      />
       <input placeholder="Mục đích (gửi đồ, lấy đồ...)" value={purpose} onChange={(e) => setPurpose(e.target.value)} />
       {error && <p className="error">{error}</p>}
 
-      <button className="btn primary" disabled={busy || !v.canEnter} onClick={grant}>Xác nhận đúng người, cho vào</button>
+      <button className="btn primary" disabled={busy || !v.canEnter || !citizenId.trim()} onClick={grant}>Xác nhận đúng người, cho vào</button>
       <div className="row">
         <select className="grow" value={denyReason} onChange={(e) => setDenyReason(e.target.value)}>
           {Object.entries(DenyReasons).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
