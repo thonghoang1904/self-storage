@@ -192,7 +192,7 @@ npm install
 npm run dev
 ```
 
-Mở http://localhost:5173. Khách đăng nhập/đăng ký; nhân viên đăng nhập sẽ vào thẳng "Cổng ra vào". Backend phải đang chạy ở http://localhost:5080 (đổi trong `frontend/.env.development` nếu khác).
+Mở http://localhost:5173. Khách đăng nhập/đăng ký; nhân viên đăng nhập sẽ vào thẳng "Cổng ra vào". Backend phải đang chạy ở http://localhost:5080. Khi chạy `npm run dev`, frontend gọi `/api` và Vite chuyển tiếp sang backend, nên không gặp lỗi CORS. Nếu backend chạy ở cổng khác, tạo file `frontend/.env.development.local` với dòng `BACKEND_URL=http://localhost:<cổng>`.
 
 Chỉ muốn xem giao diện mà chưa có backend: `npm run dev:demo`. Lệnh này dùng backend giả lập trong trình duyệt (`src/mock/server.ts`), dữ liệu lưu trong trình duyệt, có thanh vàng "Bản demo" ở đầu trang.
 
