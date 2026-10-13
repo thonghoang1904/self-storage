@@ -84,7 +84,9 @@ npm install
 npm run dev
 ```
 
-Mở http://localhost:5173. Khách đăng nhập/đăng ký; nhân viên đăng nhập sẽ vào thẳng "Cổng ra vào".
+Mở http://localhost:5173. Khách đăng nhập/đăng ký; nhân viên đăng nhập sẽ vào thẳng "Cổng ra vào". Backend phải đang chạy ở http://localhost:5080 (đổi trong `frontend/.env.development` nếu khác).
+
+Chỉ muốn xem giao diện mà chưa có backend: `npm run dev:demo`. Lệnh này dùng backend giả lập trong trình duyệt (`src/mock/server.ts`), dữ liệu lưu trong trình duyệt, có thanh vàng "Bản demo" ở đầu trang.
 
 Thử nhanh: đăng nhập `staff1`, tìm `B-01` (hoặc `079300000456`), chọn người, gõ đúng số CCCD, bấm "Xác nhận đúng người, cho vào"; người đó hiện trong "Đang ở trong kho", bấm "Xác nhận ra" khi họ về.
 
