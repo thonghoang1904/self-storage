@@ -96,14 +96,14 @@ Thư mục `scripts/` có sẵn các file `.bat`. Cần SQL Server chạy ở `l
 
 | File | Việc nó làm |
 |---|---|
-| `kiem-tra-may.bat` | Chỉ kiểm tra máy đã có .NET, Node, SQL Server chưa; kết quả ghi vào `kiem-tra-may.log` |
-| `1-tao-database.bat` | Tạo database `SelfStorageDB` từ `database/01_schema.sql` |
-| `2-chay-backend.bat` | Chạy backend ở http://localhost:5080 (lần đầu tự tạo tài khoản demo) |
-| `3-chay-frontend.bat` | Cài thư viện lần đầu, kiểm tra TypeScript, chạy frontend ở http://localhost:5173 |
-| `CHAY-TAT-CA.bat` | Mở backend và frontend trong 2 cửa sổ rồi mở trang web |
-| `CHAY-LAI-DATABASE.bat` | Xóa và tạo lại toàn bộ bảng, khởi động lại backend để nạp lại dữ liệu demo |
+| `check-machine.bat` | Chỉ kiểm tra máy đã có .NET, Node, SQL Server chưa; kết quả ghi vào `check-machine.log` |
+| `1-create-database.bat` | Tạo database `SelfStorageDB` từ `database/01_schema.sql` |
+| `2-run-backend.bat` | Chạy backend ở http://localhost:5080 (lần đầu tự tạo tài khoản demo) |
+| `3-run-frontend.bat` | Cài thư viện lần đầu, kiểm tra TypeScript, chạy frontend ở http://localhost:5173 |
+| `RUN-ALL.bat` | Mở backend và frontend trong 2 cửa sổ rồi mở trang web |
+| `RESET-DATABASE.bat` | Xóa và tạo lại toàn bộ bảng, khởi động lại backend để nạp lại dữ liệu demo |
 
-Lần đầu: vào `scripts/`, chạy `1-tao-database.bat` rồi `CHAY-TAT-CA.bat`. Những lần sau chỉ cần `CHAY-TAT-CA.bat`. Giữ hai cửa sổ backend và frontend mở trong lúc dùng web. Log của mỗi bước nằm cạnh file `.bat` (`*.log`, không đưa lên git).
+Lần đầu: vào `scripts/`, chạy `1-create-database.bat` rồi `RUN-ALL.bat`. Những lần sau chỉ cần `RUN-ALL.bat`. Giữ hai cửa sổ backend và frontend mở trong lúc dùng web. Log của mỗi bước nằm cạnh file `.bat` (`*.log`, không đưa lên git).
 
 **Cấu hình quan trọng khi triển khai thật** (`appsettings.json`): `Jwt:SigningKey` (chuỗi bí mật dài), `Cors:Origins` (địa chỉ frontend).
 

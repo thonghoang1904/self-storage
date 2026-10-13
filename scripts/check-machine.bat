@@ -1,7 +1,7 @@
 @echo off
-rem Kiem tra cong cu can de chay SafeKeep (backend .NET + SQL Server + frontend React)
+rem Check the tools needed to run SafeKeep (.NET backend + SQL Server + React frontend)
 chcp 65001 >nul
-set LOG=%~dp0kiem-tra-may.log
+set LOG=%~dp0check-machine.log
 echo ==== %date% %time% ==== > "%LOG%"
 echo [dotnet] >> "%LOG%"
 where dotnet >> "%LOG%" 2>&1
@@ -24,6 +24,6 @@ sqlcmd -S localhost -E -C -Q "SELECT @@SERVERNAME, @@VERSION; SELECT name FROM s
 sqlcmd -S .\SQLEXPRESS -E -C -Q "SELECT @@SERVERNAME; SELECT name FROM sys.databases" >> "%LOG%" 2>&1
 echo [backend config] >> "%LOG%"
 type "%~dp0..\backend\SelfStorage.Api\appsettings.json" >> "%LOG%" 2>&1
-echo ==== XONG ==== >> "%LOG%"
-echo Da kiem tra xong, ket qua o file kiem-tra-may.log. Cua so nay tu dong sau 5 giay.
+echo ==== DONE ==== >> "%LOG%"
+echo Check finished, see check-machine.log. This window closes in 5 seconds.
 timeout /t 5 >nul
