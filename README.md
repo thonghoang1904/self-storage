@@ -92,7 +92,7 @@ Thử nhanh: đăng nhập `staff1`, tìm `B-01` (hoặc `079300000456`), chọn
 
 ### Chạy nhanh trên Windows (bấm đúp)
 
-Ở thư mục gốc của dự án có sẵn các file `.bat`. Cần SQL Server chạy ở `localhost` (Windows Authentication), .NET SDK 10 trở lên (.NET 11 cũng chạy được) và Node.js 20 trở lên.
+Thư mục `scripts/` có sẵn các file `.bat`. Cần SQL Server chạy ở `localhost` (Windows Authentication), .NET SDK 10 trở lên (.NET 11 cũng chạy được) và Node.js 20 trở lên.
 
 | File | Việc nó làm |
 |---|---|
@@ -103,7 +103,7 @@ Thử nhanh: đăng nhập `staff1`, tìm `B-01` (hoặc `079300000456`), chọn
 | `CHAY-TAT-CA.bat` | Mở backend và frontend trong 2 cửa sổ rồi mở trang web |
 | `CHAY-LAI-DATABASE.bat` | Xóa và tạo lại toàn bộ bảng, khởi động lại backend để nạp lại dữ liệu demo |
 
-Lần đầu: chạy `1-tao-database.bat` rồi `CHAY-TAT-CA.bat`. Những lần sau chỉ cần `CHAY-TAT-CA.bat`. Giữ hai cửa sổ backend và frontend mở trong lúc dùng web. Log của mỗi bước nằm cạnh file `.bat` (`*.log`, không đưa lên git).
+Lần đầu: vào `scripts/`, chạy `1-tao-database.bat` rồi `CHAY-TAT-CA.bat`. Những lần sau chỉ cần `CHAY-TAT-CA.bat`. Giữ hai cửa sổ backend và frontend mở trong lúc dùng web. Log của mỗi bước nằm cạnh file `.bat` (`*.log`, không đưa lên git).
 
 **Cấu hình quan trọng khi triển khai thật** (`appsettings.json`): `Jwt:SigningKey` (chuỗi bí mật dài), `Cors:Origins` (địa chỉ frontend).
 

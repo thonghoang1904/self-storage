@@ -1,8 +1,8 @@
 @echo off
 rem Buoc 3: chay frontend React o http://localhost:5173 (can Node.js 20+)
 chcp 65001 >nul
-if not exist "%~dp0backend\SelfStorage.Api\SelfStorage.Api.csproj" (echo Hay chay file nay trong thu muc goc cua du an (noi co cac thu muc backend, database, frontend). & pause & exit /b 1)
-cd /d "%~dp0frontend"
+if not exist "%~dp0..\backend\SelfStorage.Api\SelfStorage.Api.csproj" (echo Hay chay file nay trong thu muc scripts cua du an. & pause & exit /b 1)
+cd /d "%~dp0..\frontend"
 where node >nul 2>&1 || (echo Chua cai Node.js. Cai file node-v24.21.0-x64.msi trong Downloads roi chay lai file nay. & pause & exit /b 1)
 if not exist node_modules (
   echo Dang cai thu vien lan dau, mat 1-2 phut...

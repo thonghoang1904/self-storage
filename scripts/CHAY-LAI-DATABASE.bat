@@ -1,7 +1,7 @@
 @echo off
 rem Tao lai database SelfStorageDB tu dau, roi khoi dong lai backend de nap du lieu demo
 chcp 65001 >nul
-cd /d "%~dp0"
+cd /d "%~dp0.."
 set LOG=%~dp0chay-lai-database.log
 echo ==== %date% %time% ==== > "%LOG%"
 echo [1] Tat backend dang chay (neu co)...

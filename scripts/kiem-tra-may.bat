@@ -23,7 +23,7 @@ echo [sqlcmd test] >> "%LOG%"
 sqlcmd -S localhost -E -C -Q "SELECT @@SERVERNAME, @@VERSION; SELECT name FROM sys.databases" >> "%LOG%" 2>&1
 sqlcmd -S .\SQLEXPRESS -E -C -Q "SELECT @@SERVERNAME; SELECT name FROM sys.databases" >> "%LOG%" 2>&1
 echo [backend config] >> "%LOG%"
-type "%~dp0backend\SelfStorage.Api\appsettings.json" >> "%LOG%" 2>&1
+type "%~dp0..\backend\SelfStorage.Api\appsettings.json" >> "%LOG%" 2>&1
 echo ==== XONG ==== >> "%LOG%"
 echo Da kiem tra xong, ket qua o file kiem-tra-may.log. Cua so nay tu dong sau 5 giay.
 timeout /t 5 >nul
