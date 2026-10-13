@@ -38,19 +38,6 @@ export interface Facility {
   status: string
 }
 
-export interface UnitType {
-  unitTypeId: number
-  typeName: string
-  lengthMeters: number
-  widthMeters: number
-  heightMeters: number
-  volumeCubicMeters: number
-  hasClimateControl: boolean
-  baseDailyRate: number
-  baseMonthlyRate: number
-  description: string | null
-}
-
 export interface Availability {
   unitTypeId: number
   typeName: string
@@ -137,30 +124,6 @@ export interface AccessRecord {
   exitTime: string | null
   verifiedBy: string
 }
-
-/** Vietnamese labels and badge tone for the status codes the API returns. */
-export const StatusLabels: Record<string, { label: string; tone: 'ok' | 'warn' | 'bad' | 'info' | 'muted' }> = {
-  // contracts
-  Active: { label: 'Đang sử dụng', tone: 'ok' },
-  Renewed: { label: 'Đã gia hạn', tone: 'ok' },
-  Terminated: { label: 'Đã chấm dứt', tone: 'muted' },
-  Overdue: { label: 'Quá hạn', tone: 'bad' },
-  Liquidated: { label: 'Đã thanh lý', tone: 'muted' },
-  // reservations
-  PendingDeposit: { label: 'Chờ đặt cọc', tone: 'warn' },
-  Confirmed: { label: 'Đã nhận cọc', tone: 'info' },
-  CheckedIn: { label: 'Đã bàn giao', tone: 'ok' },
-  Cancelled: { label: 'Đã hủy', tone: 'muted' },
-  Expired: { label: 'Hết hạn cọc', tone: 'muted' },
-  // units
-  Available: { label: 'Còn trống', tone: 'ok' },
-  Reserved: { label: 'Đã giữ chỗ', tone: 'info' },
-  Rented: { label: 'Đang cho thuê', tone: 'info' },
-  UnderMaintenance: { label: 'Đang bảo trì', tone: 'warn' },
-  OverdueLocked: { label: 'Khóa do quá hạn', tone: 'bad' },
-}
-
-export const statusOf = (code: string) => StatusLabels[code] ?? { label: code, tone: 'muted' as const }
 
 export const DenyReasons: Record<string, string> = {
   IdentityMismatch: 'CCCD không khớp',

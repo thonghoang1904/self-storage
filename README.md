@@ -84,26 +84,9 @@ npm install
 npm run dev
 ```
 
-Mở http://localhost:5173. Khách đăng nhập/đăng ký; nhân viên đăng nhập sẽ vào thẳng "Cổng ra vào". Backend phải đang chạy ở http://localhost:5080 (đổi trong `frontend/.env.development` nếu khác).
-
-Chỉ muốn xem giao diện mà chưa có backend: `npm run dev:demo`. Lệnh này dùng backend giả lập trong trình duyệt (`src/mock/server.ts`), dữ liệu lưu trong trình duyệt, có thanh vàng "Bản demo" ở đầu trang.
+Mở http://localhost:5173. Khách đăng nhập/đăng ký; nhân viên đăng nhập sẽ vào thẳng "Cổng ra vào".
 
 Thử nhanh: đăng nhập `staff1`, tìm `B-01` (hoặc `079300000456`), chọn người, gõ đúng số CCCD, bấm "Xác nhận đúng người, cho vào"; người đó hiện trong "Đang ở trong kho", bấm "Xác nhận ra" khi họ về.
-
-### Chạy nhanh trên Windows (bấm đúp)
-
-Thư mục `scripts/` có sẵn các file `.bat`. Cần SQL Server chạy ở `localhost` (Windows Authentication), .NET SDK 10 trở lên (.NET 11 cũng chạy được) và Node.js 20 trở lên.
-
-| File | Việc nó làm |
-|---|---|
-| `check-machine.bat` | Chỉ kiểm tra máy đã có .NET, Node, SQL Server chưa; kết quả ghi vào `check-machine.log` |
-| `1-create-database.bat` | Tạo database `SelfStorageDB` từ `database/01_schema.sql` |
-| `2-run-backend.bat` | Chạy backend ở http://localhost:5080 (lần đầu tự tạo tài khoản demo) |
-| `3-run-frontend.bat` | Cài thư viện lần đầu, kiểm tra TypeScript, chạy frontend ở http://localhost:5173 |
-| `RUN-ALL.bat` | Mở backend và frontend trong 2 cửa sổ rồi mở trang web |
-| `RESET-DATABASE.bat` | Xóa và tạo lại toàn bộ bảng, khởi động lại backend để nạp lại dữ liệu demo |
-
-Lần đầu: vào `scripts/`, chạy `1-create-database.bat` rồi `RUN-ALL.bat`. Những lần sau chỉ cần `RUN-ALL.bat`. Giữ hai cửa sổ backend và frontend mở trong lúc dùng web. Log của mỗi bước nằm cạnh file `.bat` (`*.log`, không đưa lên git).
 
 **Cấu hình quan trọng khi triển khai thật** (`appsettings.json`): `Jwt:SigningKey` (chuỗi bí mật dài), `Cors:Origins` (địa chỉ frontend).
 
