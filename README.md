@@ -45,8 +45,13 @@ Quy tắc chính:
 | Danh mục | `GET /api/facilities`, `GET /api/unit-types`, `GET /api/facilities/{id}/availability`, `GET /api/facilities/{id}/units` | Công khai |
 | Đặt kho | `POST /api/reservations`, `GET /api/reservations/my` | Khách |
 | Nhận kho | `GET /api/facilities/{id}/reservations`, `POST /api/reservations/{id}/confirm-deposit`, `POST /api/reservations/{id}/check-in` | Nhân viên, quản lý cơ sở |
-| Kho của tôi | `GET /api/contracts/my`, `GET/POST/DELETE /api/contracts/{id}/authorized-persons`, `GET /api/contracts/{id}/access-history` | Khách |
+| Hợp đồng | `GET /api/contracts/my`, `GET /api/contracts/{id}`, `POST /api/contracts/{id}/renewals`, `GET /api/contracts/{id}/renewals`, `GET/POST/DELETE /api/contracts/{id}/authorized-persons`, `GET /api/contracts/{id}/access-history` | Khách |
+| Gia hạn | `GET /api/contracts/facilities/{facilityId}/renewals`, `POST /api/contracts/renewals/{renewalId}/confirm-payment`, `POST /api/contracts/renewals/{renewalId}/reject` | Nhân viên, quản lý cơ sở |
+| Trả kho/quá hạn | `POST /api/contracts/{id}/return`, `GET /api/contracts/facilities/{facilityId}/overdue` | Nhân viên, quản lý cơ sở |
+| Hỗ trợ | `POST /api/support-requests`, `GET /api/support-requests/my`, `GET /api/support-requests/{requestId}/updates`, `GET /api/support-requests/facilities/{facilityId}`, `PUT /api/support-requests/{requestId}` | Khách; nhân viên, quản lý cơ sở |
 | Cổng | `GET /api/gate/my-facilities`, `GET /api/gate/facilities/{id}/lookup?q=`, `POST /api/gate/facilities/{id}/entries`, `POST /api/gate/facilities/{id}/denials`, `GET /api/gate/facilities/{id}/inside`, `GET /api/gate/facilities/{id}/today`, `POST /api/gate/access-records/{id}/exit` | Nhân viên, quản lý cơ sở |
+
+Quy tắc hợp đồng: cọc ban đầu bằng một tháng tiền thuê; khách gửi yêu cầu gia hạn trong 7 ngày trước ngày hết hạn, nhân viên xác nhận đã thu phí để kích hoạt; lịch trả kho từ 20:00 ngày hết hạn. Nếu chưa trả sau 24 giờ, dịch vụ nền khóa kho và tính phí mỗi ngày theo `MonthlyRentFee / 30`, cấn trừ vào cọc; chi tiết hợp đồng trả về số dư cọc và khoản phí còn phải thu. Bàn giao/trả kho và yêu cầu hỗ trợ được ghi nhận để nhân viên xử lý tại cơ sở được phân công.
 
 ## 3. Chạy thử trên máy
 
@@ -55,17 +60,27 @@ Cần: .NET SDK 10, Node.js 20+, SQL Server (Express/Developer đều được).
 **Database.** Mở SSMS, chạy `database/01_schema.sql`. Nếu dùng `sqlcmd` thì thêm `-I` (bật QUOTED_IDENTIFIER, cần cho filtered index) và `-f 65001` (đọc file dạng UTF-8; thiếu tham số này tiếng Việt trong dữ liệu mẫu sẽ bị lỗi font):
 
 ```
-sqlcmd -S localhost -E -C -I -f 65001 -i database/01_schema.sql
+sqlcmd -S .\SQLEXPRESS -U sa -C -I -f 65001 -i database/01_schema.sql
 ```
 
-**Backend.** Sửa chuỗi kết nối `ConnectionStrings:SelfStorageDB` trong `backend/SelfStorage.Api/appsettings.json` nếu cần (mặc định: `localhost`, Windows Authentication).
+`sqlcmd` sẽ hỏi mật khẩu. Nếu dùng SQL Server instance khác, thay `.\SQLEXPRESS` bằng tên server/instance tương ứng.
+
+**Backend.** Chuỗi kết nối mặc định trong `appsettings.json` dùng Windows Authentication. Để dùng SQL Authentication cho môi trường Development, lưu chuỗi kết nối bằng User Secrets (không ghi mật khẩu vào file trong repo):
+
+```
+dotnet user-secrets set "ConnectionStrings:SelfStorageDB" "Server=.\SQLEXPRESS;Database=SelfStorageDB;User Id=sa;Password=<mat-khau-sa>;TrustServerCertificate=True" --project backend\SelfStorage.Api\SelfStorage.Api.csproj
+```
+
+Thay `<mat-khau-sa>` bằng mật khẩu của tài khoản `sa`. User Secrets đã được khởi tạo cho project; cấu hình này chỉ áp dụng trên máy hiện tại khi chạy Development.
 
 ```
 cd backend/SelfStorage.Api
 dotnet run
 ```
 
-Mở Swagger tại http://localhost:5080/swagger. Ở môi trường Development, nếu database chưa có cơ sở nào, backend tự tạo dữ liệu mẫu:
+Mở Swagger tại http://localhost:5080/swagger. Đăng nhập qua `POST /api/auth/login`, sao chép riêng giá trị `token` trong response, bấm **Authorize** và dán JWT nguyên bản (không thêm `Bearer `; Swagger tự thêm tiền tố này). Nếu dán cả tiền tố, request sẽ thành `Bearer Bearer ...` và bị trả về `401`.
+
+Ở môi trường Development, nếu database chưa có cơ sở nào, backend tự tạo dữ liệu mẫu:
 
 | Tài khoản | Mật khẩu | Vai trò |
 |---|---|---|
@@ -92,13 +107,12 @@ Thử nhanh: đăng nhập `staff1`, tìm `B-01` (hoặc `079300000456`), chọn
 
 ## 4. Đã có và chưa có
 
-Đã có: đăng ký/đăng nhập theo vai trò, xem cơ sở và loại kho, đặt kho, nhân viên xác nhận cọc và bàn giao (tạo hợp đồng), người được ủy quyền, toàn bộ luồng ra vào do nhân viên xác thực và lịch sử.
+Đã có: đăng ký/đăng nhập theo vai trò, xem cơ sở và loại kho, đặt kho, nhân viên xác nhận cọc và bàn giao (tạo hợp đồng), chi tiết hợp đồng, yêu cầu gia hạn và xác nhận thu phí, bàn giao trả kho, tự động khóa/tính phí quá hạn, yêu cầu hỗ trợ và theo dõi xử lý, người được ủy quyền, toàn bộ luồng ra vào do nhân viên xác thực và lịch sử.
 
-Chưa làm (bảng đã có trong SQL, cần thêm entity vào `SelfStorageDbContext` và controller):
+Chưa làm:
 
-- Hóa đơn, thanh toán VNPay/MoMo (`Invoices`, `InvoiceDetails`, `Payments`). Hiện nhân viên bấm "Đã nhận cọc" thay cho thanh toán.
-- Biên bản bàn giao/trả kho (`HandoverRecords`), gia hạn (`ContractRenewals`), xử lý quá hạn và tự khóa kho (`OverdueRecords`).
+- Cổng thanh toán và đối soát VNPay/MoMo (`Invoices`, `InvoiceDetails`, `Payments`). Hiện nhân viên xác nhận đã thu cọc/tiền gia hạn; phí quá hạn được tính và cấn trừ vào cọc, nhưng hoàn cọc/thu phần vượt cọc cần luồng thanh toán riêng.
 - Chính sách, phí, khuyến mãi (`RentalPolicies`, `FeeConfigurations`, `Promotions`). Hiện tiền cọc mặc định bằng 1 tháng.
-- Bảo trì, yêu cầu hỗ trợ (`MaintenanceRecords`, `SupportRequests`, `SupportUpdates`), nhật ký hoạt động (`ActivityLogs`).
+- Bảo trì (`MaintenanceRecords`), nhật ký hoạt động (`ActivityLogs`).
 - Màn hình cho quản lý vận hành, quản trị hệ thống, báo cáo doanh thu.
 - Giao diện chưa đối chiếu với file Figma (mình không mở được Figma từ môi trường này). Nếu bạn xuất ảnh các màn hình và gửi vào đây, mình sẽ chỉnh theo.

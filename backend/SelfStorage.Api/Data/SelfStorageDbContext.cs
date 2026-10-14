@@ -20,6 +20,11 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<AuthorizedPerson> AuthorizedPersons => Set<AuthorizedPerson>();
     public DbSet<AccessRecord> AccessRecords => Set<AccessRecord>();
+    public DbSet<HandoverRecord> HandoverRecords => Set<HandoverRecord>();
+    public DbSet<ContractRenewal> ContractRenewals => Set<ContractRenewal>();
+    public DbSet<OverdueRecord> OverdueRecords => Set<OverdueRecord>();
+    public DbSet<SupportRequest> SupportRequests => Set<SupportRequest>();
+    public DbSet<SupportUpdate> SupportUpdates => Set<SupportUpdate>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -110,6 +115,56 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
             e.HasOne(x => x.AuthorizedPerson).WithMany().HasForeignKey(x => x.AuthorizedPersonId);
             e.HasOne(x => x.VerifiedByStaff).WithMany().HasForeignKey(x => x.VerifiedByStaffId);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.ExitConfirmedByStaffId);
+        });
+
+        b.Entity<HandoverRecord>(e =>
+        {
+            e.ToTable("HandoverRecords");
+            e.HasKey(x => x.HandoverId);
+            e.Property(x => x.HandoverDateTime).HasDefaultValueSql("SYSDATETIME()");
+            e.HasOne(x => x.Contract).WithMany().HasForeignKey(x => x.ContractId);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.StaffId);
+        });
+
+        b.Entity<ContractRenewal>(e =>
+        {
+            e.ToTable("ContractRenewals");
+            e.HasKey(x => x.RenewalId);
+            e.Property(x => x.RequestedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.HasOne<Contract>().WithMany().HasForeignKey(x => x.ContractId);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.ApprovedByStaffId);
+        });
+
+        b.Entity<OverdueRecord>(e =>
+        {
+            e.ToTable("OverdueRecords");
+            e.HasKey(x => x.OverdueId);
+            e.Property(x => x.AccumulatedLateFee).HasDefaultValue(0m);
+            e.Property(x => x.ActionTaken).HasDefaultValue("NoticeSent");
+            e.HasOne<Contract>().WithMany().HasForeignKey(x => x.ContractId);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.HandledByStaffId);
+        });
+
+        b.Entity<SupportRequest>(e =>
+        {
+            e.ToTable("SupportRequests");
+            e.HasKey(x => x.RequestId);
+            e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.Property(x => x.Status).HasDefaultValue("Open");
+            e.HasOne(x => x.Contract).WithMany().HasForeignKey(x => x.ContractId);
+            e.HasOne(x => x.Unit).WithMany().HasForeignKey(x => x.UnitId);
+            e.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId);
+            e.HasOne(x => x.AssignedStaff).WithMany().HasForeignKey(x => x.AssignedStaffId);
+            e.HasOne<Facility>().WithMany().HasForeignKey(x => x.FacilityId);
+        });
+
+        b.Entity<SupportUpdate>(e =>
+        {
+            e.ToTable("SupportUpdates");
+            e.HasKey(x => x.UpdateId);
+            e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.HasOne(x => x.Request).WithMany().HasForeignKey(x => x.RequestId);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UpdatedByUserId);
         });
 
         // The SQL script names every key/id column "...ID" (UserID, CitizenID, ...).

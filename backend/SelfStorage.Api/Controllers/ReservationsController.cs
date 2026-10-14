@@ -121,6 +121,15 @@ public class ReservationsController(SelfStorageDbContext db, AccessService acces
             MonthlyRentFee = unit.MonthlyPrice,
             DepositPaid = r.DepositAmount,
         };
+        db.HandoverRecords.Add(new HandoverRecord
+        {
+            Contract = contract,
+            StaffId = staffId,
+            HandoverType = "CHECK_IN",
+            HandoverDateTime = Now,
+            UnitConditionNotes = req.UnitConditionNotes,
+            CustomerSignatureConfirmed = true,
+        });
         unit.Status = UnitStatus.Rented;
         r.AssignedUnitId = unit.UnitId;
         r.Status = ReservationStatus.CheckedIn;
