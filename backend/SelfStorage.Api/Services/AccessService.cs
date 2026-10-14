@@ -197,7 +197,8 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
         var today = DateOnly.FromDateTime(Now);
         var issues = new List<AccessIssueDto>();
 
-        if (c.Status is ContractStatus.Terminated or ContractStatus.Liquidated || c.EndDate < today)
+        if (c.Status is ContractStatus.Terminated or ContractStatus.Liquidated
+            || Now >= c.EndDate.ToDateTime(new TimeOnly(20, 0)))
             issues.Add(new("ContractEnded", "Hợp đồng đã kết thúc"));
         else if (c.StartDate > today)
             issues.Add(new("ContractEnded", $"Hợp đồng chưa bắt đầu (từ {c.StartDate:dd/MM/yyyy})"));

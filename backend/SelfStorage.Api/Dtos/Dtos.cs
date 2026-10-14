@@ -44,7 +44,8 @@ public record ReservationDto(int ReservationId, string ReservationCode, string F
     string? AssignedUnitCode, DateOnly ExpectedStartDate, int DurationMonths, decimal DepositAmount,
     decimal EstimatedTotalFee, string Status, DateTime DepositDeadline, string CustomerName);
 
-public record CheckInRequest([Required] int UnitId);
+public record CheckInRequest([Required] int UnitId,
+    [Required, StringLength(1000)] string UnitConditionNotes = "Tình trạng kho bình thường khi bàn giao");
 
 // ---- Contracts ----
 
@@ -56,3 +57,46 @@ public record AddAuthorizedPersonRequest(
     [Required, StringLength(20)] string PhoneNumber,
     [Required, StringLength(25)] string CitizenId,
     [StringLength(50)] string? Relationship);
+
+public record ContractDetailDto(
+    int ContractId,
+    string ContractNumber,
+    int FacilityId,
+    string FacilityName,
+    int UnitId,
+    string UnitCode,
+    string UnitStatus,
+    DateOnly StartDate,
+    DateOnly EndDate,
+    string Status,
+    decimal MonthlyRentFee,
+    decimal DepositPaid,
+    decimal AccumulatedLateFee,
+    decimal DepositBalance,
+    decimal OutstandingLateFee,
+    DateTime RenewalAvailableFrom);
+
+public record RequestRenewalRequest([Range(1, 60)] int ExtensionMonths);
+public record RenewalDto(int RenewalId, int ContractId, DateOnly OldEndDate, DateOnly NewEndDate,
+    int ExtensionMonths, decimal RenewalFee, string Status, DateTime RequestedAt);
+public record ReturnUnitRequest([Required, StringLength(1000)] string UnitConditionNotes,
+    bool AllItemsRemoved,
+    [StringLength(500)] string? StaffNotes);
+public record ReturnUnitDto(int ContractId, string Status, string UnitStatus, decimal DepositPaid,
+    decimal LateFeesDeducted, decimal DepositRefundDue, decimal LateFeesStillOwed, DateTime ReturnedAt);
+public record OverdueSummaryDto(int OverdueId, int ContractId, string ContractNumber, string CustomerName,
+    string UnitCode, DateOnly EndDate, string ContractStatus, string UnitStatus, int DaysOverdue,
+    decimal AccumulatedLateFee, decimal DepositBalance, decimal OutstandingLateFee, DateTime? LockAppliedAt);
+
+public record CreateSupportRequest(
+    [Required] int ContractId,
+    [Required] string Category,
+    [Required, StringLength(200)] string Title,
+    [Required, StringLength(4000)] string Description,
+    [StringLength(20)] string Priority = "Medium");
+public record SupportRequestDto(int RequestId, string RequestCode, int ContractId, string UnitCode,
+    string Category, string Priority, string Title, string Description, string Status, DateTime CreatedAt,
+    string? AssignedStaffName);
+public record SupportUpdateDto(int UpdateId, string UpdatedBy, string ActionMessage,
+    string? PreviousStatus, string? NewStatus, DateTime CreatedAt);
+public record UpdateSupportRequest([Required] string Status, [Required, StringLength(4000)] string ActionMessage);

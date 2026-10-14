@@ -22,6 +22,7 @@ builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddScoped<AccessService>();
+builder.Services.AddHostedService<OverdueService>();
 
 // ---- Auth (JWT) ----
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()!;
@@ -60,7 +61,7 @@ builder.Services.AddSwaggerGen(c =>
         Type = SecuritySchemeType.Http,
         Scheme = "bearer",
         BearerFormat = "JWT",
-        Description = "Token lấy từ POST /api/auth/login",
+        Description = "Lấy token từ POST /api/auth/login. Chỉ dán giá trị JWT, không thêm tiền tố 'Bearer'.",
     });
     c.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
     {
