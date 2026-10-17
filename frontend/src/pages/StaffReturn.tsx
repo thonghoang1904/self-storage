@@ -1,0 +1,324 @@
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { api, fmtDate, fmtMoney, fmtTime } from '../api'
+import { useStaffFacility } from '../components/layout'
+import { Empty, Icon, StatusBadge } from '../components/ui'
+import type { OverdueSummary, ReturnUnitResult, StaffContract } from '../types'
+
+/**
+ * Figma "storage-return-inspection": find a contract, check its return schedule and deposit,
+ * walk the inspection checklist, complete the return (POST /api/contracts/{id}/return) and
+ * refund the deposit (POST /api/contracts/{id}/deposit-refunds).
+ */
+
+const CHECKLIST = [
+  ['Kho đã được dọn sạch', 'Không còn đồ đạc, thùng hàng của khách bên trong kho'],
+  ['Không còn rác thải', 'Khách đã mang đi bao bì, rác, vật dụng bỏ lại'],
+  ['Tường, sàn, trần nguyên vẹn', 'Không trầy xước nặng, thủng, ẩm mốc do sử dụng'],
+  ['Cửa và ổ khóa hoạt động tốt', 'Cửa đóng mở bình thường, khóa không hư hỏng'],
+  ['Đã thu lại chìa khóa / thẻ', 'Khách bàn giao lại chìa khóa, thẻ ra vào (nếu có)'],
+  ['Thiết bị điện đã tắt', 'Đèn, ổ cắm, điều hòa trong kho đã tắt'],
+  ['Khách đã ra khỏi cơ sở', 'Không còn lượt ra vào đang mở của hợp đồng này'],
+] as const
+
+const sinceText = (from: Date) => {
+  const ms = Date.now() - from.getTime()
+  if (ms < 0) {
+    const h = Math.ceil(-ms / 3600000)
+    return h > 48 ? `Còn ${Math.ceil(h / 24)} ngày nữa mới đến lịch` : `Còn ${h} giờ nữa mới đến lịch`
+  }
+  const h = Math.floor(ms / 3600000)
+  return h >= 48 ? `Đã quá lịch ${Math.floor(h / 24)} ngày` : `Đã quá lịch ${h} giờ ${Math.floor((ms % 3600000) / 60000)} phút`
+}
+
+export default function StaffReturn() {
+  const { facilityId } = useStaffFacility()
+  const navigate = useNavigate()
+  const search = new URLSearchParams(useLocation().search)
+  const wanted = Number(search.get('contract') ?? 0)
+
+  const [contracts, setContracts] = useState<StaffContract[]>([])
+  const [overdue, setOverdue] = useState<OverdueSummary[]>([])
+  const [query, setQuery] = useState('')
+  const [selectedId, setSelectedId] = useState<number | null>(wanted || null)
+  const [error, setError] = useState('')
+
+  const load = useCallback(async () => {
+    if (!facilityId) return
+    try {
+      const [c, o] = await Promise.all([
+        api<StaffContract[]>(`/api/contracts/facilities/${facilityId}`),
+        api<OverdueSummary[]>(`/api/contracts/facilities/${facilityId}/overdue`),
+      ])
+      setContracts(c)
+      setOverdue(o)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }, [facilityId])
+  useEffect(() => { void load() }, [load])
+  useEffect(() => { if (wanted) setSelectedId(wanted) }, [wanted])
+
+  const now = new Date()
+  const due = contracts.filter((c) => (c.status === 'Active' || c.status === 'Overdue') && new Date(c.returnAppointment) <= now)
+  const selected = contracts.find((c) => c.contractId === selectedId) ?? null
+
+  const find = (e?: FormEvent) => {
+    e?.preventDefault()
+    setError('')
+    const s = query.trim().toLowerCase()
+    if (!s) return
+    const hit = contracts.find((c) => c.contractNumber.toLowerCase() === s || c.unitCode.toLowerCase() === s)
+      ?? contracts.find((c) => [c.contractNumber, c.unitCode, c.customerName, c.customerPhone].some((v) => v.toLowerCase().includes(s)))
+    if (!hit) return setError('Không tìm thấy hợp đồng tại cơ sở này. Thử mã hợp đồng, mã kho hoặc số điện thoại.')
+    setSelectedId(hit.contractId)
+    navigate(`/staff-return?contract=${hit.contractId}`, { replace: true })
+  }
+
+  return (
+    <div className="stack-xl">
+      <div className="page-title-row row between wrap">
+        <div>
+          <h1>Kiểm Tra Trả Kho</h1>
+          <p className="muted">Đối chiếu hợp đồng, kiểm tra tình trạng kho, hoàn tất trả kho và hoàn cọc cho khách.</p>
+        </div>
+        <Link to="/staff-contracts" className="btn outline"><Icon name="clipboard" size={15} /> Danh sách gia hạn & quá hạn</Link>
+      </div>
+
+      <section className="panel">
+        <div>
+          <h2 className="panel-title">Tìm hợp đồng cần trả kho</h2>
+          <p className="muted">Nhập mã hợp đồng, mã kho hoặc số điện thoại của khách. Kho chỉ được trả từ 20:00 ngày hết hạn.</p>
+        </div>
+        <form className="lookup-row" onSubmit={find}>
+          <label className="field grow"><span>Mã hợp đồng / mã kho / SĐT</span>
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="vd: HD-DEMO-0004 hoặc C-02" />
+          </label>
+          <button className="btn primary" type="submit"><Icon name="search" size={15} /> Tìm hợp đồng</button>
+          <button className="btn outline" type="button" onClick={() => { setQuery(''); setSelectedId(null); navigate('/staff-return', { replace: true }) }}>Làm mới</button>
+        </form>
+        {due.length > 0 && (
+          <div className="quick-tries">
+            <span className="muted">Đến lịch trả kho:</span>
+            {due.map((c) => (
+              <button key={c.contractId} type="button" className={`chip ${c.contractId === selectedId ? 'active' : ''}`}
+                onClick={() => { setSelectedId(c.contractId); navigate(`/staff-return?contract=${c.contractId}`, { replace: true }) }}>
+                {c.contractNumber} · {c.unitCode}
+              </button>
+            ))}
+          </div>
+        )}
+        {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+      </section>
+
+      {selected
+        ? <Inspection key={selected.contractId} contract={selected} overdue={overdue.find((o) => o.contractId === selected.contractId)} onChanged={load} />
+        : <div className="panel"><Empty icon="door">Chọn một hợp đồng để bắt đầu kiểm tra trả kho.</Empty></div>}
+    </div>
+  )
+}
+
+function Info({ label, children }: { label: string; children: ReactNode }) {
+  return <div className="info-row"><span className="muted">{label}</span><b>{children}</b></div>
+}
+
+function Inspection({ contract: c, overdue, onChanged }: { contract: StaffContract; overdue?: OverdueSummary; onChanged: () => Promise<void> }) {
+  const [checked, setChecked] = useState<boolean[]>(() => CHECKLIST.map(() => false))
+  const [damage, setDamage] = useState('')
+  const [staffNotes, setStaffNotes] = useState('')
+  const [confirmed, setConfirmed] = useState(false)
+  const [result, setResult] = useState<ReturnUnitResult | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const appointment = new Date(c.returnAppointment)
+  const lateFee = result ? result.lateFeesDeducted + result.lateFeesStillOwed : overdue?.accumulatedLateFee ?? 0
+  const deducted = result ? result.lateFeesDeducted : Math.min(c.depositPaid, lateFee)
+  const refundDue = result ? result.depositRefundDue : Math.max(0, c.depositPaid - lateFee)
+  const stillOwed = result ? result.lateFeesStillOwed : Math.max(0, lateFee - c.depositPaid)
+  const returned = c.status === 'Terminated' || !!result
+  const canReturn = !returned && (c.status === 'Active' || c.status === 'Overdue') && appointment <= new Date()
+  const allChecked = checked.every(Boolean)
+
+  const complete = async () => {
+    setError('')
+    setBusy(true)
+    try {
+      const notes = [
+        `Kiểm tra ${CHECKLIST.length}/${CHECKLIST.length} mục đạt.`,
+        damage.trim() ? `Hư hỏng / ghi chú: ${damage.trim()}` : 'Không ghi nhận hư hỏng.',
+      ].join(' ')
+      const res = await api<ReturnUnitResult>(`/api/contracts/${c.contractId}/return`, {
+        body: { unitConditionNotes: notes, allItemsRemoved: true, staffNotes: staffNotes.trim() || null },
+      })
+      setResult(res)
+      await onChanged()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="summary-grid">
+        <section className="panel">
+          <h3 className="panel-title">Hợp đồng</h3>
+          <div className="row between"><b className="contract-no sm">{c.contractNumber}</b><StatusBadge status={result ? result.status : c.status} /></div>
+          <Info label="Khách hàng">{c.customerName}</Info>
+          <Info label="Số điện thoại">{c.customerPhone}</Info>
+          <Info label="Kho">{c.unitCode} · <StatusBadge status={result ? result.unitStatus : c.unitStatus} /></Info>
+          <Info label="Thời hạn">{fmtDate(c.startDate)} – {fmtDate(c.endDate)}</Info>
+        </section>
+        <section className="panel">
+          <h3 className="panel-title">Lịch trả kho</h3>
+          <Info label="Ngày hết hạn">{fmtDate(c.endDate)}</Info>
+          <Info label="Giờ hẹn trả kho">{fmtTime(c.returnAppointment)}</Info>
+          <Info label="Khóa kho nếu chưa trả">{fmtTime(new Date(appointment.getTime() + 86400000).toISOString())}</Info>
+          <Info label="Phí thuê tháng">{fmtMoney(c.monthlyRentFee)}</Info>
+          <div className={`inspection-timer ${appointment <= new Date() ? (overdue ? 'bad' : 'ok') : 'muted'}`}>
+            <Icon name="clock" size={16} />
+            {returned ? `Đã trả kho${result ? ' lúc ' + fmtTime(result.returnedAt) : ''}` : sinceText(appointment)}
+          </div>
+        </section>
+        <section className="panel">
+          <h3 className="panel-title">Tiền cọc</h3>
+          <Info label="Tiền cọc đã đóng">{fmtMoney(c.depositPaid)}</Info>
+          <Info label="Phí quá hạn">{overdue ? `${fmtMoney(lateFee)} (${overdue.daysOverdue} ngày)` : fmtMoney(lateFee)}</Info>
+          <Info label="Cấn trừ vào cọc">{fmtMoney(deducted)}</Info>
+          <Info label="Còn hoàn cho khách">{fmtMoney(refundDue)}</Info>
+          <span className={`badge ${stillOwed > 0 ? 'bad' : refundDue > 0 ? 'info' : 'ok'} self-start`}>
+            {stillOwed > 0 ? `Khách còn nợ ${fmtMoney(stillOwed)}` : refundDue > 0 ? 'Cần hoàn cọc sau trả kho' : 'Không còn khoản phải hoàn'}
+          </span>
+        </section>
+      </div>
+
+      <div className="inspection-grid">
+        <section className="panel">
+          <div>
+            <h3 className="panel-title"><Icon name="clipboard" size={18} className="cyan" /> Danh mục kiểm tra kho {c.unitCode}</h3>
+            <p className="muted">Đánh dấu từng mục sau khi kiểm tra cùng khách. Cần đạt đủ {CHECKLIST.length} mục mới hoàn tất trả kho.</p>
+          </div>
+          {CHECKLIST.map(([label, detail], i) => (
+            <label key={label} className={`check-item ${checked[i] || returned ? 'done' : ''}`}>
+              <input type="checkbox" checked={checked[i] || returned} disabled={returned}
+                onChange={(e) => setChecked(checked.map((v, j) => (j === i ? e.target.checked : v)))} />
+              <span className="grow"><b>{label}</b><small className="muted">{detail}</small></span>
+              <span className={`badge ${checked[i] || returned ? 'ok' : 'muted'}`}>{checked[i] || returned ? 'Đạt' : 'Chưa kiểm tra'}</span>
+            </label>
+          ))}
+          <div className="damage-record">
+            <b>Ghi nhận hư hỏng (nếu có)</b>
+            <textarea rows={3} value={damage} disabled={returned} onChange={(e) => setDamage(e.target.value)}
+              placeholder="Mô tả vị trí, mức độ hư hỏng… Để trống nếu kho bình thường." />
+          </div>
+        </section>
+
+        <div className="stack-lg">
+          <section className="panel">
+            <div className="row between">
+              <h3 className="panel-title">Biên bản trả kho</h3>
+              <span className={`badge ${returned ? 'ok' : allChecked ? 'info' : 'warn'}`}>{returned ? 'Đã hoàn tất' : allChecked ? 'Sẵn sàng' : `${checked.filter(Boolean).length}/${CHECKLIST.length} mục`}</span>
+            </div>
+            <Info label="Kết quả kiểm tra">{returned ? 'Đạt' : allChecked ? 'Đạt đủ mục' : 'Đang kiểm tra'}</Info>
+            <Info label="Hư hỏng">{damage.trim() ? 'Có ghi nhận' : 'Không'}</Info>
+            <Info label="Phí quá hạn còn phải thu">{fmtMoney(stillOwed)}</Info>
+            <label className="field"><span>Ghi chú nhân viên</span>
+              <textarea rows={2} value={staffNotes} disabled={returned} onChange={(e) => setStaffNotes(e.target.value)} placeholder="Không bắt buộc" />
+            </label>
+            {!returned && (
+              <>
+                <label className="check-row"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> Tôi xác nhận đã kiểm tra kho cùng khách</label>
+                {!canReturn && <p className="hint"><Icon name="clock" size={15} /> Chỉ hoàn tất được từ {fmtTime(c.returnAppointment)}.</p>}
+                <button className="btn primary block" disabled={busy || !allChecked || !confirmed || !canReturn} onClick={complete}>
+                  {busy ? 'Đang lưu…' : 'Hoàn tất trả kho'}
+                </button>
+              </>
+            )}
+            {result && (
+              <p className="alert ok"><Icon name="check" size={16} />
+                Đã trả kho. Cấn trừ {fmtMoney(result.lateFeesDeducted)}, cần hoàn {fmtMoney(result.depositRefundDue)}{result.lateFeesStillOwed > 0 ? `, đã lập hóa đơn phí còn nợ ${fmtMoney(result.lateFeesStillOwed)}` : ''}.
+              </p>
+            )}
+            {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+          </section>
+
+          <RefundCard contract={c} returned={returned} refundDue={refundDue} />
+        </div>
+      </div>
+    </>
+  )
+}
+
+function RefundCard({ contract: c, returned, refundDue }: { contract: StaffContract; returned: boolean; refundDue: number }) {
+  const [method, setMethod] = useState<'Cash' | 'BankTransfer'>('Cash')
+  const [amount, setAmount] = useState(String(refundDue))
+  const [code, setCode] = useState('')
+  const [notes, setNotes] = useState('')
+  const [confirmed, setConfirmed] = useState(false)
+  const [remaining, setRemaining] = useState<number | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [done, setDone] = useState('')
+  useEffect(() => { setAmount(String(remaining ?? refundDue)) }, [refundDue, remaining])
+
+  const left = remaining ?? refundDue
+  const refund = async (e: FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setBusy(true)
+    try {
+      const res = await api<{ refundedAmount: number; remainingRefund: number; refundedAt: string }>(`/api/contracts/${c.contractId}/deposit-refunds`, {
+        body: { paymentMethod: method, amount: Number(amount), transactionCode: code.trim() || null, notes: notes.trim() || null },
+      })
+      setRemaining(res.remainingRefund)
+      setDone(`Đã hoàn ${fmtMoney(res.refundedAmount)} lúc ${fmtTime(res.refundedAt)}. Còn lại ${fmtMoney(res.remainingRefund)}.`)
+      setConfirmed(false)
+      setCode('')
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form className="panel" onSubmit={refund}>
+      <div className="row between">
+        <h3 className="panel-title">Hoàn cọc</h3>
+        <span className={`badge ${!returned ? 'muted' : left > 0 ? 'warn' : 'ok'}`}>{!returned ? 'Chờ trả kho' : left > 0 ? 'Chưa hoàn' : 'Đã hoàn đủ'}</span>
+      </div>
+      <Info label="Tiền cọc">{fmtMoney(c.depositPaid)}</Info>
+      <Info label="Có thể hoàn">{fmtMoney(left)}</Info>
+      <Info label="Hình thức">{method === 'Cash' ? 'Tiền mặt tại quầy' : 'Chuyển khoản'}</Info>
+      {returned && left > 0 && (
+        <>
+          <div className="form-grid">
+            <label className="field"><span>Hình thức hoàn</span>
+              <select value={method} onChange={(e) => setMethod(e.target.value as typeof method)}>
+                <option value="Cash">Tiền mặt</option>
+                <option value="BankTransfer">Chuyển khoản</option>
+              </select>
+            </label>
+            <label className="field"><span>Số tiền hoàn (đ)</span>
+              <input type="number" min={1} max={left} value={amount} onChange={(e) => setAmount(e.target.value)} required />
+            </label>
+          </div>
+          {method === 'BankTransfer' && (
+            <label className="field"><span>Mã giao dịch</span><input value={code} onChange={(e) => setCode(e.target.value)} required placeholder="Mã chuyển khoản ngân hàng" /></label>
+          )}
+          <label className="field"><span>Ghi chú</span><input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Không bắt buộc" /></label>
+          <label className="check-row"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> Khách đã nhận đủ số tiền hoàn cọc</label>
+          <div className="row">
+            <button className="btn primary grow" type="submit" disabled={busy || !confirmed}>{busy ? 'Đang ghi nhận…' : 'Xác nhận hoàn cọc'}</button>
+            <button className="btn outline" type="button" onClick={() => setAmount(String(left))}>Hoàn toàn bộ</button>
+          </div>
+        </>
+      )}
+      {!returned && <p className="hint"><Icon name="wallet" size={15} /> Hoàn cọc sau khi đã hoàn tất trả kho.</p>}
+      {done && <p className="alert ok"><Icon name="check" size={16} />{done}</p>}
+      {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+    </form>
+  )
+}

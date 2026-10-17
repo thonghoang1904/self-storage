@@ -175,6 +175,17 @@ export interface OverdueSummary {
   lockAppliedAt: string | null
 }
 
+export interface ReturnUnitResult {
+  contractId: number
+  status: string
+  unitStatus: string
+  depositPaid: number
+  lateFeesDeducted: number
+  depositRefundDue: number
+  lateFeesStillOwed: number
+  returnedAt: string
+}
+
 export interface Person {
   authorizedPersonId: number | null
   fullName: string

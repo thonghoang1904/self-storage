@@ -11,6 +11,7 @@ import MyUnits from './pages/MyUnits'
 import Rent from './pages/Rent'
 import StaffBilling from './pages/StaffBilling'
 import StaffContracts from './pages/StaffContracts'
+import StaffReturn from './pages/StaffReturn'
 import StaffReservations from './pages/StaffReservations'
 import { GATE_ROLES, homeFor, Roles } from './types'
 
@@ -44,6 +45,7 @@ export default function App() {
             <Route path="/reservations" element={<StaffReservations />} />
             <Route path="/staff-billing" element={<StaffBilling />} />
             <Route path="/staff-contracts" element={<StaffContracts />} />
+            <Route path="/staff-return" element={<StaffReturn />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

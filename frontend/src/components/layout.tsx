@@ -182,7 +182,8 @@ export function StaffLayout() {
 
   const title = pathname.startsWith('/reservations') ? 'Đặt Kho & Nhận Kho'
     : pathname.startsWith('/staff-billing') ? 'Hóa Đơn & Thu Tiền'
-    : pathname.startsWith('/staff-contracts') ? 'Gia Hạn & Quá Hạn' : 'Cổng Ra Vào'
+    : pathname.startsWith('/staff-contracts') ? 'Gia Hạn & Quá Hạn'
+    : pathname.startsWith('/staff-return') ? 'Trả Kho & Hoàn Cọc' : 'Cổng Ra Vào'
 
   return (
     <FacilityContext.Provider value={{ facilities, facilityId, setFacilityId, error }}>
@@ -194,6 +195,7 @@ export function StaffLayout() {
             <NavLink to="/reservations"><Icon name="clipboard" /> Đặt Kho & Nhận Kho</NavLink>
             <NavLink to="/staff-billing"><Icon name="wallet" /> Hóa Đơn & Thu Tiền</NavLink>
             <NavLink to="/staff-contracts"><Icon name="refresh" /> Gia Hạn & Quá Hạn</NavLink>
+            <NavLink to="/staff-return"><Icon name="key" /> Trả Kho & Hoàn Cọc</NavLink>
             <Link to="/"><Icon name="grid" /> Trang khách hàng</Link>
           </nav>
           {user && (
