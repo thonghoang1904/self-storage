@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './auth'
 import { PortalLayout, StaffLayout } from './components/layout'
 import Gate from './pages/Gate'
 import Home from './pages/Home'
+import Invoices from './pages/Invoices'
 import { Login, Register } from './pages/Login'
 import MyUnits from './pages/MyUnits'
 import Rent from './pages/Rent'
@@ -33,6 +34,8 @@ export default function App() {
             <Route path="/" element={<Home />} />
             <Route path="/my-units" element={<RequireRole roles={[Roles.Customer]}><MyUnits /></RequireRole>} />
             <Route path="/rent" element={<RequireRole roles={[Roles.Customer]}><Rent /></RequireRole>} />
+            <Route path="/invoices" element={<RequireRole roles={[Roles.Customer]}><Invoices /></RequireRole>} />
+            <Route path="/payment-result" element={<RequireRole roles={[Roles.Customer]}><Invoices /></RequireRole>} />
           </Route>
           <Route element={<RequireRole roles={GATE_ROLES}><StaffLayout /></RequireRole>}>
             <Route path="/gate" element={<Gate />} />

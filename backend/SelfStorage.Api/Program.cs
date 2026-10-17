@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -19,9 +20,15 @@ builder.Services.AddDbContext<SelfStorageDbContext>(o =>
 // ---- Services ----
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
+builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection(SmtpOptions.SectionName));
+builder.Services.Configure<PaymentGatewayOptions>(builder.Configuration.GetSection(PaymentGatewayOptions.SectionName));
+builder.Services.AddTransient<IEmailSender, SmtpEmailSender>();
 builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddScoped<AccessService>();
+builder.Services.AddScoped<BillingService>();
+builder.Services.AddHttpClient<PaymentGatewayService>(client => client.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHostedService<OverdueService>();
 
 // ---- Auth (JWT) ----
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()!;
@@ -42,6 +49,20 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<AppExceptionHandler>();
 builder.Services.AddControllers();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("password-reset", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(15),
+                QueueLimit = 0,
+                AutoReplenishment = true,
+            }));
+});
 
 // ---- Swagger ----
 builder.Services.AddEndpointsApiExplorer();
@@ -60,7 +81,7 @@ builder.Services.AddSwaggerGen(c =>
         Type = SecuritySchemeType.Http,
         Scheme = "bearer",
         BearerFormat = "JWT",
-        Description = "Token lấy từ POST /api/auth/login",
+        Description = "Lấy token từ POST /api/auth/login. Chỉ dán giá trị JWT, không thêm tiền tố 'Bearer'.",
     });
     c.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
     {
@@ -72,6 +93,8 @@ var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseRouting();
+app.UseRateLimiter();
 
 if (app.Environment.IsDevelopment())
 {
