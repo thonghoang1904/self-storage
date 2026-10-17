@@ -8,7 +8,8 @@ echo [1] Stopping the running backend (if any)...
 taskkill /IM SelfStorage.Api.exe /F >> "%LOG%" 2>&1
 timeout /t 2 >nul
 echo [2] Recreating database SelfStorageDB...
-sqlcmd -S localhost -E -C -I -f 65001 -i "database\01_schema.sql" >> "%LOG%" 2>&1
+rem setup_fresh.sql runs 01_schema.sql then every migration 02-09 in order
+sqlcmd -S localhost -E -C -I -f 65001 -b -i "database\setup_fresh.sql" >> "%LOG%" 2>&1
 sqlcmd -S localhost -E -C -Q "SET NOCOUNT ON; SELECT COUNT(*) AS TableCount FROM SelfStorageDB.INFORMATION_SCHEMA.TABLES" >> "%LOG%" 2>&1
 echo [3] Restarting the backend in a new window to load demo accounts...
 start "SafeKeep BACKEND - keep open" cmd /k call "%~dp02-run-backend.bat"

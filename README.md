@@ -47,7 +47,7 @@ Quy tắc chính:
 | Nhận kho | `GET /api/facilities/{id}/reservations`, `POST /api/reservations/{id}/confirm-deposit`, `POST /api/reservations/{id}/check-in` | Nhân viên, quản lý cơ sở |
 | Hợp đồng | `GET /api/contracts/my`, `GET /api/contracts/{id}`, `POST /api/contracts/{id}/renewals`, `GET /api/contracts/{id}/renewals`, `GET/POST/DELETE /api/contracts/{id}/authorized-persons`, `GET /api/contracts/{id}/access-history` | Khách |
 | Gia hạn | `GET /api/contracts/facilities/{facilityId}/renewals`, `POST /api/contracts/renewals/{renewalId}/confirm-payment`, `POST /api/contracts/renewals/{renewalId}/reject` | Nhân viên, quản lý cơ sở |
-| Trả kho/quá hạn | `POST /api/contracts/{id}/return`, `GET /api/contracts/facilities/{facilityId}/overdue` | Nhân viên, quản lý cơ sở |
+| Trả kho/quá hạn | `GET /api/contracts/facilities/{facilityId}`, `POST /api/contracts/{id}/return`, `GET /api/contracts/facilities/{facilityId}/overdue` | Nhân viên, quản lý cơ sở |
 | Hóa đơn/thanh toán | `GET /api/invoices/my`, `GET /api/invoices/{id}`, `POST /api/invoices/{id}/checkout/vnpay`, `POST /api/invoices/{id}/checkout/momo` | Khách |
 | Thu tiền tại cơ sở | `GET /api/invoices/facilities/{facilityId}`, `POST /api/invoices/{id}/payments` | Nhân viên, quản lý cơ sở |
 | Hoàn cọc | `POST /api/contracts/{id}/deposit-refunds` | Nhân viên, quản lý cơ sở |
@@ -198,6 +198,10 @@ Chỉ muốn xem giao diện mà chưa có backend: `npm run dev:demo`. Lệnh n
 
 Thử nhanh: đăng nhập `staff1`, tìm `B-01` (hoặc `079300000456`), chọn người, gõ đúng số CCCD, bấm "Xác nhận đúng người, cho vào"; người đó hiện trong "Đang ở trong kho", bấm "Xác nhận ra" khi họ về.
 
+### Chạy trong VS Code
+
+Mở thư mục gốc dự án bằng VS Code (File → Open Folder), bấm **Ctrl+Shift+B**: backend và frontend chạy trong 2 tab terminal, web tự mở ở http://localhost:5173. Lần đầu (hoặc khi muốn làm mới dữ liệu demo): **Terminal → Run Task… → "1. Tạo lại database"**, chờ xong rồi mới Ctrl+Shift+B. Cấu hình nằm trong `.vscode/tasks.json`.
+
 ### Chạy nhanh trên Windows (bấm đúp)
 
 Thư mục `scripts/` có sẵn các file `.bat`. Cần SQL Server chạy ở `localhost` (Windows Authentication), .NET SDK 10 trở lên (.NET 11 cũng chạy được) và Node.js 20 trở lên.
@@ -205,7 +209,7 @@ Thư mục `scripts/` có sẵn các file `.bat`. Cần SQL Server chạy ở `l
 | File | Việc nó làm |
 |---|---|
 | `check-machine.bat` | Chỉ kiểm tra máy đã có .NET, Node, SQL Server chưa; kết quả ghi vào `check-machine.log` |
-| `1-create-database.bat` | Tạo database `SelfStorageDB` từ `database/01_schema.sql` |
+| `1-create-database.bat` | Tạo database `SelfStorageDB` từ `database/01_schema.sql` rồi chạy migration `02`–`04` |
 | `2-run-backend.bat` | Chạy backend ở http://localhost:5080 (lần đầu tự tạo tài khoản demo) |
 | `3-run-frontend.bat` | Cài thư viện lần đầu, kiểm tra TypeScript, chạy frontend ở http://localhost:5173 |
 | `RUN-ALL.bat` | Mở backend và frontend trong 2 cửa sổ rồi mở trang web |

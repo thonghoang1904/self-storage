@@ -49,8 +49,8 @@ export function PortalHeader() {
           {isCustomer ? (
             <>
               <NavLink to="/my-units">Kho Của Tôi</NavLink>
-              <NavLink to="/rent">Thuê Kho</NavLink>
               <NavLink to="/invoices">Hóa Đơn</NavLink>
+              <NavLink to="/rent">Thuê Kho</NavLink>
             </>
           ) : (
             <>
@@ -180,7 +180,9 @@ export function StaffLayout() {
       .catch((e) => setError((e as Error).message))
   }, [])
 
-  const title = pathname.startsWith('/reservations') ? 'Đặt Kho & Nhận Kho' : 'Cổng Ra Vào'
+  const title = pathname.startsWith('/reservations') ? 'Đặt Kho & Nhận Kho'
+    : pathname.startsWith('/staff-billing') ? 'Hóa Đơn & Thu Tiền'
+    : pathname.startsWith('/staff-contracts') ? 'Gia Hạn & Quá Hạn' : 'Cổng Ra Vào'
 
   return (
     <FacilityContext.Provider value={{ facilities, facilityId, setFacilityId, error }}>
@@ -190,6 +192,8 @@ export function StaffLayout() {
           <nav className="sidebar-nav">
             <NavLink to="/gate"><Icon name="door" /> Cổng Ra Vào</NavLink>
             <NavLink to="/reservations"><Icon name="clipboard" /> Đặt Kho & Nhận Kho</NavLink>
+            <NavLink to="/staff-billing"><Icon name="wallet" /> Hóa Đơn & Thu Tiền</NavLink>
+            <NavLink to="/staff-contracts"><Icon name="refresh" /> Gia Hạn & Quá Hạn</NavLink>
             <Link to="/"><Icon name="grid" /> Trang khách hàng</Link>
           </nav>
           {user && (

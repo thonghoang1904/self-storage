@@ -129,6 +129,52 @@ export interface Contract {
   status: string
 }
 
+export interface Renewal {
+  renewalId: number
+  contractId: number
+  oldEndDate: string
+  newEndDate: string
+  extensionMonths: number
+  renewalFee: number
+  status: string
+  requestedAt: string
+}
+
+/** A contract in the staff list of one facility. */
+export interface StaffContract {
+  contractId: number
+  contractNumber: string
+  customerName: string
+  customerPhone: string
+  unitId: number
+  unitCode: string
+  unitStatus: string
+  startDate: string
+  endDate: string
+  monthlyRentFee: number
+  depositPaid: number
+  status: string
+  hasPendingRenewal: boolean
+  /** 20:00 on the end date: the unit can be returned from then. */
+  returnAppointment: string
+}
+
+export interface OverdueSummary {
+  overdueId: number
+  contractId: number
+  contractNumber: string
+  customerName: string
+  unitCode: string
+  endDate: string
+  contractStatus: string
+  unitStatus: string
+  daysOverdue: number
+  accumulatedLateFee: number
+  depositBalance: number
+  outstandingLateFee: number
+  lockAppliedAt: string | null
+}
+
 export interface Person {
   authorizedPersonId: number | null
   fullName: string
@@ -185,6 +231,13 @@ export const StatusLabels: Record<string, { label: string; tone: 'ok' | 'warn' |
   CheckedIn: { label: 'Đã bàn giao', tone: 'ok' },
   Cancelled: { label: 'Đã hủy', tone: 'muted' },
   Expired: { label: 'Hết hạn cọc', tone: 'muted' },
+  // renewals
+  Pending: { label: 'Chờ thanh toán', tone: 'warn' },
+  Approved: { label: 'Đã duyệt', tone: 'info' },
+  Paid: { label: 'Đã thanh toán', tone: 'ok' },
+  // invoices
+  Unpaid: { label: 'Chưa thanh toán', tone: 'warn' },
+  Rejected: { label: 'Bị từ chối', tone: 'muted' },
   // units
   Available: { label: 'Còn trống', tone: 'ok' },
   Reserved: { label: 'Đã giữ chỗ', tone: 'info' },

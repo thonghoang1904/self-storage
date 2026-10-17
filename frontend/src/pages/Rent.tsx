@@ -85,7 +85,7 @@ export default function Rent() {
               <h3>Đã giữ chỗ thành công · {created.reservationCode}</h3>
               <p>
                 {splitTypeName(created.unitTypeName).name} tại {created.facilityName}, bắt đầu {fmtDate(created.expectedStartDate)} trong {created.durationMonths} tháng.
-                Vui lòng đặt cọc <b>{fmtMoney(created.depositAmount)}</b> trước <b>{fmtTime(created.depositDeadline)}</b>. Nhân viên sẽ xác nhận cọc và bàn giao kho cho bạn.
+                Vui lòng đặt cọc <b>{fmtMoney(created.depositAmount)}</b> trước <b>{fmtTime(created.depositDeadline)}</b> — thanh toán online ở <Link to="/invoices" className="link">Hóa Đơn</Link> hoặc tại quầy. Nhân viên sẽ bàn giao kho cho bạn.
               </p>
             </div>
             <button className="icon-btn" aria-label="Đóng" onClick={() => setCreated(null)}><Icon name="x" /></button>

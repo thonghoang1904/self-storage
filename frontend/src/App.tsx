@@ -9,6 +9,8 @@ import Invoices from './pages/Invoices'
 import { Login, Register } from './pages/Login'
 import MyUnits from './pages/MyUnits'
 import Rent from './pages/Rent'
+import StaffBilling from './pages/StaffBilling'
+import StaffContracts from './pages/StaffContracts'
 import StaffReservations from './pages/StaffReservations'
 import { GATE_ROLES, homeFor, Roles } from './types'
 
@@ -40,6 +42,8 @@ export default function App() {
           <Route element={<RequireRole roles={GATE_ROLES}><StaffLayout /></RequireRole>}>
             <Route path="/gate" element={<Gate />} />
             <Route path="/reservations" element={<StaffReservations />} />
+            <Route path="/staff-billing" element={<StaffBilling />} />
+            <Route path="/staff-contracts" element={<StaffContracts />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

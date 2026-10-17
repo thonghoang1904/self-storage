@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney } from '../api'
+import { StatusBadge } from '../components/ui'
 import type { CheckoutResponse, Invoice } from '../types'
 
 export default function Invoices() {
@@ -43,7 +44,7 @@ export default function Invoices() {
     setError('')
     setStartingInvoiceId(invoiceId)
     try {
-      const checkout = await api<CheckoutResponse>(`/api/invoices/${invoiceId}/checkout/${provider}`)
+      const checkout = await api<CheckoutResponse>(`/api/invoices/${invoiceId}/checkout/${provider}`, { method: 'POST' })
       window.location.assign(checkout.paymentUrl)
     } catch (e) {
       setError((e as Error).message)
@@ -52,35 +53,38 @@ export default function Invoices() {
   }
 
   return (
-    <div className="page">
+    <>
+    <section className="page-hero">
+      <div className="container">
+        <span className="eyebrow dark"><i />Tài khoản khách hàng</span>
+        <h1>Hóa Đơn & Thanh Toán</h1>
+        <p>Thanh toán cọc, gia hạn và các khoản phí trực tuyến qua VNPay hoặc MoMo.</p>
+      </div>
+    </section>
+    <div className="container page-body">
       <div className="row between wrap">
-        <div>
-          <h2>Hóa đơn & thanh toán</h2>
-          <p className="muted">Thanh toán cọc, gia hạn và các khoản phí trực tuyến.</p>
-        </div>
-        <button className="btn ghost" onClick={() => void load()} disabled={loading}>Làm mới</button>
+        <h2 className="section-title">Hóa đơn của tôi</h2>
+        <button className="btn outline sm" onClick={() => void load()} disabled={loading}>Làm mới</button>
       </div>
       {returnedFromGateway && (
-        <p className="success">
+        <p className="alert ok">
           Đã quay lại từ cổng thanh toán. Trạng thái cuối cùng được cập nhật qua IPN; hãy làm mới nếu hóa đơn vẫn đang chờ.
         </p>
       )}
-      {error && <p className="error">{error}</p>}
+      {error && <p className="alert bad">{error}</p>}
       {loading && <p className="muted">Đang tải hóa đơn…</p>}
       {!loading && invoices.length === 0 && <p className="muted">Bạn chưa có hóa đơn.</p>}
       <div className="stack">
         {invoices.map((invoice) => {
           const payable = invoice.status === 'Unpaid' || invoice.status === 'Overdue'
           return (
-            <section className="card" key={invoice.invoiceId}>
+            <section className="panel" key={invoice.invoiceId}>
               <div className="row between wrap">
                 <div>
                   <h3>{invoice.invoiceNumber} · {invoiceTypeName(invoice.invoiceType)}</h3>
                   <p className="muted">Hạn thanh toán: {fmtDate(invoice.dueDate)}</p>
                 </div>
-                <span className={`badge ${invoice.status === 'Paid' ? 'ok' : payable ? 'warn' : ''}`}>
-                  {invoice.status}
-                </span>
+                <StatusBadge status={invoice.status} />
               </div>
               {invoice.details.map((detail) => (
                 <div className="row between wrap" key={detail.detailId}>
@@ -114,6 +118,7 @@ export default function Invoices() {
         })}
       </div>
     </div>
+    </>
   )
 }
 

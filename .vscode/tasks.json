@@ -1,0 +1,64 @@
+{
+  // Ctrl+Shift+B: chạy backend + frontend cùng lúc (2 tab terminal), web tự mở ở http://localhost:5173
+  // Terminal > Run Task... > "1. Tạo lại database" khi cần làm mới dữ liệu demo.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "SafeKeep: chạy tất cả",
+      "dependsOn": ["Backend (localhost:5080)", "Frontend (localhost:5173)"],
+      "dependsOrder": "parallel",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Backend (localhost:5080)",
+      "type": "process",
+      "command": "dotnet",
+      "windows": { "command": "${env:ProgramFiles}\\dotnet\\dotnet.exe" },
+      "args": ["run", "--launch-profile", "http"],
+      "options": {
+        "cwd": "${workspaceFolder}/backend/SelfStorage.Api",
+        "env": { "ASPNETCORE_ENVIRONMENT": "Development", "DOTNET_ROLL_FORWARD": "Major" }
+      },
+      "isBackground": true,
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": {
+        "owner": "dotnet-run",
+        "pattern": { "regexp": "^(.*error.*)$", "message": 1 },
+        "background": { "activeBegins": true, "beginsPattern": ".", "endsPattern": "Now listening on|Application started" }
+      }
+    },
+    {
+      "label": "Frontend (localhost:5173)",
+      "type": "shell",
+      "command": "npm install && npm run dev -- --open",
+      "windows": { "options": { "shell": { "executable": "cmd.exe", "args": ["/d", "/c"] } } },
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "isBackground": true,
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": { "regexp": "^(ERROR.*)$", "message": 1 },
+        "background": { "activeBegins": true, "beginsPattern": ".", "endsPattern": "Local:" }
+      }
+    },
+    {
+      "label": "1. Tạo lại database",
+      "type": "shell",
+      "command": "sqlcmd -S localhost -E -C -I -f 65001 -b -i database/setup_fresh.sql",
+      "windows": { "options": { "shell": { "executable": "cmd.exe", "args": ["/d", "/c"] } } },
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Frontend demo (không cần backend)",
+      "type": "shell",
+      "command": "npm install && npm run dev:demo -- --open",
+      "windows": { "options": { "shell": { "executable": "cmd.exe", "args": ["/d", "/c"] } } },
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "isBackground": true,
+      "problemMatcher": []
+    }
+  ]
+}
