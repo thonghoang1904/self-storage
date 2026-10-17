@@ -71,6 +71,39 @@ export interface Reservation {
   customerName: string
 }
 
+export interface Invoice {
+  invoiceId: number
+  invoiceNumber: string
+  contractId: number | null
+  reservationId: number | null
+  invoiceType: string
+  subTotal: number
+  discountAmount: number
+  totalAmount: number
+  dueDate: string
+  status: string
+  createdAt: string
+  details: { detailId: number; description: string; quantity: number; unitPrice: number; lineTotal: number }[]
+  payments: {
+    paymentId: number
+    paymentMethod: string
+    transactionCode: string | null
+    amountPaid: number
+    paymentDate: string
+    status: string
+    paymentNotes: string | null
+    receivedByStaff: string | null
+  }[]
+}
+
+export interface CheckoutResponse {
+  provider: string
+  paymentId: number
+  transactionReference: string
+  amount: number
+  paymentUrl: string
+}
+
 export interface Contract {
   contractId: number
   contractNumber: string

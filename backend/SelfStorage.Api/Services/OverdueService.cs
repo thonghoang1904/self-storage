@@ -24,6 +24,17 @@ public sealed class OverdueService(
         var db = scope.ServiceProvider.GetRequiredService<SelfStorageDbContext>();
         var now = clock.GetLocalNow().DateTime;
         var today = DateOnly.FromDateTime(now);
+        var expiredReservations = await db.Reservations
+            .Where(r => r.Status == ReservationStatus.PendingDeposit && r.DepositDeadline <= now)
+            .ToListAsync(ct);
+        foreach (var reservation in expiredReservations)
+        {
+            reservation.Status = ReservationStatus.Expired;
+            var invoice = await db.Invoices.FirstOrDefaultAsync(i =>
+                i.ReservationId == reservation.ReservationId && i.InvoiceType == "DEPOSIT" && i.Status == "Unpaid", ct);
+            if (invoice is not null) invoice.Status = "Cancelled";
+        }
+
         var contracts = await db.Contracts.Include(c => c.Unit)
             .Where(c => c.EndDate <= today
                 && (c.Status == ContractStatus.Active || c.Status == ContractStatus.Overdue))
@@ -60,10 +71,12 @@ public sealed class OverdueService(
             contract.Unit.Status = UnitStatus.OverdueLocked;
         }
 
-        if (contracts.Count > 0)
+        if (contracts.Count > 0 || expiredReservations.Count > 0)
         {
             await db.SaveChangesAsync(ct);
-            logger.LogInformation("Updated overdue lock and daily charges for {ContractCount} contracts", contracts.Count);
+            logger.LogInformation(
+                "Updated overdue charges for {ContractCount} contracts and expired {ReservationCount} reservations",
+                contracts.Count, expiredReservations.Count);
         }
     }
 }

@@ -20,10 +20,15 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<AuthorizedPerson> AuthorizedPersons => Set<AuthorizedPerson>();
     public DbSet<AccessRecord> AccessRecords => Set<AccessRecord>();
+    public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
+    public DbSet<Invoice> Invoices => Set<Invoice>();
+    public DbSet<InvoiceDetail> InvoiceDetails => Set<InvoiceDetail>();
+    public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<HandoverRecord> HandoverRecords => Set<HandoverRecord>();
     public DbSet<ContractRenewal> ContractRenewals => Set<ContractRenewal>();
     public DbSet<OverdueRecord> OverdueRecords => Set<OverdueRecord>();
     public DbSet<SupportRequest> SupportRequests => Set<SupportRequest>();
+    public DbSet<SupportChecklistItem> SupportChecklistItems => Set<SupportChecklistItem>();
     public DbSet<SupportUpdate> SupportUpdates => Set<SupportUpdate>();
 
     protected override void OnModelCreating(ModelBuilder b)
@@ -117,6 +122,46 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
             e.HasOne<User>().WithMany().HasForeignKey(x => x.ExitConfirmedByStaffId);
         });
 
+        b.Entity<ActivityLog>(e =>
+        {
+            e.ToTable("ActivityLogs");
+            e.HasKey(x => x.LogId);
+            e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId);
+        });
+
+        b.Entity<Invoice>(e =>
+        {
+            e.ToTable("Invoices");
+            e.HasKey(x => x.InvoiceId);
+            e.Property(x => x.TotalAmount).HasComputedColumnSql("[SubTotal] - [DiscountAmount]", stored: true);
+            e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.Property(x => x.DiscountAmount).HasDefaultValue(0m);
+            e.Property(x => x.Status).HasDefaultValue("Unpaid");
+            e.HasOne<Contract>().WithMany().HasForeignKey(x => x.ContractId);
+            e.HasOne<Reservation>().WithMany().HasForeignKey(x => x.ReservationId);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.CustomerId);
+        });
+
+        b.Entity<InvoiceDetail>(e =>
+        {
+            e.ToTable("InvoiceDetails");
+            e.HasKey(x => x.DetailId);
+            e.Property(x => x.LineTotal).HasComputedColumnSql("[Quantity] * [UnitPrice]", stored: true);
+            e.Property(x => x.Quantity).HasDefaultValue(1);
+            e.HasOne<Invoice>().WithMany(x => x.Details).HasForeignKey(x => x.InvoiceId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<Payment>(e =>
+        {
+            e.ToTable("Payments");
+            e.HasKey(x => x.PaymentId);
+            e.Property(x => x.PaymentDate).HasDefaultValueSql("SYSDATETIME()");
+            e.Property(x => x.Status).HasDefaultValue("Success");
+            e.HasOne<Invoice>().WithMany(x => x.Payments).HasForeignKey(x => x.InvoiceId);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.ReceivedByStaffId);
+        });
+
         b.Entity<HandoverRecord>(e =>
         {
             e.ToTable("HandoverRecords");
@@ -133,6 +178,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
             e.Property(x => x.RequestedAt).HasDefaultValueSql("SYSDATETIME()");
             e.HasOne<Contract>().WithMany().HasForeignKey(x => x.ContractId);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.ApprovedByStaffId);
+            e.HasOne<Invoice>().WithMany().HasForeignKey(x => x.InvoiceId);
         });
 
         b.Entity<OverdueRecord>(e =>
@@ -165,6 +211,16 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
             e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
             e.HasOne(x => x.Request).WithMany().HasForeignKey(x => x.RequestId);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UpdatedByUserId);
+        });
+
+        b.Entity<SupportChecklistItem>(e =>
+        {
+            e.ToTable("SupportChecklistItems");
+            e.HasKey(x => x.ChecklistItemId);
+            e.Property(x => x.IsCompleted).HasDefaultValue(false);
+            e.HasOne(x => x.Request).WithMany(x => x.ChecklistItems)
+                .HasForeignKey(x => x.RequestId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.CompletedByStaff).WithMany().HasForeignKey(x => x.CompletedByStaffId);
         });
 
         // The SQL script names every key/id column "...ID" (UserID, CitizenID, ...).

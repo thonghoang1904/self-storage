@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes } from 'react-r
 import { AuthProvider, useAuth } from './auth'
 import Gate from './pages/Gate'
 import { Login, Register } from './pages/Login'
+import Invoices from './pages/Invoices'
 import MyUnits from './pages/MyUnits'
 import Rent from './pages/Rent'
 import StaffReservations from './pages/StaffReservations'
@@ -27,6 +28,7 @@ function Layout() {
             <>
               <NavLink to="/my-units">Kho của tôi</NavLink>
               <NavLink to="/rent">Thuê kho</NavLink>
+              <NavLink to="/invoices">Hóa đơn</NavLink>
             </>
           )}
           {user && GATE_ROLES.includes(user.role) && (
@@ -84,6 +86,8 @@ export default function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/my-units" element={<RequireRole roles={[Roles.Customer]}><MyUnits /></RequireRole>} />
             <Route path="/rent" element={<RequireRole roles={[Roles.Customer]}><Rent /></RequireRole>} />
+            <Route path="/invoices" element={<RequireRole roles={[Roles.Customer]}><Invoices /></RequireRole>} />
+            <Route path="/payment-result" element={<RequireRole roles={[Roles.Customer]}><Invoices /></RequireRole>} />
             <Route path="/gate" element={<RequireRole roles={GATE_ROLES}><Gate /></RequireRole>} />
             <Route path="/reservations" element={<RequireRole roles={GATE_ROLES}><StaffReservations /></RequireRole>} />
           </Route>
