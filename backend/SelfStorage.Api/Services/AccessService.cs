@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.EntityFrameworkCore;
 using SelfStorage.Api.Data;
 using SelfStorage.Api.Data.Entities;
@@ -82,6 +83,7 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
         if (!string.Equals(req.CitizenId.Trim(), expectedCitizenId.Trim(), StringComparison.OrdinalIgnoreCase))
             throw AppException.BadRequest("Số CCCD không khớp với hồ sơ. Hãy kiểm tra lại hoặc từ chối với lý do IdentityMismatch.");
 
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var alreadyInside = await db.AccessRecords.AnyAsync(r => r.ContractId == contract.ContractId
             && r.AuthorizedPersonId == req.AuthorizedPersonId
             && r.Result == AccessResult.Granted && r.ExitTime == null, ct);
@@ -103,6 +105,7 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
         };
         db.AccessRecords.Add(record);
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return await GetRecordDtoAsync(record.AccessRecordId, ct);
     }
 

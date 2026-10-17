@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -19,9 +20,14 @@ builder.Services.AddDbContext<SelfStorageDbContext>(o =>
 // ---- Services ----
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
+builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection(SmtpOptions.SectionName));
+builder.Services.Configure<PaymentGatewayOptions>(builder.Configuration.GetSection(PaymentGatewayOptions.SectionName));
+builder.Services.AddTransient<IEmailSender, SmtpEmailSender>();
 builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddScoped<AccessService>();
+builder.Services.AddScoped<BillingService>();
+builder.Services.AddHttpClient<PaymentGatewayService>(client => client.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHostedService<OverdueService>();
 
 // ---- Auth (JWT) ----
@@ -43,6 +49,20 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<AppExceptionHandler>();
 builder.Services.AddControllers();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("password-reset", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(15),
+                QueueLimit = 0,
+                AutoReplenishment = true,
+            }));
+});
 
 // ---- Swagger ----
 builder.Services.AddEndpointsApiExplorer();
@@ -73,6 +93,8 @@ var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseRouting();
+app.UseRateLimiter();
 
 if (app.Environment.IsDevelopment())
 {
