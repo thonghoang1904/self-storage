@@ -1,13 +1,27 @@
 import type { ReactNode } from 'react'
-import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, HashRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { IS_DEMO } from './api'
 import { AuthProvider, useAuth } from './auth'
+import { PortalLayout, StaffLayout } from './components/layout'
+import { ContractDetail, ContractList } from './pages/Contracts'
+import DemoGuide from './pages/DemoGuide'
+import ForgotPassword from './pages/ForgotPassword'
 import Gate from './pages/Gate'
-import { Login, Register } from './pages/Login'
+import Home from './pages/Home'
 import Invoices from './pages/Invoices'
+import { AboutUs, Contact } from './pages/Info'
+import { Login, Register } from './pages/Login'
 import MyUnits from './pages/MyUnits'
 import Rent from './pages/Rent'
+import StaffContracts from './pages/StaffContracts'
+import StaffReturn from './pages/StaffReturn'
 import StaffReservations from './pages/StaffReservations'
+import StaffSupport from './pages/StaffSupport'
+import Support from './pages/Support'
 import { GATE_ROLES, homeFor, Roles } from './types'
+
+// The demo build is served as a static page, so it keeps the route in the URL hash.
+const Router = IS_DEMO ? HashRouter : BrowserRouter
 
 function RequireRole({ roles, children }: { roles: string[]; children: ReactNode }) {
   const { user, loading } = useAuth()
@@ -17,82 +31,37 @@ function RequireRole({ roles, children }: { roles: string[]; children: ReactNode
   return children
 }
 
-function Layout() {
-  const { user, logout } = useAuth()
-  return (
-    <>
-      <header className="topbar">
-        <b>Self Storage</b>
-        <nav>
-          {user?.role === Roles.Customer && (
-            <>
-              <NavLink to="/my-units">Kho của tôi</NavLink>
-              <NavLink to="/rent">Thuê kho</NavLink>
-              <NavLink to="/invoices">Hóa đơn</NavLink>
-            </>
-          )}
-          {user && GATE_ROLES.includes(user.role) && (
-            <>
-              <NavLink to="/gate">Cổng ra vào</NavLink>
-              <NavLink to="/reservations">Đặt kho & nhận kho</NavLink>
-            </>
-          )}
-        </nav>
-        <span className="spacer" />
-        {user ? (
-          <span className="row">
-            <span className="muted">{user.fullName}</span>
-            <button className="btn ghost" onClick={logout}>Đăng xuất</button>
-          </span>
-        ) : (
-          <NavLink to="/login">Đăng nhập</NavLink>
-        )}
-      </header>
-      <main>
-        <Outlet />
-      </main>
-    </>
-  )
-}
-
-function Home() {
-  const { user, loading } = useAuth()
-  if (loading) return null
-  if (user && homeFor(user.role) !== '/') return <Navigate to={homeFor(user.role)} replace />
-  if (user)
-    return (
-      <div className="page">
-        <h2>Xin chào {user.fullName}</h2>
-        <p className="muted">Vai trò "{user.role}" chưa có màn hình làm việc trên trang này.</p>
-      </div>
-    )
-  return (
-    <div className="page">
-      <h2>Kho tự phục vụ</h2>
-      <p>Thuê kho theo tháng. Khi đến kho, bạn xuất trình CCCD để nhân viên xác nhận và cho vào.</p>
-      <p><NavLink to="/register" className="btn primary">Đăng ký thuê kho</NavLink></p>
-    </div>
-  )
-}
-
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <Router>
         <Routes>
-          <Route element={<Layout />}>
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/demo-guide" element={<DemoGuide />} />
+          <Route element={<PortalLayout />}>
             <Route path="/" element={<Home />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
+            <Route path="/about" element={<AboutUs />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/support" element={<RequireRole roles={[Roles.Customer]}><Support /></RequireRole>} />
             <Route path="/my-units" element={<RequireRole roles={[Roles.Customer]}><MyUnits /></RequireRole>} />
+            <Route path="/contracts" element={<RequireRole roles={[Roles.Customer]}><ContractList /></RequireRole>} />
+            <Route path="/contracts/:id" element={<RequireRole roles={[Roles.Customer]}><ContractDetail /></RequireRole>} />
             <Route path="/rent" element={<RequireRole roles={[Roles.Customer]}><Rent /></RequireRole>} />
             <Route path="/invoices" element={<RequireRole roles={[Roles.Customer]}><Invoices /></RequireRole>} />
             <Route path="/payment-result" element={<RequireRole roles={[Roles.Customer]}><Invoices /></RequireRole>} />
-            <Route path="/gate" element={<RequireRole roles={GATE_ROLES}><Gate /></RequireRole>} />
-            <Route path="/reservations" element={<RequireRole roles={GATE_ROLES}><StaffReservations /></RequireRole>} />
           </Route>
+          <Route element={<RequireRole roles={GATE_ROLES}><StaffLayout /></RequireRole>}>
+            <Route path="/gate" element={<Gate />} />
+            <Route path="/reservations" element={<StaffReservations />} />
+            <Route path="/staff-contracts" element={<StaffContracts />} />
+            <Route path="/staff-return" element={<StaffReturn />} />
+            <Route path="/staff-support" element={<StaffSupport />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </BrowserRouter>
+      </Router>
     </AuthProvider>
   )
 }

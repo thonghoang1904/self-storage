@@ -20,6 +20,7 @@ export function DemoBar() {
   return (
     <div className="demo-bar">
       <span><b>Bản demo</b> · dữ liệu giả lập ngay trong trình duyệt, chưa nối backend thật</span>
+      <Link to="/demo-guide" className="link-btn"><Icon name="clipboard" size={14} /> Hướng dẫn thử</Link>
       <button className="link-btn" onClick={reset}><Icon name="refresh" size={14} /> Đặt lại dữ liệu</button>
     </div>
   )
@@ -49,12 +50,17 @@ export function PortalHeader() {
           {isCustomer ? (
             <>
               <NavLink to="/my-units">Kho Của Tôi</NavLink>
+              <NavLink to="/contracts">Hợp Đồng</NavLink>
+              <NavLink to="/support">Hỗ Trợ</NavLink>
+              <NavLink to="/invoices">Hóa Đơn</NavLink>
               <NavLink to="/rent">Thuê Kho</NavLink>
             </>
           ) : (
             <>
               <a href="#units" onClick={(e) => { e.preventDefault(); navigate('/'); setTimeout(() => document.getElementById('units')?.scrollIntoView({ behavior: 'smooth' }), 50) }}>Kho Lưu Trữ</a>
               <a href="#facilities" onClick={(e) => { e.preventDefault(); navigate('/'); setTimeout(() => document.getElementById('facilities')?.scrollIntoView({ behavior: 'smooth' }), 50) }}>Cơ Sở</a>
+              <NavLink to="/about">Giới Thiệu</NavLink>
+              <NavLink to="/contact">Liên Hệ</NavLink>
             </>
           )}
           {isStaff && <NavLink to="/gate">Màn hình nhân viên</NavLink>}
@@ -92,6 +98,10 @@ export function Footer() {
           <h4>Kho Lưu Trữ</h4>
           <Link to="/rent">Đặt kho</Link>
           <Link to="/my-units">Kho của tôi</Link>
+          <Link to="/contracts">Hợp đồng</Link>
+          <Link to="/support">Hỗ trợ</Link>
+          <Link to="/about">Giới thiệu</Link>
+          <Link to="/contact">Liên hệ</Link>
           <Link to="/register">Đăng ký tài khoản</Link>
         </div>
         <div>
@@ -179,7 +189,10 @@ export function StaffLayout() {
       .catch((e) => setError((e as Error).message))
   }, [])
 
-  const title = pathname.startsWith('/reservations') ? 'Đặt Kho & Nhận Kho' : 'Cổng Ra Vào'
+  const title = pathname.startsWith('/reservations') ? 'Đặt Kho & Nhận Kho'
+    : pathname.startsWith('/staff-contracts') ? 'Gia Hạn & Quá Hạn'
+    : pathname.startsWith('/staff-return') ? 'Trả Kho & Hoàn Cọc'
+    : pathname.startsWith('/staff-support') ? 'Hỗ Trợ Khách Hàng' : 'Cổng Ra Vào'
 
   return (
     <FacilityContext.Provider value={{ facilities, facilityId, setFacilityId, error }}>
@@ -189,6 +202,9 @@ export function StaffLayout() {
           <nav className="sidebar-nav">
             <NavLink to="/gate"><Icon name="door" /> Cổng Ra Vào</NavLink>
             <NavLink to="/reservations"><Icon name="clipboard" /> Đặt Kho & Nhận Kho</NavLink>
+            <NavLink to="/staff-contracts"><Icon name="refresh" /> Gia Hạn & Quá Hạn</NavLink>
+            <NavLink to="/staff-return"><Icon name="key" /> Trả Kho & Hoàn Cọc</NavLink>
+            <NavLink to="/staff-support"><Icon name="phone" /> Hỗ Trợ Khách Hàng</NavLink>
             <Link to="/"><Icon name="grid" /> Trang khách hàng</Link>
           </nav>
           {user && (

@@ -38,6 +38,19 @@ export interface Facility {
   status: string
 }
 
+export interface UnitType {
+  unitTypeId: number
+  typeName: string
+  lengthMeters: number
+  widthMeters: number
+  heightMeters: number
+  volumeCubicMeters: number
+  hasClimateControl: boolean
+  baseDailyRate: number
+  baseMonthlyRate: number
+  description: string | null
+}
+
 export interface Availability {
   unitTypeId: number
   typeName: string
@@ -116,6 +129,122 @@ export interface Contract {
   status: string
 }
 
+export interface ContractDetail {
+  contractId: number
+  contractNumber: string
+  facilityId: number
+  facilityName: string
+  unitId: number
+  unitCode: string
+  unitStatus: string
+  startDate: string
+  endDate: string
+  status: string
+  monthlyRentFee: number
+  depositPaid: number
+  accumulatedLateFee: number
+  depositBalance: number
+  outstandingLateFee: number
+  /** Renewal requests open 7 days before the end date. */
+  renewalAvailableFrom: string
+}
+
+export interface Renewal {
+  renewalId: number
+  contractId: number
+  oldEndDate: string
+  newEndDate: string
+  extensionMonths: number
+  renewalFee: number
+  status: string
+  requestedAt: string
+}
+
+/** A contract in the staff list of one facility. */
+export interface StaffContract {
+  contractId: number
+  contractNumber: string
+  customerName: string
+  customerPhone: string
+  unitId: number
+  unitCode: string
+  unitStatus: string
+  startDate: string
+  endDate: string
+  monthlyRentFee: number
+  depositPaid: number
+  status: string
+  hasPendingRenewal: boolean
+  /** 20:00 on the end date: the unit can be returned from then. */
+  returnAppointment: string
+}
+
+export interface OverdueSummary {
+  overdueId: number
+  contractId: number
+  contractNumber: string
+  customerName: string
+  unitCode: string
+  endDate: string
+  contractStatus: string
+  unitStatus: string
+  daysOverdue: number
+  accumulatedLateFee: number
+  depositBalance: number
+  outstandingLateFee: number
+  lockAppliedAt: string | null
+}
+
+export interface ReturnUnitResult {
+  contractId: number
+  status: string
+  unitStatus: string
+  depositPaid: number
+  lateFeesDeducted: number
+  depositRefundDue: number
+  lateFeesStillOwed: number
+  returnedAt: string
+}
+
+export interface SupportRequest {
+  requestId: number
+  requestCode: string
+  contractId: number
+  unitCode: string
+  category: string
+  priority: string
+  title: string
+  description: string
+  status: string
+  createdAt: string
+  assignedStaffName: string | null
+}
+
+export interface SupportUpdate {
+  updateId: number
+  updatedBy: string
+  actionMessage: string
+  previousStatus: string | null
+  newStatus: string | null
+  createdAt: string
+}
+
+export const SupportCategories: Record<string, string> = {
+  LockIssue: 'Khóa kho bị lỗi',
+  AccessCodeIssue: 'Thẻ / mã ra vào',
+  DamagedUnit: 'Kho hư hỏng, dột, ẩm',
+  PaymentIssue: 'Thanh toán, hóa đơn',
+  StoredItemsIssue: 'Đồ đạc trong kho',
+  Other: 'Khác',
+}
+
+export const SupportPriorities: Record<string, { label: string; tone: 'ok' | 'warn' | 'bad' | 'info' | 'muted' }> = {
+  Low: { label: 'Thấp', tone: 'muted' },
+  Medium: { label: 'Trung bình', tone: 'info' },
+  High: { label: 'Cao', tone: 'warn' },
+  Urgent: { label: 'Khẩn cấp', tone: 'bad' },
+}
+
 export interface Person {
   authorizedPersonId: number | null
   fullName: string
@@ -157,6 +286,42 @@ export interface AccessRecord {
   exitTime: string | null
   verifiedBy: string
 }
+
+/** Vietnamese labels and badge tone for the status codes the API returns. */
+export const StatusLabels: Record<string, { label: string; tone: 'ok' | 'warn' | 'bad' | 'info' | 'muted' }> = {
+  // contracts
+  Active: { label: 'Đang sử dụng', tone: 'ok' },
+  Renewed: { label: 'Đã gia hạn', tone: 'ok' },
+  Terminated: { label: 'Đã chấm dứt', tone: 'muted' },
+  Overdue: { label: 'Quá hạn', tone: 'bad' },
+  Liquidated: { label: 'Đã thanh lý', tone: 'muted' },
+  // reservations
+  PendingDeposit: { label: 'Chờ đặt cọc', tone: 'warn' },
+  Confirmed: { label: 'Đã nhận cọc', tone: 'info' },
+  CheckedIn: { label: 'Đã bàn giao', tone: 'ok' },
+  Cancelled: { label: 'Đã hủy', tone: 'muted' },
+  Expired: { label: 'Hết hạn cọc', tone: 'muted' },
+  // renewals
+  Pending: { label: 'Chờ thanh toán', tone: 'warn' },
+  Approved: { label: 'Đã duyệt', tone: 'info' },
+  Paid: { label: 'Đã thanh toán', tone: 'ok' },
+  // invoices
+  Unpaid: { label: 'Chưa thanh toán', tone: 'warn' },
+  Rejected: { label: 'Bị từ chối', tone: 'muted' },
+  // support requests
+  Open: { label: 'Mới gửi', tone: 'warn' },
+  InProgress: { label: 'Đang xử lý', tone: 'info' },
+  Resolved: { label: 'Đã xử lý', tone: 'ok' },
+  Closed: { label: 'Đã đóng', tone: 'muted' },
+  // units
+  Available: { label: 'Còn trống', tone: 'ok' },
+  Reserved: { label: 'Đã giữ chỗ', tone: 'info' },
+  Rented: { label: 'Đang cho thuê', tone: 'info' },
+  UnderMaintenance: { label: 'Đang bảo trì', tone: 'warn' },
+  OverdueLocked: { label: 'Khóa do quá hạn', tone: 'bad' },
+}
+
+export const statusOf = (code: string) => StatusLabels[code] ?? { label: code, tone: 'muted' as const }
 
 export const DenyReasons: Record<string, string> = {
   IdentityMismatch: 'CCCD không khớp',

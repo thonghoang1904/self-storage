@@ -272,6 +272,28 @@ public class ContractsController(
         return new DepositRefundDto(id, req.Amount, remaining - req.Amount, req.PaymentMethod, transactionCode, now);
     }
 
+    /// <summary>Contracts of one facility for staff (renewals, return, overdue). Optional status filter.</summary>
+    [HttpGet("facilities/{facilityId:int}")]
+    [Authorize(Roles = AppRoles.GateRoles)]
+    public async Task<List<StaffContractDto>> FacilityContracts(int facilityId, [FromQuery] string? status, CancellationToken ct)
+    {
+        await access.EnsureAssignedAsync(User.GetUserId(), facilityId, ct);
+        var query = db.Contracts.Where(c => c.Unit.FacilityId == facilityId);
+        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(c => c.Status == status);
+        var rows = await query.OrderBy(c => c.EndDate)
+            .Select(c => new
+            {
+                c.ContractId, c.ContractNumber, CustomerName = c.Customer.FullName, CustomerPhone = c.Customer.PhoneNumber,
+                c.UnitId, c.Unit.UnitCode, UnitStatus = c.Unit.Status, c.StartDate, c.EndDate, c.MonthlyRentFee,
+                c.DepositPaid, c.Status,
+                HasPendingRenewal = db.ContractRenewals.Any(r => r.ContractId == c.ContractId && r.Status == "Pending"),
+            })
+            .ToListAsync(ct);
+        return rows.Select(c => new StaffContractDto(c.ContractId, c.ContractNumber, c.CustomerName, c.CustomerPhone,
+            c.UnitId, c.UnitCode, c.UnitStatus, c.StartDate, c.EndDate, c.MonthlyRentFee, c.DepositPaid, c.Status,
+            c.HasPendingRenewal, c.EndDate.ToDateTime(new TimeOnly(20, 0)))).ToList();
+    }
+
     [HttpGet("facilities/{facilityId:int}/overdue")]
     [Authorize(Roles = AppRoles.GateRoles)]
     public async Task<List<OverdueSummaryDto>> FacilityOverdue(int facilityId, CancellationToken ct)
