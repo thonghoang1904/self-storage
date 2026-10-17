@@ -129,6 +129,26 @@ export interface Contract {
   status: string
 }
 
+export interface ContractDetail {
+  contractId: number
+  contractNumber: string
+  facilityId: number
+  facilityName: string
+  unitId: number
+  unitCode: string
+  unitStatus: string
+  startDate: string
+  endDate: string
+  status: string
+  monthlyRentFee: number
+  depositPaid: number
+  accumulatedLateFee: number
+  depositBalance: number
+  outstandingLateFee: number
+  /** Renewal requests open 7 days before the end date. */
+  renewalAvailableFrom: string
+}
+
 export interface Renewal {
   renewalId: number
   contractId: number
@@ -184,6 +204,55 @@ export interface ReturnUnitResult {
   depositRefundDue: number
   lateFeesStillOwed: number
   returnedAt: string
+}
+
+export interface SupportRequest {
+  requestId: number
+  requestCode: string
+  contractId: number
+  unitCode: string
+  category: string
+  priority: string
+  title: string
+  description: string
+  status: string
+  createdAt: string
+  assignedStaffName: string | null
+}
+
+export interface SupportUpdate {
+  updateId: number
+  updatedBy: string
+  actionMessage: string
+  previousStatus: string | null
+  newStatus: string | null
+  createdAt: string
+}
+
+export interface SupportChecklistItem {
+  checklistItemId: number
+  sortOrder: number
+  description: string
+  isCompleted: boolean
+  completedAt: string | null
+  completedByStaff: string | null
+  notes: string | null
+}
+
+export const SupportCategories: Record<string, string> = {
+  LockIssue: 'Khóa kho bị lỗi',
+  AccessCodeIssue: 'Thẻ / mã ra vào',
+  DamagedUnit: 'Kho hư hỏng, dột, ẩm',
+  PaymentIssue: 'Thanh toán, hóa đơn',
+  StoredItemsIssue: 'Đồ đạc trong kho',
+  Other: 'Khác',
+}
+
+export const SupportPriorities: Record<string, { label: string; tone: 'ok' | 'warn' | 'bad' | 'info' | 'muted' }> = {
+  Low: { label: 'Thấp', tone: 'muted' },
+  Medium: { label: 'Trung bình', tone: 'info' },
+  High: { label: 'Cao', tone: 'warn' },
+  Urgent: { label: 'Khẩn cấp', tone: 'bad' },
 }
 
 export interface Person {
@@ -249,6 +318,11 @@ export const StatusLabels: Record<string, { label: string; tone: 'ok' | 'warn' |
   // invoices
   Unpaid: { label: 'Chưa thanh toán', tone: 'warn' },
   Rejected: { label: 'Bị từ chối', tone: 'muted' },
+  // support requests
+  Open: { label: 'Mới gửi', tone: 'warn' },
+  InProgress: { label: 'Đang xử lý', tone: 'info' },
+  Resolved: { label: 'Đã xử lý', tone: 'ok' },
+  Closed: { label: 'Đã đóng', tone: 'muted' },
   // units
   Available: { label: 'Còn trống', tone: 'ok' },
   Reserved: { label: 'Đã giữ chỗ', tone: 'info' },

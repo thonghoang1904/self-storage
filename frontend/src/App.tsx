@@ -13,6 +13,7 @@ import StaffBilling from './pages/StaffBilling'
 import StaffContracts from './pages/StaffContracts'
 import StaffReturn from './pages/StaffReturn'
 import StaffReservations from './pages/StaffReservations'
+import StaffSupport from './pages/StaffSupport'
 import { GATE_ROLES, homeFor, Roles } from './types'
 
 // The demo build is served as a static page, so it keeps the route in the URL hash.
@@ -46,6 +47,7 @@ export default function App() {
             <Route path="/staff-billing" element={<StaffBilling />} />
             <Route path="/staff-contracts" element={<StaffContracts />} />
             <Route path="/staff-return" element={<StaffReturn />} />
+            <Route path="/staff-support" element={<StaffSupport />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
