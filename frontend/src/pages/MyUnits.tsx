@@ -70,6 +70,7 @@ export default function MyUnits() {
                       <li><Icon name="card" size={14} /> Chi phí: <b className="cyan">{fmtMoney(c.monthlyRentFee)}/tháng</b></li>
                       <li><Icon name="clipboard" size={14} /> HĐ {c.contractNumber}</li>
                     </ul>
+                    <Link to={`/contracts/${c.contractId}`} className="btn outline sm block"><Icon name="clipboard" size={15} /> Xem Hợp Đồng</Link>
                     <div className="row">
                       <button className="btn primary sm grow" onClick={() => show(c.contractId, 'people')}>Người Ủy Quyền</button>
                       <button className="btn outline sm grow" onClick={() => show(c.contractId, 'history')}>Lịch Sử</button>
@@ -117,11 +118,11 @@ export default function MyUnits() {
                 <span className="grow"><b>Đặt Thêm Kho</b><small>Chọn kích thước và giữ chỗ trong 24 giờ</small></span>
                 <Icon name="arrowRight" size={16} className="cyan" />
               </Link>
-              <a href="tel:02812345678" className="quick-action">
+              <Link to="/support" className="quick-action">
                 <span className="feature-icon sm"><Icon name="phone" size={18} /></span>
-                <span className="grow"><b>Liên Hệ Hỗ Trợ</b><small>Hotline (028) 1234 5678</small></span>
+                <span className="grow"><b>Báo Sự Cố / Hỗ Trợ</b><small>Gửi yêu cầu, theo dõi nhân viên xử lý</small></span>
                 <Icon name="arrowRight" size={16} className="cyan" />
-              </a>
+              </Link>
             </div>
 
             <div className="stack">
@@ -143,7 +144,7 @@ export default function MyUnits() {
                   <span className="notice-icon bad"><Icon name="alert" size={16} /></span>
                   <div>
                     <b>Sắp hết hạn hợp đồng</b>
-                    <p>Kho {c.unitCode} kết thúc vào {fmtDate(c.endDate)}. Liên hệ cơ sở nếu bạn muốn gia hạn.</p>
+                    <p>Kho {c.unitCode} kết thúc vào {fmtDate(c.endDate)}. <Link to={`/contracts/${c.contractId}`} className="link">Gửi yêu cầu gia hạn</Link></p>
                   </div>
                 </div>
               ))}
@@ -162,7 +163,7 @@ export default function MyUnits() {
   )
 }
 
-function AuthorizedPeople({ contractId }: { contractId: number }) {
+export function AuthorizedPeople({ contractId }: { contractId: number }) {
   const [people, setPeople] = useState<Person[]>([])
   const [form, setForm] = useState({ fullName: '', phoneNumber: '', citizenId: '', relationship: '' })
   const [error, setError] = useState('')
@@ -243,7 +244,7 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
   )
 }
 
-function History({ contractId }: { contractId: number }) {
+export function History({ contractId }: { contractId: number }) {
   const [rows, setRows] = useState<AccessRecord[] | null>(null)
   useEffect(() => {
     setRows(null)

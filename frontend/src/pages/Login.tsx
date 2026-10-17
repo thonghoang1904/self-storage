@@ -13,7 +13,7 @@ const DEMO_ACCOUNTS = [
 ]
 
 /** Split screen from the Figma "user-login" frame: brand panel left, form right. */
-function AuthShell({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
+export function AuthShell({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (
     <div className="auth-page">
       <DemoBar />
@@ -48,11 +48,11 @@ function AuthShell({ title, subtitle, children }: { title: string; subtitle: str
   )
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+export function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="field"><span>{label}</span>{children}</label>
 }
 
-function PasswordInput({ value, onChange, placeholder, autoComplete }: { value: string; onChange: (v: string) => void; placeholder: string; autoComplete: string }) {
+export function PasswordInput({ value, onChange, placeholder, autoComplete }: { value: string; onChange: (v: string) => void; placeholder: string; autoComplete: string }) {
   const [show, setShow] = useState(false)
   return (
     <span className="input-wrap">
@@ -100,6 +100,7 @@ export function Login() {
         <Field label="Mật khẩu">
           <PasswordInput value={password} onChange={setPassword} placeholder="Nhập mật khẩu" autoComplete="current-password" />
         </Field>
+        <Link to="/forgot-password" className="link forgot-link">Quên mật khẩu?</Link>
         {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
         <button className="btn primary block lg" type="submit" disabled={busy}>{busy ? 'Đang đăng nhập…' : 'Đăng Nhập'}</button>
       </form>

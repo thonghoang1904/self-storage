@@ -3,13 +3,21 @@ import { BrowserRouter, HashRouter, Navigate, Route, Routes } from 'react-router
 import { IS_DEMO } from './api'
 import { AuthProvider, useAuth } from './auth'
 import { PortalLayout, StaffLayout } from './components/layout'
+import { ContractDetail, ContractList } from './pages/Contracts'
+import DemoGuide from './pages/DemoGuide'
+import ForgotPassword from './pages/ForgotPassword'
 import Gate from './pages/Gate'
 import Home from './pages/Home'
 import Invoices from './pages/Invoices'
+import { AboutUs, Contact } from './pages/Info'
 import { Login, Register } from './pages/Login'
 import MyUnits from './pages/MyUnits'
 import Rent from './pages/Rent'
+import StaffContracts from './pages/StaffContracts'
+import StaffReturn from './pages/StaffReturn'
 import StaffReservations from './pages/StaffReservations'
+import StaffSupport from './pages/StaffSupport'
+import Support from './pages/Support'
 import { GATE_ROLES, homeFor, Roles } from './types'
 
 // The demo build is served as a static page, so it keeps the route in the URL hash.
@@ -30,9 +38,16 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/demo-guide" element={<DemoGuide />} />
           <Route element={<PortalLayout />}>
             <Route path="/" element={<Home />} />
+            <Route path="/about" element={<AboutUs />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/support" element={<RequireRole roles={[Roles.Customer]}><Support /></RequireRole>} />
             <Route path="/my-units" element={<RequireRole roles={[Roles.Customer]}><MyUnits /></RequireRole>} />
+            <Route path="/contracts" element={<RequireRole roles={[Roles.Customer]}><ContractList /></RequireRole>} />
+            <Route path="/contracts/:id" element={<RequireRole roles={[Roles.Customer]}><ContractDetail /></RequireRole>} />
             <Route path="/rent" element={<RequireRole roles={[Roles.Customer]}><Rent /></RequireRole>} />
             <Route path="/invoices" element={<RequireRole roles={[Roles.Customer]}><Invoices /></RequireRole>} />
             <Route path="/payment-result" element={<RequireRole roles={[Roles.Customer]}><Invoices /></RequireRole>} />
@@ -40,6 +55,9 @@ export default function App() {
           <Route element={<RequireRole roles={GATE_ROLES}><StaffLayout /></RequireRole>}>
             <Route path="/gate" element={<Gate />} />
             <Route path="/reservations" element={<StaffReservations />} />
+            <Route path="/staff-contracts" element={<StaffContracts />} />
+            <Route path="/staff-return" element={<StaffReturn />} />
+            <Route path="/staff-support" element={<StaffSupport />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

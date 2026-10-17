@@ -9,6 +9,10 @@ taskkill /IM SelfStorage.Api.exe /F >> "%LOG%" 2>&1
 timeout /t 2 >nul
 echo [2] Recreating database SelfStorageDB...
 sqlcmd -S localhost -E -C -I -f 65001 -i "database\01_schema.sql" >> "%LOG%" 2>&1
+rem Migrations added after 01_schema.sql (billing, payment concurrency, support checklists)
+sqlcmd -S localhost -E -C -I -f 65001 -d SelfStorageDB -i "database\02_billing_reservation_links.sql" >> "%LOG%" 2>&1
+sqlcmd -S localhost -E -C -I -f 65001 -d SelfStorageDB -i "database\03_payment_concurrency.sql" >> "%LOG%" 2>&1
+sqlcmd -S localhost -E -C -I -f 65001 -d SelfStorageDB -i "database\04_support_checklists.sql" >> "%LOG%" 2>&1
 sqlcmd -S localhost -E -C -Q "SET NOCOUNT ON; SELECT COUNT(*) AS TableCount FROM SelfStorageDB.INFORMATION_SCHEMA.TABLES" >> "%LOG%" 2>&1
 echo [3] Restarting the backend in a new window to load demo accounts...
 start "SafeKeep BACKEND - keep open" cmd /k call "%~dp02-run-backend.bat"
