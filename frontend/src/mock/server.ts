@@ -360,6 +360,9 @@ function allInvoices(): { customerId: number; facilityId: number; invoice: Invoi
 }
 
 
+// Reset tokens for the forgot-password flow: token -> { userId, password at issue time, expiry }.
+const resetTokens = new Map<string, { userId: number; password: string; expiresAt: number }>()
+
 // ------------------------------------------------------------------ routes
 
 type Body = Record<string, unknown>
@@ -387,6 +390,29 @@ const routes: [string, RegExp, Handler][] = [
     return toUserDto(u)
   }],
   ['GET', /^\/api\/auth\/me$/, (_m, { token }) => toUserDto(currentUser(token))],
+
+  ['POST', /^\/api\/auth\/forgot-password$/, (_m, { body }) => {
+    const email = String(body.email ?? '').trim().toLowerCase()
+    if (!/^\S+@\S+\.\S+$/.test(email)) throw bad('Email không hợp lệ')
+    const message = 'Nếu email đã đăng ký, hướng dẫn đặt lại mật khẩu sẽ được gửi đến hộp thư.'
+    const u = db.users.find((x) => x.email.toLowerCase() === email)
+    if (!u) return { message }
+    for (const [k, v] of resetTokens) if (v.userId === u.userId) resetTokens.delete(k)
+    const token = Math.random().toString(36).slice(2, 10).toUpperCase()
+    resetTokens.set(token, { userId: u.userId, password: u.password, expiresAt: Date.now() + 30 * 60000 })
+    // No email in the demo: hand the code back so it can be shown on screen.
+    return { message, demoToken: token }
+  }],
+  ['POST', /^\/api\/auth\/reset-password$/, (_m, { body }) => {
+    const key = String(body.token ?? '').trim()
+    const t = resetTokens.get(key)
+    if (!t || t.expiresAt < Date.now()) throw bad('Mã đặt lại mật khẩu không hợp lệ hoặc đã hết hạn')
+    const pw = String(body.newPassword ?? '')
+    if (pw.length < 8) throw bad('Mật khẩu cần ít nhất 8 ký tự')
+    userById(t.userId).password = pw
+    resetTokens.delete(key)
+    return undefined
+  }],
 
   // ---- catalog (public)
   ['GET', /^\/api\/facilities$/, () => db.facilities],

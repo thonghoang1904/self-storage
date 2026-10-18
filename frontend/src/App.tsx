@@ -3,6 +3,7 @@ import { BrowserRouter, HashRouter, Navigate, Route, Routes } from 'react-router
 import { IS_DEMO } from './api'
 import { AuthProvider, useAuth } from './auth'
 import { PortalLayout, StaffLayout } from './components/layout'
+import ForgotPassword from './pages/ForgotPassword'
 import Gate from './pages/Gate'
 import ContractDetail from './pages/ContractDetail'
 import Home from './pages/Home'
@@ -36,6 +37,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route element={<PortalLayout />}>
             <Route path="/" element={<Home />} />
             <Route path="/my-units" element={<RequireRole roles={[Roles.Customer]}><MyUnits /></RequireRole>} />

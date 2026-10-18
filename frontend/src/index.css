@@ -609,3 +609,7 @@ textarea::placeholder { color: var(--muted-2); }
 .mini-checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
 .mini-checklist li { display: flex; gap: 6px; align-items: center; }
 .mini-checklist li.done { color: var(--ok); }
+
+/* ---- forgot / reset password (Figma 45:1230) ---- */
+.forgot-link { align-self: flex-end; margin-top: -12px; font-size: 13px; }
+.btn.upper { text-transform: uppercase; letter-spacing: 0.03em; }
