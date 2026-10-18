@@ -11,7 +11,7 @@ import type {
 import { Roles } from '../types'
 
 export const DEMO_PASSWORD = 'Demo@12345'
-const DB_KEY = 'ss_mock_db_v5'
+const DB_KEY = 'ss_mock_db_v6'
 
 // ------------------------------------------------------------------ data model
 
@@ -132,8 +132,7 @@ function seed(): Db {
     facilities,
     assignments: [{ facilityId: 1, staffId: 2 }, { facilityId: 1, staffId: 3 }],
     unitTypes, units, reservations, contracts, persons, records,
-    // A renewal request waiting for payment, so the staff renewal / billing screens have data.
-    renewals: [{ renewalId: 1, contractId: 2, oldEndDate: dateOnly(addDays(now, 5)), newEndDate: dateOnly(addMonths(addDays(now, 5), 3)), extensionMonths: 3, renewalFee: 900000, status: 'Pending', requestedAt: localIso(addDays(now, -1)) }],
+    renewals: [],
     supports: [
       { requestId: 1, requestCode: 'SUP-DEMO-000101', customerId: 4, facilityId: 1, contractId: 1, unitId: unit(1, 'B-01').unitId, assignedStaffId: 3, category: 'LockIssue', priority: 'High', title: 'Ổ khóa kho B-01 bị kẹt', description: 'Sáng nay tôi mở khóa rất khó, chìa vặn không hết vòng.', status: 'InProgress', createdAt: localIso(addDays(atToday(8, 30), -1)), resolvedAt: null },
       { requestId: 2, requestCode: 'SUP-DEMO-000102', customerId: 5, facilityId: 1, contractId: 3, unitId: unit(1, 'C-01').unitId, assignedStaffId: null, category: 'DamagedUnit', priority: 'Urgent', title: 'Trần kho C-01 bị dột nước', description: 'Sau cơn mưa tối qua có nước nhỏ giọt xuống thùng hàng ở góc trái.', status: 'Open', createdAt: localIso(atToday(7, 20)), resolvedAt: null },

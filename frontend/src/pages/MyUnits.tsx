@@ -71,8 +71,12 @@ export default function MyUnits() {
                       <li><Icon name="clipboard" size={14} /> HĐ {c.contractNumber}</li>
                     </ul>
                     <div className="row">
-                      <button className="btn primary sm grow" onClick={() => show(c.contractId, 'people')}>Người Ủy Quyền</button>
-                      <button className="btn outline sm grow" onClick={() => show(c.contractId, 'history')}>Lịch Sử</button>
+                      <Link to={`/my-units/${c.contractId}?renew=1`} className="btn primary sm grow">Gia Hạn</Link>
+                      <Link to={`/my-units/${c.contractId}`} className="btn outline sm grow">Chi Tiết</Link>
+                    </div>
+                    <div className="row">
+                      <button className="btn ghost sm grow" onClick={() => show(c.contractId, 'people')}>Người Ủy Quyền</button>
+                      <button className="btn ghost sm grow" onClick={() => show(c.contractId, 'history')}>Lịch Sử</button>
                     </div>
                   </div>
                 </article>
@@ -143,7 +147,7 @@ export default function MyUnits() {
                   <span className="notice-icon bad"><Icon name="alert" size={16} /></span>
                   <div>
                     <b>Sắp hết hạn hợp đồng</b>
-                    <p>Kho {c.unitCode} kết thúc vào {fmtDate(c.endDate)}. Liên hệ cơ sở nếu bạn muốn gia hạn.</p>
+                    <p>Kho {c.unitCode} kết thúc vào {fmtDate(c.endDate)}. <Link to={`/my-units/${c.contractId}?renew=1`} className="link">Gửi yêu cầu gia hạn</Link></p>
                   </div>
                 </div>
               ))}

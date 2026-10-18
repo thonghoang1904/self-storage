@@ -4,6 +4,7 @@ import { IS_DEMO } from './api'
 import { AuthProvider, useAuth } from './auth'
 import { PortalLayout, StaffLayout } from './components/layout'
 import Gate from './pages/Gate'
+import ContractDetail from './pages/ContractDetail'
 import Home from './pages/Home'
 import Invoices from './pages/Invoices'
 import { Login, Register } from './pages/Login'
@@ -37,6 +38,7 @@ export default function App() {
           <Route element={<PortalLayout />}>
             <Route path="/" element={<Home />} />
             <Route path="/my-units" element={<RequireRole roles={[Roles.Customer]}><MyUnits /></RequireRole>} />
+            <Route path="/my-units/:id" element={<RequireRole roles={[Roles.Customer]}><ContractDetail /></RequireRole>} />
             <Route path="/rent" element={<RequireRole roles={[Roles.Customer]}><Rent /></RequireRole>} />
             <Route path="/invoices" element={<RequireRole roles={[Roles.Customer]}><Invoices /></RequireRole>} />
             <Route path="/payment-result" element={<RequireRole roles={[Roles.Customer]}><Invoices /></RequireRole>} />
