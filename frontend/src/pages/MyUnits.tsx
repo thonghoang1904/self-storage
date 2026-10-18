@@ -121,11 +121,11 @@ export default function MyUnits() {
                 <span className="grow"><b>Đặt Thêm Kho</b><small>Chọn kích thước và giữ chỗ trong 24 giờ</small></span>
                 <Icon name="arrowRight" size={16} className="cyan" />
               </Link>
-              <a href="tel:02812345678" className="quick-action">
+              <Link to="/support" className="quick-action">
                 <span className="feature-icon sm"><Icon name="phone" size={18} /></span>
-                <span className="grow"><b>Liên Hệ Hỗ Trợ</b><small>Hotline (028) 1234 5678</small></span>
+                <span className="grow"><b>Liên Hệ Hỗ Trợ</b><small>Báo sự cố, theo dõi nhân viên xử lý</small></span>
                 <Icon name="arrowRight" size={16} className="cyan" />
-              </a>
+              </Link>
             </div>
 
             <div className="stack">

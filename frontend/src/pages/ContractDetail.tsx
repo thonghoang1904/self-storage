@@ -180,6 +180,11 @@ export default function ContractDetail() {
                 </button>
               )}
               {showRenew && <RenewalPanel contract={c} renewals={renewals} onChanged={load} />}
+              {!ended && (
+                <div className="row wrap">
+                  <Link to={`/support?contract=${c.contractId}`} className="btn outline sm"><Icon name="alert" size={14} /> Báo sự cố</Link>
+                </div>
+              )}
             </section>
 
             <section className="panel">

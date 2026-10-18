@@ -50,6 +50,7 @@ export function PortalHeader() {
             <>
               <NavLink to="/my-units">Kho Của Tôi</NavLink>
               <NavLink to="/invoices">Hóa Đơn</NavLink>
+              <NavLink to="/support">Hỗ Trợ</NavLink>
               <NavLink to="/rent">Thuê Kho</NavLink>
             </>
           ) : (
@@ -93,6 +94,7 @@ export function Footer() {
           <h4>Kho Lưu Trữ</h4>
           <Link to="/rent">Đặt kho</Link>
           <Link to="/my-units">Kho của tôi</Link>
+          <Link to="/support">Hỗ trợ</Link>
           <Link to="/register">Đăng ký tài khoản</Link>
         </div>
         <div>

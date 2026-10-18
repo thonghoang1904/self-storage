@@ -595,3 +595,17 @@ textarea::placeholder { color: var(--muted-2); }
 .renew-box { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: var(--radius); background: var(--bg-tint); }
 @media (max-width: 1100px) { .detail-grid { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { .spec-grid { grid-template-columns: 1fr; } .hero-side { align-items: flex-start; } }
+
+/* ---- customer: support requests ---- */
+.support-card { gap: 14px; padding: 16px 20px; }
+.support-head { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; background: none; padding: 0; text-align: left; cursor: pointer; font: inherit; color: inherit; }
+.support-head .row { gap: 8px; margin-bottom: 4px; }
+.support-head b { color: var(--text-strong); font-size: 15px; }
+.chevron { transition: transform 0.2s; flex-shrink: 0; }
+.chevron.down { transform: rotate(90deg); }
+.support-desc { margin: 0; padding: 12px 14px; border-radius: var(--radius); background: var(--bg-tint); font-size: 14px; white-space: pre-wrap; }
+.segmented.fill { display: grid; grid-template-columns: repeat(4, 1fr); }
+.segmented.fill button { padding: 7px 4px; white-space: nowrap; font-size: 12.5px; }
+.mini-checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.mini-checklist li { display: flex; gap: 6px; align-items: center; }
+.mini-checklist li.done { color: var(--ok); }
