@@ -22,6 +22,7 @@ public sealed class OverdueService(
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<SelfStorageDbContext>();
+        var policies = scope.ServiceProvider.GetRequiredService<RentalPolicyService>();
         var now = clock.GetLocalNow().DateTime;
         var today = DateOnly.FromDateTime(now);
         var expiredReservations = await db.Reservations
@@ -39,10 +40,16 @@ public sealed class OverdueService(
             .Where(c => c.EndDate <= today
                 && (c.Status == ContractStatus.Active || c.Status == ContractStatus.Overdue))
             .ToListAsync(ct);
+        var lateFee = contracts.Count == 0
+            ? null
+            : await db.FeeConfigurations.FirstOrDefaultAsync(f => f.FeeCode == "LATE_FEE_DAILY", ct)
+                ?? throw new InvalidOperationException("LATE_FEE_DAILY must be configured in FeeConfigurations.");
 
         foreach (var contract in contracts)
         {
-            var lockAt = contract.EndDate.ToDateTime(new TimeOnly(20, 0)).AddDays(1);
+            var policy = await policies.ForFacilityAsync(contract.Unit.FacilityId, ct);
+            var lockAt = contract.EndDate.ToDateTime(new TimeOnly(20, 0))
+                .AddDays(policy.MaxOverdueDaysBeforeLock);
             if (now < lockAt) continue;
 
             var daysOverdue = 1 + (int)(now - lockAt).TotalDays;
@@ -61,7 +68,13 @@ public sealed class OverdueService(
                 db.OverdueRecords.Add(overdue);
             }
 
-            var dailyRate = decimal.Round(contract.MonthlyRentFee / 30m, 2, MidpointRounding.AwayFromZero);
+            var dailyRate = lateFee!.CalculationMethod switch
+            {
+                "DailyRate" => lateFee.DefaultAmount,
+                "Percentage" => decimal.Round(contract.MonthlyRentFee * lateFee.DefaultAmount / 3000m, 2,
+                    MidpointRounding.AwayFromZero),
+                _ => throw new InvalidOperationException("LATE_FEE_DAILY must use DailyRate or Percentage."),
+            };
             overdue.DaysOverdue = daysOverdue;
             overdue.AccumulatedLateFee = dailyRate * daysOverdue;
             overdue.ActionTaken = "UnitLocked";

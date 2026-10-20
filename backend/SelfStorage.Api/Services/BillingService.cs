@@ -18,7 +18,9 @@ public sealed class BillingService(SelfStorageDbContext db, AccessService access
         decimal unitPrice,
         int quantity = 1,
         int? contractId = null,
-        int? reservationId = null)
+        int? reservationId = null,
+        DateOnly? billingPeriodStart = null,
+        DateOnly? billingPeriodEnd = null)
     {
         if (unitPrice <= 0 || quantity <= 0)
             throw new InvalidOperationException("Billing invoices must have a positive quantity and price.");
@@ -33,6 +35,8 @@ public sealed class BillingService(SelfStorageDbContext db, AccessService access
             SubTotal = unitPrice * quantity,
             DiscountAmount = 0,
             DueDate = dueDate,
+            BillingPeriodStart = billingPeriodStart,
+            BillingPeriodEnd = billingPeriodEnd,
             Status = "Unpaid",
             Details =
             [

@@ -19,6 +19,7 @@ public class ContractsController(
     SelfStorageDbContext db,
     AccessService access,
     BillingService billing,
+    RentalPolicyService rentalPolicies,
     TimeProvider clock) : ControllerBase
 {
     public static readonly Expression<Func<Contract, ContractDto>> ToDto = c => new ContractDto(
@@ -40,6 +41,7 @@ public class ContractsController(
         var contract = await db.Contracts.Include(c => c.Unit).ThenInclude(u => u.Facility)
             .FirstOrDefaultAsync(c => c.ContractId == id && c.CustomerId == User.GetUserId(), ct)
             ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
+        var policy = await rentalPolicies.ForFacilityAsync(contract.Unit.FacilityId, ct);
         var overdue = await db.OverdueRecords.Where(r => r.ContractId == id)
             .OrderByDescending(r => r.OverdueId).FirstOrDefaultAsync(ct);
         var accrued = overdue?.AccumulatedLateFee ?? 0m;
@@ -47,7 +49,7 @@ public class ContractsController(
             contract.Unit.Facility.FacilityName, contract.UnitId, contract.Unit.UnitCode, contract.Unit.Status,
             contract.StartDate, contract.EndDate, contract.Status, contract.MonthlyRentFee, contract.DepositPaid,
             accrued, Math.Max(0m, contract.DepositPaid - accrued), Math.Max(0m, accrued - contract.DepositPaid),
-            contract.EndDate.AddDays(-7).ToDateTime(TimeOnly.MinValue));
+            contract.EndDate.AddDays(-policy.RenewalNoticeDays).ToDateTime(TimeOnly.MinValue));
     }
 
     [HttpPost("{id:int}/renewals")]
@@ -57,11 +59,12 @@ public class ContractsController(
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var now = clock.GetLocalNow().DateTime;
         var today = DateOnly.FromDateTime(now);
-        var contract = await db.Contracts.FirstOrDefaultAsync(c => c.ContractId == id
+        var contract = await db.Contracts.Include(c => c.Unit).FirstOrDefaultAsync(c => c.ContractId == id
             && c.CustomerId == User.GetUserId(), ct) ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
-        if (contract.Status != ContractStatus.Active || today < contract.EndDate.AddDays(-7)
+        var policy = await rentalPolicies.ForFacilityAsync(contract.Unit.FacilityId, ct);
+        if (contract.Status != ContractStatus.Active || today < contract.EndDate.AddDays(-policy.RenewalNoticeDays)
             || now >= contract.EndDate.ToDateTime(new TimeOnly(20, 0)))
-            throw AppException.Conflict("Chỉ có thể yêu cầu gia hạn trong 7 ngày trước ngày hết hạn, khi hợp đồng còn hiệu lực");
+            throw AppException.Conflict($"Chỉ có thể yêu cầu gia hạn trong {policy.RenewalNoticeDays} ngày trước ngày hết hạn, khi hợp đồng còn hiệu lực");
         if (await db.ContractRenewals.AnyAsync(r => r.ContractId == id && r.Status == "Pending", ct))
             throw AppException.Conflict("Hợp đồng đã có yêu cầu gia hạn đang chờ xử lý");
 

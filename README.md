@@ -77,23 +77,23 @@ Hóa đơn cọc được tạo cùng lúc đặt kho; hóa đơn gia hạn đư
 
 Cần: .NET SDK 10, Node.js 20+, SQL Server (Express/Developer đều được).
 
-**Database.** Mở SSMS, chạy `database/01_schema.sql`. Nếu dùng `sqlcmd` thì thêm `-I` (bật QUOTED_IDENTIFIER, cần cho filtered index) và `-f 65001` (đọc file dạng UTF-8; thiếu tham số này tiếng Việt trong dữ liệu mẫu sẽ bị lỗi font):
+**Development local:** chỉ cần khởi động backend bằng `dotnet run`. Backend tự tạo database `SelfStorageDB` nếu chưa tồn tại, sau đó tự áp dụng schema/migration `02`–`09` theo thứ tự. Nếu database đã có dữ liệu, backend chỉ chạy các migration có thể chạy lặp lại; không chạy lại `01_schema.sql` và không xóa dữ liệu. Frontend chỉ gọi API, không kết nối hay tự cập nhật database.
+
+**Tạo database thủ công hoặc khôi phục môi trường mới:** có thể chạy một lệnh từ thư mục gốc repo:
 
 ```
-sqlcmd -S .\SQLEXPRESS -U sa -C -I -f 65001 -i database/01_schema.sql
+sqlcmd -S .\SQLEXPRESS -U sa -C -I -f 65001 -b -i database/setup_fresh.sql
 ```
 
-`sqlcmd` sẽ hỏi mật khẩu. Nếu dùng SQL Server instance khác, thay `.\SQLEXPRESS` bằng tên server/instance tương ứng.
+`sqlcmd` sẽ hỏi mật khẩu. Nếu dùng SQL Server instance khác, thay `.\SQLEXPRESS` bằng tên server/instance tương ứng. `setup_fresh.sql` gọi `01_schema.sql`, script này xóa các bảng hiện có trước khi tạo lại, nên **chỉ dùng cho database mới hoặc khi chủ động muốn xóa toàn bộ dữ liệu**.
 
-Sau khi đã tạo database theo script trên, chạy migration billing bổ sung liên kết hóa đơn cọc với đơn đặt kho và hóa đơn gia hạn với yêu cầu gia hạn. Script an toàn để chạy lại:
+Để nâng cấp database đã có dữ liệu ngoài Development, không chạy `setup_fresh.sql` hoặc `01_schema.sql`; dùng:
 
 ```
-sqlcmd -S .\SQLEXPRESS -U sa -C -I -d SelfStorageDB -i database/02_billing_reservation_links.sql
-sqlcmd -S .\SQLEXPRESS -U sa -C -I -d SelfStorageDB -i database/03_payment_concurrency.sql
-sqlcmd -S .\SQLEXPRESS -U sa -C -I -d SelfStorageDB -i database/04_support_checklists.sql
+sqlcmd -S .\SQLEXPRESS -U sa -C -I -f 65001 -b -d SelfStorageDB -i database/upgrade_existing.sql
 ```
 
-Khi database đã tồn tại, chạy migration `02`, `03`, `04` theo thứ tự — không chạy lại `01_schema.sql` vì script khởi tạo sẽ xóa và tạo lại dữ liệu. Migration `03` thêm index hỗ trợ kiểm tra giữ chỗ và ngăn mã giao dịch/lượt vào kho đang hoạt động bị ghi trùng. Migration `04` tạo checklist cho ticket hiện có và cho các ticket mới.
+`upgrade_existing.sql` chạy các migration `02`–`09` theo đúng thứ tự; có thể chạy lại nếu cần. Nếu chạy bằng SSMS, bật **SQLCMD Mode** rồi mở script tổng tương ứng. Giữ các file migration riêng để kiểm tra thay đổi và dùng trong quy trình deploy có kiểm soát. Tự động cập nhật database hiện chỉ bật cho môi trường Development; trước khi deploy môi trường thật, cần có quy trình backup và migrate phù hợp, không reset database.
 
 **Backend.** Chuỗi kết nối mặc định trong `appsettings.json` dùng Windows Authentication. Để dùng SQL Authentication cho môi trường Development, lưu chuỗi kết nối bằng User Secrets (không ghi mật khẩu vào file trong repo):
 
@@ -103,24 +103,29 @@ dotnet user-secrets set "ConnectionStrings:SelfStorageDB" "Server=.\SQLEXPRESS;D
 
 Thay `<mat-khau-sa>` bằng mật khẩu của tài khoản `sa`. User Secrets đã được khởi tạo cho project; cấu hình này chỉ áp dụng trên máy hiện tại khi chạy Development.
 
-**Bật SMTP Gmail để gửi email reset mật khẩu thật (Windows/PowerShell):**
+**Cấu hình Gmail SMTP để gửi email reset password (Windows/PowerShell):**
 
-1. Đăng nhập Gmail bằng tài khoản sẽ gửi email. Vào **Google Account → Security & sign-in → 2-Step Verification** và bật xác minh 2 bước.
-2. Trong mục **Security & sign-in**, mở **App passwords** (có thể tìm “App passwords” trong trang Google Account), tạo app password, ví dụ tên `Self-Storage API`. Google sẽ hiện mã gồm 16 ký tự. Dùng mã này làm SMTP password, **không dùng mật khẩu đăng nhập Gmail**. Nếu Google không hiển thị App passwords, tài khoản đó chưa đủ điều kiện tạo app password.
-3. Mở PowerShell tại thư mục repo, thay hai chỗ `<gmail-cua-ban>` và `<app-password-16-ky-tu>` bằng thông tin của bạn, rồi chạy:
+1. Bật **2-Step Verification** cho tài khoản Gmail gửi thư.
+2. Trong Google Account → Security, tạo **App Password**. App Password này khác mật khẩu đăng nhập Google. Không dán mật khẩu vào chat hoặc lưu trong file repo.
+3. Tại thư mục gốc repo, chạy script. Nhập `tdkhanh123z@gmail.com` làm mailbox; App Password được nhập bằng secure prompt và lưu vào User Secrets. Script tự bỏ khoảng trắng khi lưu:
 
 ```powershell
-$project = "backend\SelfStorage.Api\SelfStorage.Api.csproj"
-dotnet user-secrets set "Smtp:Host" "smtp.gmail.com" --project $project
-dotnet user-secrets set "Smtp:Port" "587" --project $project
-dotnet user-secrets set "Smtp:Username" "<gmail-cua-ban>" --project $project
-dotnet user-secrets set "Smtp:Password" "<app-password-16-ky-tu>" --project $project
-dotnet user-secrets set "Smtp:FromAddress" "<gmail-cua-ban>" --project $project
-dotnet user-secrets set "Smtp:FromName" "Self-Storage" --project $project
-dotnet user-secrets set "Smtp:EnableSsl" "true" --project $project
+.\scripts\configure-gmail-smtp.ps1
 ```
 
-User Secrets lưu ở máy bạn, không nằm trong `appsettings.json` hay Git. Không gửi App Password lên chat hoặc commit vào repo. Dùng port `587` với STARTTLS như cấu hình trên.
+Backend gửi qua `smtp.gmail.com:587` với TLS. Chức năng này không cần OAuth Playground hay cấu hình OAuth consent screen; đăng nhập Google nếu sử dụng vẫn là luồng riêng. User Secrets chỉ áp dụng local Development. Khi deploy, lưu App Password trong secret manager của môi trường host, không commit hoặc gửi qua chat. Nếu Google không hiển thị mục App Passwords, kiểm tra 2-Step Verification và chính sách bảo mật của tài khoản.
+
+Các API frontend cho vận hành:
+
+- Nhân viên/quản lý: `GET /api/facilities/{facilityId}/daily-operations`, `GET /api/facilities/{facilityId}/contracts`, `GET /api/gate/my-facilities`.
+- Khách hàng đặt lịch nhận kho sau khi cọc được xác nhận: `PUT /api/reservations/{id}/appointment` với `AppointmentAt` dạng ISO-8601 có offset (ví dụ `2026-05-10T10:00:00+07:00`). Check-in cần đợi tới lịch; danh sách công việc theo ngày sẽ hiển thị các lịch hẹn.
+- Khách hàng có thể gửi mã `PromoCode` khi `POST /api/reservations`; mã chỉ được nhận nếu khách chưa có hợp đồng thuê, và giảm một lần trên hóa đơn thuê đầu tiên. Nhân viên xử lý yêu cầu hủy tại `/api/facilities/{facilityId}/cancellation-requests`; hoàn cọc được ghi nhận riêng sau khi chuyển tiền thực tế.
+- Khách hàng gửi yêu cầu hủy tại `POST /api/reservations/{id}/cancellation-requests` và xem trạng thái tại `GET /api/reservations/{id}/cancellation-requests/my`. Nhân viên duyệt/từ chối tại `POST /api/facilities/{facilityId}/cancellation-requests/{requestId}/resolve`; sau khi duyệt, ghi nhận khoản hoàn thực tế bằng `POST /api/reservations/{id}/cancellation-refunds`.
+- Quản lý cơ sở: `GET/POST /api/facility-management/facilities/{facilityId}/units`, `PUT /units/{unitId}`, `PUT /units/{unitId}/status`, quản lý nhân viên tại `/staff`, và tạo phụ thu tại `/contracts/{contractId}/extra-charges`.
+- Báo cáo: `GET /api/facilities/{facilityId}/dashboard` cho quản lý cơ sở; `GET /api/operations/reports/facilities` cho quản lý vận hành toàn hệ thống.
+- Quản lý vận hành: `GET/POST/PUT /api/operations/facilities`, `/rental-policies`, `/fees`, `/promotions`.
+- Quản trị hệ thống: `GET /api/admin/roles`, quản lý tài khoản tại `/api/admin/users`, cập nhật vai trò/trạng thái bằng `/users/{userId}/role` và `/users/{userId}/status`, xem lịch sử tại `/users/{userId}/activity`.
+- Tiền thuê: API tạo hóa đơn tháng đầu khi bàn giao; worker tạo hóa đơn kỳ tiếp theo trước hạn 7 ngày và đánh dấu hóa đơn chưa trả là quá hạn.
 
 4. Khởi động lại API (`dotnet run --project backend\SelfStorage.Api\SelfStorage.Api.csproj`). Mở http://localhost:5080/swagger, gọi `POST /api/auth/forgot-password` với email thật đã đăng ký trong `Users`, ví dụ:
 
@@ -141,6 +146,25 @@ Mở hộp thư đến (kiểm tra cả Spam), tìm email **“Đặt lại mậ
 
 Yêu cầu email luôn trả thông báo chung, dù email chưa đăng ký; chỉ tài khoản đang hoạt động mới nhận thư. Token sống 30 phút, dùng một lần. Hai endpoint reset bị giới hạn 5 lần mỗi 15 phút trên mỗi IP. Tài khoản demo có địa chỉ `@example.com` nên không nhận được thư; hãy dùng một tài khoản có email thật mà bạn kiểm soát.
 
+**Đăng nhập API bằng Google (độc lập với luồng gửi mail):**
+
+1. Trong [Google Cloud Console](https://console.cloud.google.com/), tạo OAuth Client ID loại **Web application**. Thêm origin của ứng dụng client vào **Authorized JavaScript origins**. Luồng API này nhận Google ID token do client lấy được, không dùng OAuth client secret ở backend.
+2. Lưu Client ID cho API trong User Secrets:
+
+   ```powershell
+   dotnet user-secrets set "Google:ClientId" "client-id-cua-ban.apps.googleusercontent.com" --project backend\SelfStorage.Api\SelfStorage.Api.csproj
+   ```
+
+3. Sau khi chạy migration `database/05_google_login.sql`, client gửi Google ID token tới `POST /api/auth/google`:
+
+   ```json
+   {
+     "idToken": "google-id-token"
+   }
+   ```
+
+   Khi token chữ ký/audience/thời hạn hợp lệ và email đã được Google xác minh, API liên kết lần đầu với tài khoản đang hoạt động có cùng email rồi trả JWT nội bộ như endpoint đăng nhập thông thường. Google subject được lưu làm liên kết duy nhất; lần đăng nhập sau dựa vào subject. API chỉ đăng nhập tài khoản đã tồn tại, không tự tạo tài khoản vì đăng ký Self-Storage cần thông tin hồ sơ bắt buộc. Tài khoản chưa liên kết vẫn có thể dùng tên đăng nhập/mật khẩu và reset password qua email.
+
 ```
 cd backend/SelfStorage.Api
 dotnet run
@@ -148,16 +172,17 @@ dotnet run
 
 Mở Swagger tại http://localhost:5080/swagger. Đăng nhập qua `POST /api/auth/login`, sao chép riêng giá trị `token` trong response, bấm **Authorize** và dán JWT nguyên bản (không thêm `Bearer `; Swagger tự thêm tiền tố này). Nếu dán cả tiền tố, request sẽ thành `Bearer Bearer ...` và bị trả về `401`.
 
-Ở môi trường Development, nếu database chưa có cơ sở nào, backend tự tạo dữ liệu mẫu:
+Ở môi trường Development, backend tự tạo các tài khoản mẫu còn thiếu cho năm role. Không ghi đè hoặc xóa tài khoản người dùng hiện có. Nếu database chưa có cơ sở nào thì tạo thêm cơ sở và dữ liệu mẫu để thử luồng nhận kho:
 
 | Tài khoản | Mật khẩu | Vai trò |
 |---|---|---|
 | `customer1` | `Demo@12345` | Khách, đang thuê kho `B-01`, CCCD `079200000123` |
 | `staff1` | `Demo@12345` | Nhân viên cơ sở Quận 7 |
 | `manager1` | `Demo@12345` | Quản lý cơ sở Quận 7 |
+| `ops1` | `Demo@12345` | Quản lý vận hành toàn hệ thống |
 | `admin` | `Demo@12345` | Quản trị hệ thống |
 
-Người được ủy quyền mẫu của `B-01`: Nguyễn Thị Người Nhà, CCCD `079300000456`.
+Các tài khoản mẫu chỉ dành cho local Development; không sử dụng mật khẩu mẫu trong môi trường thật. Nếu username đã tồn tại với role khác, backend giữ nguyên tài khoản và ghi cảnh báo. Người được ủy quyền mẫu của `B-01`: Nguyễn Thị Người Nhà, CCCD `079300000456`.
 
 **Frontend.**
 

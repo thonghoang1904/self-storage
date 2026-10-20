@@ -1,13 +1,14 @@
 using System.Net;
 using System.Net.Mail;
+using System.Text;
 using Microsoft.Extensions.Options;
 
 namespace SelfStorage.Api.Services;
 
-public sealed class SmtpOptions
+public sealed class SmtpEmailOptions
 {
     public const string SectionName = "Smtp";
-    public string Host { get; set; } = "";
+    public string Host { get; set; } = "smtp.gmail.com";
     public int Port { get; set; } = 587;
     public string Username { get; set; } = "";
     public string Password { get; set; } = "";
@@ -16,41 +17,64 @@ public sealed class SmtpOptions
     public bool EnableSsl { get; set; } = true;
 }
 
+public sealed class EmailDeliveryException(string message, Exception innerException)
+    : Exception(message, innerException);
+
 public interface IEmailSender
 {
     void ValidateConfiguration();
     Task SendPasswordResetAsync(string email, string fullName, string token, CancellationToken ct);
 }
 
-public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IEmailSender
+public sealed class SmtpEmailSender(IOptions<SmtpEmailOptions> options) : IEmailSender
 {
+    private const string Subject = "Đặt lại mật khẩu tài khoản Self-Storage";
+
     public void ValidateConfiguration()
     {
         var smtp = options.Value;
-        if (string.IsNullOrWhiteSpace(smtp.Host) || smtp.Port is < 1 or > 65535
-            || string.IsNullOrWhiteSpace(smtp.Username) || string.IsNullOrWhiteSpace(smtp.Password)
-            || !MailAddress.TryCreate(smtp.FromAddress, out _))
-            throw new InvalidOperationException("Cấu hình SMTP chưa đầy đủ. Hãy kiểm tra Smtp trong User Secrets.");
+        if (string.IsNullOrWhiteSpace(smtp.Host)
+            || smtp.Port is < 1 or > 65535
+            || string.IsNullOrWhiteSpace(smtp.Username)
+            || string.IsNullOrWhiteSpace(smtp.Password)
+            || !MailAddress.TryCreate(smtp.FromAddress, out _)
+            || !smtp.EnableSsl)
+            throw new InvalidOperationException(
+                "Cấu hình SMTP chưa đầy đủ hoặc chưa bật TLS. Hãy kiểm tra các khóa Smtp trong User Secrets.");
     }
 
     public async Task SendPasswordResetAsync(string email, string fullName, string token, CancellationToken ct)
     {
         ValidateConfiguration();
         var smtp = options.Value;
+        if (!MailAddress.TryCreate(email, out var recipient))
+            throw new InvalidOperationException("Địa chỉ email nhận không hợp lệ.");
 
-        using var message = new MailMessage
+        using var message = CreateMessage(smtp, recipient, fullName, token);
+        using var client = new SmtpClient(smtp.Host, smtp.Port)
         {
-            From = new MailAddress(smtp.FromAddress, smtp.FromName),
-            Subject = "Đặt lại mật khẩu tài khoản Self-Storage",
-            SubjectEncoding = System.Text.Encoding.UTF8,
-            BodyEncoding = System.Text.Encoding.UTF8,
-            IsBodyHtml = true,
+            EnableSsl = true,
+            DeliveryMethod = SmtpDeliveryMethod.Network,
+            UseDefaultCredentials = false,
+            Credentials = new NetworkCredential(smtp.Username, smtp.Password),
         };
-        message.To.Add(new MailAddress(email));
 
+        try
+        {
+            await client.SendMailAsync(message, ct);
+        }
+        catch (SmtpException ex)
+        {
+            throw new EmailDeliveryException("The SMTP server could not send the message.", ex);
+        }
+    }
+
+    private static MailMessage CreateMessage(
+        SmtpEmailOptions smtp, MailAddress recipient, string fullName, string token)
+    {
         var safeName = WebUtility.HtmlEncode(fullName);
         var safeToken = WebUtility.HtmlEncode(token);
-        message.Body = $"""
+        var html = $"""
             <!doctype html>
             <html lang="vi">
               <body style="margin:0;background:#f3f5f8;font-family:Arial,Helvetica,sans-serif;color:#1f2937">
@@ -75,19 +99,19 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IEmailSende
               </body>
             </html>
             """;
-        message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(
-            $"Xin chào {fullName}, mã đặt lại mật khẩu Self-Storage của bạn là: {token}\n" +
-            "Gửi mã này tới POST /api/auth/reset-password trong vòng 30 phút. Mã chỉ dùng được một lần. " +
-            "Nếu bạn không yêu cầu, hãy bỏ qua email này.",
-            System.Text.Encoding.UTF8, "text/plain"));
-
-        using var client = new SmtpClient(smtp.Host, smtp.Port)
+        var text = $"Xin chào {fullName}, mã đặt lại mật khẩu Self-Storage của bạn là: {token}\r\n" +
+                   "Gửi mã này tới POST /api/auth/reset-password trong vòng 30 phút. Mã chỉ dùng được một lần. " +
+                   "Nếu bạn không yêu cầu, hãy bỏ qua email này.";
+        var message = new MailMessage
         {
-            EnableSsl = smtp.EnableSsl,
-            DeliveryMethod = SmtpDeliveryMethod.Network,
-            UseDefaultCredentials = false,
-            Credentials = new NetworkCredential(smtp.Username, smtp.Password),
+            From = new MailAddress(smtp.FromAddress, smtp.FromName, Encoding.UTF8),
+            Subject = Subject,
+            SubjectEncoding = Encoding.UTF8,
+            BodyEncoding = Encoding.UTF8,
         };
-        await client.SendMailAsync(message, ct);
+        message.To.Add(recipient);
+        message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(text, Encoding.UTF8, "text/plain"));
+        message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(html, Encoding.UTF8, "text/html"));
+        return message;
     }
 }

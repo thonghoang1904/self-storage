@@ -22,6 +22,8 @@ public class Invoice
     public decimal DiscountAmount { get; set; }
     public decimal TotalAmount { get; private set; }
     public DateOnly DueDate { get; set; }
+    public DateOnly? BillingPeriodStart { get; set; }
+    public DateOnly? BillingPeriodEnd { get; set; }
     public string Status { get; set; } = "Unpaid";
     public DateTime CreatedAt { get; set; }
 

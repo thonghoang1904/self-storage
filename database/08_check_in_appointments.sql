@@ -1,0 +1,8 @@
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+
+IF COL_LENGTH('Reservations', 'CheckInAppointmentAt') IS NULL
+    ALTER TABLE Reservations ADD CheckInAppointmentAt DATETIMEOFFSET NULL;
+
+COMMIT TRANSACTION;
+GO

@@ -14,9 +14,13 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
     public DbSet<User> Users => Set<User>();
     public DbSet<FacilityStaffAssignment> FacilityStaffAssignments => Set<FacilityStaffAssignment>();
     public DbSet<Facility> Facilities => Set<Facility>();
+    public DbSet<RentalPolicy> RentalPolicies => Set<RentalPolicy>();
+    public DbSet<FeeConfiguration> FeeConfigurations => Set<FeeConfiguration>();
+    public DbSet<Promotion> Promotions => Set<Promotion>();
     public DbSet<UnitType> UnitTypes => Set<UnitType>();
     public DbSet<StorageUnit> StorageUnits => Set<StorageUnit>();
     public DbSet<Reservation> Reservations => Set<Reservation>();
+    public DbSet<ReservationCancellationRequest> ReservationCancellationRequests => Set<ReservationCancellationRequest>();
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<AuthorizedPerson> AuthorizedPersons => Set<AuthorizedPerson>();
     public DbSet<AccessRecord> AccessRecords => Set<AccessRecord>();
@@ -43,6 +47,8 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
         {
             e.ToTable("Users");
             e.HasKey(x => x.UserId);
+            e.Property(x => x.GoogleSubject).HasMaxLength(255).IsUnicode(false);
+            e.HasIndex(x => x.GoogleSubject).IsUnique().HasFilter("[GoogleSubject] IS NOT NULL");
             e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
             e.HasOne(x => x.Role).WithMany().HasForeignKey(x => x.RoleId);
         });
@@ -61,6 +67,26 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
             e.ToTable("Facilities");
             e.HasKey(x => x.FacilityId);
             e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
+        });
+
+        b.Entity<RentalPolicy>(e =>
+        {
+            e.ToTable("RentalPolicies");
+            e.HasKey(x => x.PolicyId);
+            e.HasOne<Facility>().WithMany().HasForeignKey(x => x.FacilityId);
+        });
+
+        b.Entity<FeeConfiguration>(e =>
+        {
+            e.ToTable("FeeConfigurations");
+            e.HasKey(x => x.FeeTypeId);
+        });
+
+        b.Entity<Promotion>(e =>
+        {
+            e.ToTable("Promotions");
+            e.HasKey(x => x.PromotionId);
+            e.HasIndex(x => x.PromoCode).IsUnique();
         });
 
         b.Entity<UnitType>(e =>
@@ -89,6 +115,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
             e.HasOne(x => x.Facility).WithMany().HasForeignKey(x => x.FacilityId);
             e.HasOne(x => x.UnitType).WithMany().HasForeignKey(x => x.UnitTypeId);
             e.HasOne(x => x.AssignedUnit).WithMany().HasForeignKey(x => x.AssignedUnitId);
+            e.HasOne(x => x.Promotion).WithMany().HasForeignKey(x => x.PromotionId);
         });
 
         b.Entity<Contract>(e =>
@@ -100,6 +127,19 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
             e.HasOne(x => x.Unit).WithMany().HasForeignKey(x => x.UnitId);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.StaffCreatedId);
             e.HasOne<Reservation>().WithMany().HasForeignKey(x => x.ReservationId);
+            e.HasOne<Promotion>().WithMany().HasForeignKey(x => x.PromotionId);
+            e.HasIndex(x => x.CustomerId).IsUnique().HasFilter("[PromotionID] IS NOT NULL");
+        });
+
+        b.Entity<ReservationCancellationRequest>(e =>
+        {
+            e.ToTable("ReservationCancellationRequests");
+            e.HasKey(x => x.CancellationRequestId);
+            e.Property(x => x.RequestedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.HasIndex(x => x.ReservationId).IsUnique().HasFilter("[Status] = 'Pending'");
+            e.HasOne(x => x.Reservation).WithMany().HasForeignKey(x => x.ReservationId);
+            e.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.ResolvedByStaffId);
         });
 
         b.Entity<AuthorizedPerson>(e =>
@@ -138,6 +178,9 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
             e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
             e.Property(x => x.DiscountAmount).HasDefaultValue(0m);
             e.Property(x => x.Status).HasDefaultValue("Unpaid");
+            e.HasIndex(x => new { x.ContractId, x.BillingPeriodStart })
+                .IsUnique()
+                .HasFilter("[InvoiceType] = 'MONTHLY_RENT' AND [ContractID] IS NOT NULL AND [BillingPeriodStart] IS NOT NULL");
             e.HasOne<Contract>().WithMany().HasForeignKey(x => x.ContractId);
             e.HasOne<Reservation>().WithMany().HasForeignKey(x => x.ReservationId);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.CustomerId);

@@ -15,6 +15,7 @@ public class User
     public string PasswordHash { get; set; } = null!;
     public string FullName { get; set; } = null!;
     public string Email { get; set; } = null!;
+    public string? GoogleSubject { get; set; }
     public string PhoneNumber { get; set; } = null!;
     public string? CitizenId { get; set; }
     public string? Address { get; set; }

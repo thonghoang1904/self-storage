@@ -59,6 +59,7 @@ CREATE TABLE Users (
     RoleID INT NOT NULL,
     Username VARCHAR(50) NOT NULL CONSTRAINT UQ_Users_Username UNIQUE,
     PasswordHash VARCHAR(255) NOT NULL,
+    GoogleSubject VARCHAR(255) NULL,
     FullName NVARCHAR(100) NOT NULL,
     Email VARCHAR(100) NOT NULL CONSTRAINT UQ_Users_Email UNIQUE,
     PhoneNumber VARCHAR(20) NOT NULL,
@@ -70,6 +71,11 @@ CREATE TABLE Users (
     CONSTRAINT FK_Users_Roles FOREIGN KEY (RoleID) REFERENCES Roles(RoleID),
     CONSTRAINT CK_Users_Status CHECK (Status IN ('Active', 'Inactive', 'Suspended'))
 );
+GO
+
+CREATE UNIQUE INDEX UX_Users_GoogleSubject
+    ON Users(GoogleSubject)
+    WHERE GoogleSubject IS NOT NULL;
 GO
 
 CREATE TABLE ActivityLogs (
@@ -201,7 +207,10 @@ CREATE TABLE Reservations (
     FacilityID INT NOT NULL,
     UnitTypeID INT NOT NULL,
     AssignedUnitID INT NULL,
+    PromotionID INT NULL,
+    PromotionDiscountAmount DECIMAL(18,2) NOT NULL CONSTRAINT DF_Reservations_PromotionDiscount DEFAULT 0,
     ExpectedStartDate DATE NOT NULL,
+    CheckInAppointmentAt DATETIMEOFFSET NULL,
     DurationMonths INT NOT NULL CONSTRAINT CK_Reservations_Duration CHECK (DurationMonths > 0),
     DepositAmount DECIMAL(18,2) NOT NULL CONSTRAINT CK_Reservations_Deposit CHECK (DepositAmount >= 0),
     EstimatedTotalFee DECIMAL(18,2) NOT NULL,
@@ -212,8 +221,31 @@ CREATE TABLE Reservations (
     CONSTRAINT FK_Reservations_Facilities FOREIGN KEY (FacilityID) REFERENCES Facilities(FacilityID),
     CONSTRAINT FK_Reservations_UnitTypes FOREIGN KEY (UnitTypeID) REFERENCES UnitTypes(UnitTypeID),
     CONSTRAINT FK_Reservations_StorageUnits FOREIGN KEY (AssignedUnitID) REFERENCES StorageUnits(UnitID),
+    CONSTRAINT FK_Reservations_Promotions FOREIGN KEY (PromotionID) REFERENCES Promotions(PromotionID),
+    CONSTRAINT CK_Reservations_PromotionDiscount CHECK (PromotionDiscountAmount >= 0),
     CONSTRAINT CK_Reservations_Status CHECK (Status IN ('PendingDeposit', 'Confirmed', 'CheckedIn', 'Cancelled', 'Expired'))
 );
+GO
+
+CREATE TABLE ReservationCancellationRequests (
+    CancellationRequestID INT IDENTITY(1,1) CONSTRAINT PK_ReservationCancellationRequests PRIMARY KEY,
+    ReservationID INT NOT NULL,
+    CustomerID INT NOT NULL,
+    Reason NVARCHAR(1000) NOT NULL,
+    Status VARCHAR(20) NOT NULL CONSTRAINT DF_CancellationRequests_Status DEFAULT 'Pending',
+    RequestedAt DATETIME2 NOT NULL CONSTRAINT DF_CancellationRequests_RequestedAt DEFAULT SYSDATETIME(),
+    ResolvedByStaffID INT NULL,
+    ResolvedAt DATETIME2 NULL,
+    ResolutionNotes NVARCHAR(1000) NULL,
+    ApprovedRefundAmount DECIMAL(18,2) NULL,
+    CONSTRAINT FK_CancellationRequests_Reservations FOREIGN KEY (ReservationID) REFERENCES Reservations(ReservationID),
+    CONSTRAINT FK_CancellationRequests_Customers FOREIGN KEY (CustomerID) REFERENCES Users(UserID),
+    CONSTRAINT FK_CancellationRequests_Staff FOREIGN KEY (ResolvedByStaffID) REFERENCES Users(UserID),
+    CONSTRAINT CK_CancellationRequests_Status CHECK (Status IN ('Pending', 'Approved', 'Rejected')),
+    CONSTRAINT CK_CancellationRequests_Refund CHECK (ApprovedRefundAmount IS NULL OR ApprovedRefundAmount >= 0)
+);
+CREATE UNIQUE INDEX UX_CancellationRequests_Reservation_Pending
+    ON ReservationCancellationRequests(ReservationID) WHERE Status = 'Pending';
 GO
 
 CREATE TABLE Contracts (
@@ -223,6 +255,7 @@ CREATE TABLE Contracts (
     CustomerID INT NOT NULL,
     UnitID INT NOT NULL,
     StaffCreatedID INT NOT NULL,
+    PromotionID INT NULL,
     StartDate DATE NOT NULL,
     EndDate DATE NOT NULL,
     MonthlyRentFee DECIMAL(18,2) NOT NULL CONSTRAINT CK_Contracts_MonthlyRent CHECK (MonthlyRentFee >= 0),
@@ -234,9 +267,12 @@ CREATE TABLE Contracts (
     CONSTRAINT FK_Contracts_Customers FOREIGN KEY (CustomerID) REFERENCES Users(UserID),
     CONSTRAINT FK_Contracts_StorageUnits FOREIGN KEY (UnitID) REFERENCES StorageUnits(UnitID),
     CONSTRAINT FK_Contracts_Staff FOREIGN KEY (StaffCreatedID) REFERENCES Users(UserID),
+    CONSTRAINT FK_Contracts_Promotions FOREIGN KEY (PromotionID) REFERENCES Promotions(PromotionID),
     CONSTRAINT CK_Contracts_Dates CHECK (EndDate > StartDate),
     CONSTRAINT CK_Contracts_Status CHECK (Status IN ('Active', 'Renewed', 'Terminated', 'Overdue', 'Liquidated'))
 );
+CREATE UNIQUE INDEX UX_Contracts_Customer_FirstPromotion
+    ON Contracts(CustomerID) WHERE PromotionID IS NOT NULL;
 GO
 
 CREATE TABLE HandoverRecords (
@@ -362,6 +398,8 @@ CREATE TABLE Invoices (
     DiscountAmount DECIMAL(18,2) NOT NULL CONSTRAINT DF_Invoices_Discount DEFAULT 0.00,
     TotalAmount AS (SubTotal - DiscountAmount) PERSISTED,
     DueDate DATE NOT NULL,
+    BillingPeriodStart DATE NULL,
+    BillingPeriodEnd DATE NULL,
     Status VARCHAR(20) NOT NULL CONSTRAINT DF_Invoices_Status DEFAULT 'Unpaid',
     CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Invoices_CreatedAt DEFAULT SYSDATETIME(),
     CONSTRAINT FK_Invoices_Contracts FOREIGN KEY (ContractID) REFERENCES Contracts(ContractID),
@@ -369,6 +407,11 @@ CREATE TABLE Invoices (
     CONSTRAINT CK_Invoices_Type CHECK (InvoiceType IN ('DEPOSIT', 'MONTHLY_RENT', 'RENEWAL', 'OVERDUE_FINE', 'EXTRA_CHARGE')),
     CONSTRAINT CK_Invoices_Status CHECK (Status IN ('Unpaid', 'Paid', 'Overdue', 'Cancelled'))
 );
+GO
+
+CREATE UNIQUE INDEX UX_Invoices_MonthlyRentPeriod
+    ON Invoices(ContractID, BillingPeriodStart)
+    WHERE InvoiceType = 'MONTHLY_RENT' AND ContractID IS NOT NULL AND BillingPeriodStart IS NOT NULL;
 GO
 
 CREATE TABLE InvoiceDetails (
@@ -516,5 +559,5 @@ INSERT INTO UnitTypes (TypeName, LengthMeters, WidthMeters, HeightMeters, HasCli
 (N'Kho Lớn L - Điều Hòa (3.0m x 4.0m)', 3.0, 4.0, 3.0, 1, 180000.00, 4800000.00, N'Hệ thống điều hòa kiểm soát độ ẩm và nhiệt độ cho đồ điện tử, mỹ phẩm');
 
 INSERT INTO RentalPolicies (PolicyName, FacilityID, DepositPercent, CancellationGraceHours, CancellationFeePercent, RenewalNoticeDays, MaxOverdueDaysBeforeLock, IsActive, EffectiveDate) VALUES
-(N'Chính sách thuê kho tiêu chuẩn 2026', NULL, 100.00, 24, 10.00, 7, 3, 1, '2026-01-01');
+(N'Chính sách thuê kho tiêu chuẩn 2026', NULL, 100.00, 24, 10.00, 7, 1, 1, '2026-01-01');
 GO

@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Google.Apis.Auth;
 using SelfStorage.Api.Data;
 using SelfStorage.Api.Data.Entities;
 using SelfStorage.Api.Dtos;
@@ -21,6 +23,7 @@ public class AuthController(
     TokenService tokens,
     IPasswordHasher<User> hasher,
     IEmailSender emailSender,
+    IOptions<GoogleAuthOptions> googleOptions,
     TimeProvider clock,
     ILogger<AuthController> logger) : ControllerBase
 {
@@ -60,6 +63,61 @@ public class AuthController(
         if (user is null || user.Status != "Active" ||
             hasher.VerifyHashedPassword(user, user.PasswordHash, req.Password) == PasswordVerificationResult.Failed)
             throw new AppException(StatusCodes.Status401Unauthorized, "Sai tên đăng nhập hoặc mật khẩu");
+
+        var (token, expires) = tokens.CreateToken(user);
+        return new LoginResponse(token, expires, ToDto(user));
+    }
+
+    /// <summary>Authenticate an existing account using a verified Google ID token.</summary>
+    [HttpPost("google")]
+    [AllowAnonymous]
+    public async Task<ActionResult<LoginResponse>> GoogleLogin(GoogleLoginRequest req, CancellationToken ct)
+    {
+        var clientId = googleOptions.Value.ClientId;
+        if (string.IsNullOrWhiteSpace(clientId))
+            throw new AppException(StatusCodes.Status503ServiceUnavailable,
+                "Đăng nhập Google chưa được cấu hình.");
+
+        GoogleJsonWebSignature.Payload payload;
+        try
+        {
+            payload = await GoogleJsonWebSignature.ValidateAsync(req.IdToken,
+                new GoogleJsonWebSignature.ValidationSettings { Audience = [clientId] });
+        }
+        catch (InvalidJwtException)
+        {
+            throw new AppException(StatusCodes.Status401Unauthorized, "Google ID token không hợp lệ hoặc đã hết hạn.");
+        }
+
+        if (!payload.EmailVerified || string.IsNullOrWhiteSpace(payload.Subject)
+            || !MailAddress.TryCreate(payload.Email, out _))
+            throw new AppException(StatusCodes.Status401Unauthorized, "Tài khoản Google không thể đăng nhập.");
+
+        var user = await db.Users.Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.GoogleSubject == payload.Subject, ct);
+        if (user is null)
+        {
+            user = await db.Users.Include(u => u.Role)
+                .FirstOrDefaultAsync(u => u.Email == payload.Email && u.Status == "Active", ct);
+            if (user is null || (user.GoogleSubject is not null && user.GoogleSubject != payload.Subject))
+                throw new AppException(StatusCodes.Status401Unauthorized, "Tài khoản Google không thể đăng nhập.");
+
+            user.GoogleSubject = payload.Subject;
+        }
+
+        if (user.Status != "Active")
+            throw new AppException(StatusCodes.Status401Unauthorized, "Tài khoản Google không thể đăng nhập.");
+
+        var now = clock.GetUtcNow().UtcDateTime;
+        db.ActivityLogs.Add(new ActivityLog
+        {
+            UserId = user.UserId,
+            Action = "GoogleLogin",
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+            Details = "Authenticated using a verified Google account",
+            CreatedAt = now,
+        });
+        await db.SaveChangesAsync(ct);
 
         var (token, expires) = tokens.CreateToken(user);
         return new LoginResponse(token, expires, ToDto(user));
@@ -111,7 +169,7 @@ public class AuthController(
         {
             await emailSender.SendPasswordResetAsync(user.Email, user.FullName, rawToken, ct);
         }
-        catch (SmtpException ex)
+        catch (EmailDeliveryException ex)
         {
             await InvalidateResetTokenAsync(user.UserId, details, ct);
             logger.LogError(ex, "SMTP delivery failed for password reset request");

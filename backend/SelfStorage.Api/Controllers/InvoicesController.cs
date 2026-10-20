@@ -120,7 +120,9 @@ public class InvoicesController(
                 .Select(p => new PaymentDto(p.PaymentId, p.PaymentMethod, p.TransactionCode, p.AmountPaid,
                     p.PaymentDate, p.Status, p.PaymentNotes,
                     p.ReceivedByStaffId is int receivedBy && staffNames.TryGetValue(receivedBy, out var name) ? name : null))
-                .ToList()))
+                .ToList(),
+            i.BillingPeriodStart,
+            i.BillingPeriodEnd))
             .ToList();
     }
 }
