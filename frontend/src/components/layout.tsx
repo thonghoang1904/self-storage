@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { api, IS_DEMO } from '../api'
 import { useAuth } from '../auth'
-import { GATE_ROLES, Roles, type Facility } from '../types'
+import { GATE_ROLES, roleLabel, Roles, type Facility } from '../types'
 import { Icon, Logo } from './ui'
 
 // ------------------------------------------------------------------ demo bar
@@ -60,6 +60,7 @@ export function PortalHeader() {
             </>
           )}
           {isStaff && <NavLink to="/gate">Màn hình nhân viên</NavLink>}
+          {user?.role === Roles.Admin && <NavLink to="/admin/users">Màn hình quản trị</NavLink>}
           <div className="portal-nav-actions">
             {user ? (
               <>
@@ -158,11 +159,6 @@ export function useStaffFacility() {
   return ctx
 }
 
-const roleLabel: Record<string, string> = {
-  [Roles.Staff]: 'Nhân viên cơ sở',
-  [Roles.Manager]: 'Quản lý cơ sở',
-}
-
 export function StaffLayout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
@@ -207,7 +203,7 @@ export function StaffLayout() {
               <span className="avatar">{initials(user.fullName)}</span>
               <span className="grow">
                 <b>{user.fullName}</b>
-                <small>{roleLabel[user.role] ?? user.role}</small>
+                <small>{roleLabel(user.role)}</small>
               </span>
               <button className="icon-btn" title="Đăng xuất" onClick={() => { logout(); navigate('/login') }}><Icon name="logout" /></button>
             </div>
@@ -233,5 +229,53 @@ export function StaffLayout() {
         </div>
       </div>
     </FacilityContext.Provider>
+  )
+}
+
+// ------------------------------------------------------------------ system administrator console (same dark sidebar)
+
+export function AdminLayout() {
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const [menuOpen, setMenuOpen] = useState(false)
+  useEffect(() => setMenuOpen(false), [pathname])
+
+  return (
+    <div className="staff">
+      <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
+        <div className="sidebar-brand"><Logo admin light /></div>
+        <nav className="sidebar-nav">
+          {/* Same menu as the Figma admin screens; only the staff screen is built so far. */}
+          <span className="soon" title="Chưa có màn hình"><Icon name="grid" /> Tổng Quan</span>
+          <span className="soon" title="Chưa có màn hình"><Icon name="building" /> Kho Lưu Trữ</span>
+          <span className="soon" title="Chưa có màn hình"><Icon name="users" /> Khách Hàng</span>
+          <NavLink to="/admin/users"><Icon name="user" /> Nhân Viên</NavLink>
+          <span className="soon" title="Chưa có màn hình"><Icon name="chart" /> Doanh Thu</span>
+          <span className="soon" title="Chưa có màn hình"><Icon name="file" /> Báo Cáo</span>
+          <span className="soon" title="Chưa có màn hình"><Icon name="settings" /> Cài Đặt</span>
+          <Link to="/"><Icon name="arrowRight" className="flip" /> Trang khách hàng</Link>
+        </nav>
+        {user && (
+          <div className="sidebar-user">
+            <span className="avatar">{initials(user.fullName)}</span>
+            <span className="grow">
+              <b>{user.fullName}</b>
+              <small>{roleLabel(user.role)}</small>
+            </span>
+            <button className="icon-btn" title="Đăng xuất" onClick={() => { logout(); navigate('/login') }}><Icon name="logout" /></button>
+          </div>
+        )}
+      </aside>
+      {menuOpen && <div className="sidebar-scrim" onClick={() => setMenuOpen(false)} />}
+      <div className="staff-main">
+        <DemoBar />
+        <header className="staff-topbar">
+          <button className="icon-btn menu-toggle" aria-label="Mở menu" onClick={() => setMenuOpen(true)}><Icon name="menu" /></button>
+          <h2>Nhân Viên Hệ Thống</h2>
+        </header>
+        <main className="staff-content"><Outlet /></main>
+      </div>
+    </div>
   )
 }

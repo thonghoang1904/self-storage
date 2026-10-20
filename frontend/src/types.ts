@@ -12,7 +12,16 @@ export const Roles = {
 export const GATE_ROLES: string[] = [Roles.Staff, Roles.Manager]
 
 export const homeFor = (role: string) =>
-  GATE_ROLES.includes(role) ? '/gate' : role === Roles.Customer ? '/my-units' : '/'
+  GATE_ROLES.includes(role) ? '/gate' : role === Roles.Customer ? '/my-units' : role === Roles.Admin ? '/admin/users' : '/'
+
+export const RoleLabels: Record<string, string> = {
+  [Roles.Customer]: 'Khách hàng',
+  [Roles.Staff]: 'Nhân viên cơ sở',
+  [Roles.Manager]: 'Quản lý cơ sở',
+  [Roles.OpsManager]: 'Quản lý vận hành',
+  [Roles.Admin]: 'Quản trị hệ thống',
+}
+export const roleLabel = (role: string) => RoleLabels[role] ?? role
 
 export interface UserDto {
   userId: number
@@ -25,6 +34,34 @@ export interface LoginResponse {
   token: string
   expiresAt: string
   user: UserDto
+}
+
+/** An account as the system administrator sees it (GET /api/admin/users). */
+export interface AdminUser {
+  userId: number
+  username: string
+  fullName: string
+  email: string
+  phoneNumber: string
+  citizenId: string | null
+  /** Active | Inactive | Suspended */
+  status: string
+  roleId: number
+  roleName: string
+}
+
+export interface RoleInfo {
+  roleId: number
+  roleName: string
+  description: string | null
+}
+
+export interface ActivityLog {
+  logId: number
+  action: string
+  details: string | null
+  ipAddress: string | null
+  createdAt: string
 }
 
 export interface Facility {
