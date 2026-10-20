@@ -156,9 +156,10 @@ public sealed class SystemAdminController(
     {
         var normalizedUsername = username.Trim();
         var normalizedEmail = email.Trim();
+        var normalizedCitizenId = Normalize(citizenId);
         var duplicate = await db.Users.AnyAsync(u => (excludeUserId == null || u.UserId != excludeUserId.Value)
             && (u.Username == normalizedUsername || u.Email == normalizedEmail
-                || (citizenId != null && u.CitizenId == citizenId)), ct);
+                || (normalizedCitizenId != null && u.CitizenId == normalizedCitizenId)), ct);
         if (duplicate)
             throw AppException.Conflict("Tên đăng nhập, email hoặc CCCD đã được sử dụng");
     }

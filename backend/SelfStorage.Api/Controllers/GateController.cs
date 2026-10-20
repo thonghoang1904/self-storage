@@ -47,4 +47,14 @@ public class GateController(AccessService access) : ControllerBase
     [HttpPost("access-records/{accessRecordId:long}/exit")]
     public Task<AccessRecordDto> ConfirmExit(long accessRecordId, CancellationToken ct) =>
         access.ConfirmExitAsync(User.GetUserId(), accessRecordId, ct);
+
+    [HttpGet("facilities/{facilityId:int}/visit-registrations")]
+    public Task<List<VisitRegistrationDto>> VisitRegistrations(
+        int facilityId, [FromQuery] string? status, CancellationToken ct) =>
+        access.GetFacilityVisitRegistrationsAsync(User.GetUserId(), facilityId, status, ct);
+
+    [HttpPost("facilities/{facilityId:int}/visit-registrations/{registrationId:long}/review")]
+    public Task<VisitRegistrationDto> ReviewVisitRegistration(
+        int facilityId, long registrationId, ReviewVisitRegistrationRequest req, CancellationToken ct) =>
+        access.ReviewVisitRegistrationAsync(User.GetUserId(), facilityId, registrationId, req, ct);
 }

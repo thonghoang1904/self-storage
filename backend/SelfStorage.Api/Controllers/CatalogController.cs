@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SelfStorage.Api.Data;
 using SelfStorage.Api.Data.Entities;
 using SelfStorage.Api.Dtos;
+using SelfStorage.Api.Infrastructure;
 
 namespace SelfStorage.Api.Controllers;
 
@@ -28,30 +29,51 @@ public class CatalogController(SelfStorageDbContext db, TimeProvider clock) : Co
             .ToListAsync(ct);
 
     /// <summary>Number of available units per unit type at one facility.</summary>
-    /// <summary>Units still bookable: available units minus those held by open reservations.</summary>
     [HttpGet("facilities/{facilityId:int}/availability")]
-    public Task<List<AvailabilityDto>> Availability(int facilityId, CancellationToken ct)
+    public async Task<List<AvailabilityDto>> Availability(int facilityId, CancellationToken ct)
     {
+        var facilityStatus = await db.Facilities.Where(f => f.FacilityId == facilityId)
+            .Select(f => f.Status).SingleOrDefaultAsync(ct);
+        if (facilityStatus is null || facilityStatus == "Closed")
+            throw AppException.NotFound("Không tìm thấy cơ sở đang hoạt động");
+
         var now = clock.GetLocalNow().DateTime;
-        return db.UnitTypes.OrderBy(t => t.BaseMonthlyRate)
-            .Select(t => new AvailabilityDto(t.UnitTypeId, t.TypeName, t.BaseMonthlyRate,
-                db.StorageUnits.Count(u => u.FacilityId == facilityId && u.UnitTypeId == t.UnitTypeId
-                                           && u.Status == UnitStatus.Available)
-                - db.Reservations.Count(r => r.FacilityId == facilityId && r.UnitTypeId == t.UnitTypeId
-                                             && (r.Status == ReservationStatus.Confirmed
-                                                 || (r.Status == ReservationStatus.PendingDeposit && r.DepositDeadline > now)))))
+        var availability = db.UnitTypes.OrderBy(t => t.BaseMonthlyRate)
+            .Select(t => new
+            {
+                t.UnitTypeId,
+                t.TypeName,
+                t.BaseMonthlyRate,
+                Available = db.StorageUnits.Count(u => u.FacilityId == facilityId
+                        && u.UnitTypeId == t.UnitTypeId && u.Status == UnitStatus.Available)
+                    - db.Reservations.Count(r => r.FacilityId == facilityId && r.UnitTypeId == t.UnitTypeId
+                        && (r.Status == ReservationStatus.Confirmed
+                            || (r.Status == ReservationStatus.PendingDeposit && r.DepositDeadline > now))),
+            });
+        return await availability.Select(t => new AvailabilityDto(t.UnitTypeId, t.TypeName,
+                t.BaseMonthlyRate,
+                facilityStatus == "Active" && t.Available > 0 ? t.Available : 0))
             .ToListAsync(ct);
     }
 
     [HttpGet("facilities/{facilityId:int}/units")]
-    public Task<List<StorageUnitDto>> Units(int facilityId, [FromQuery] string? status, [FromQuery] int? unitTypeId,
+    public async Task<List<StorageUnitDto>> Units(int facilityId, [FromQuery] string? status, [FromQuery] int? unitTypeId,
         CancellationToken ct)
     {
-        var q = db.StorageUnits.Where(u => u.FacilityId == facilityId);
-        if (!string.IsNullOrEmpty(status)) q = q.Where(u => u.Status == status);
+        if (!string.IsNullOrWhiteSpace(status) && status != UnitStatus.Available)
+            throw AppException.BadRequest("Danh mục công khai chỉ cho phép lọc kho còn trống");
+        var facilityStatus = await db.Facilities.Where(f => f.FacilityId == facilityId)
+            .Select(f => f.Status).SingleOrDefaultAsync(ct);
+        if (facilityStatus is null || facilityStatus == "Closed")
+            throw AppException.NotFound("Không tìm thấy cơ sở đang hoạt động");
+        if (facilityStatus != "Active")
+            return [];
+        var q = db.StorageUnits.Where(u => u.FacilityId == facilityId
+            && u.Status == UnitStatus.Available);
         if (unitTypeId is not null) q = q.Where(u => u.UnitTypeId == unitTypeId);
-        return q.OrderBy(u => u.FloorNumber).ThenBy(u => u.UnitCode)
-            .Select(u => new StorageUnitDto(u.UnitId, u.UnitCode, u.FloorNumber, u.ZoneArea, u.MonthlyPrice,
+        return await q.OrderBy(u => u.FloorNumber).ThenBy(u => u.UnitCode)
+            .Select(u => new StorageUnitDto(u.UnitId, u.UnitCode, u.FloorNumber, u.ZoneArea,
+                u.UnitType.BaseMonthlyRate,
                 u.Status, u.UnitTypeId, u.UnitType.TypeName))
             .ToListAsync(ct);
     }

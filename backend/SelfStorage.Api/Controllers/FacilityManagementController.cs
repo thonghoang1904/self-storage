@@ -27,7 +27,7 @@ public sealed class FacilityManagementController(
         return await db.StorageUnits.Where(u => u.FacilityId == facilityId)
             .OrderBy(u => u.FloorNumber).ThenBy(u => u.UnitCode)
             .Select(u => new StorageUnitDto(u.UnitId, u.UnitCode, u.FloorNumber, u.ZoneArea,
-                u.MonthlyPrice, u.Status, u.UnitTypeId, u.UnitType.TypeName))
+                u.UnitType.BaseMonthlyRate, u.Status, u.UnitTypeId, u.UnitType.TypeName))
             .ToListAsync(ct);
     }
 
@@ -39,8 +39,10 @@ public sealed class FacilityManagementController(
         await EnsureManagerOwnsFacilityAsync(facilityId, ct);
         if (!await db.Facilities.AnyAsync(f => f.FacilityId == facilityId && f.Status == "Active", ct))
             throw AppException.Conflict("Chỉ được tạo kho tại cơ sở đang hoạt động");
-        if (!await db.UnitTypes.AnyAsync(t => t.UnitTypeId == req.UnitTypeId, ct))
-            throw AppException.NotFound("Không tìm thấy loại kho");
+        var unitType = await db.UnitTypes.FindAsync([req.UnitTypeId], ct)
+            ?? throw AppException.NotFound("Không tìm thấy loại kho");
+        if (req.MonthlyPrice != unitType.BaseMonthlyRate)
+            throw AppException.BadRequest("Giá thuê kho phải bằng giá niêm yết của loại kho");
 
         var unitCode = req.UnitCode.Trim();
         if (await db.StorageUnits.AnyAsync(u => u.FacilityId == facilityId && u.UnitCode == unitCode, ct))
@@ -53,7 +55,7 @@ public sealed class FacilityManagementController(
             UnitCode = unitCode,
             FloorNumber = req.FloorNumber,
             ZoneArea = Normalize(req.ZoneArea),
-            MonthlyPrice = req.MonthlyPrice,
+            MonthlyPrice = unitType.BaseMonthlyRate,
             Status = UnitStatus.Available,
         };
         db.StorageUnits.Add(unit);
@@ -67,13 +69,31 @@ public sealed class FacilityManagementController(
         int facilityId, int unitId, UpdateStorageUnitRequest req, CancellationToken ct)
     {
         await EnsureManagerOwnsFacilityAsync(facilityId, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var unit = await db.StorageUnits.FirstOrDefaultAsync(
             u => u.UnitId == unitId && u.FacilityId == facilityId, ct)
             ?? throw AppException.NotFound("Không tìm thấy kho tại cơ sở");
         if (unit.Status is UnitStatus.Rented or UnitStatus.OverdueLocked or UnitStatus.Reserved)
             throw AppException.Conflict("Không thể sửa thông tin loại/vị trí kho khi kho đang được thuê hoặc giữ chỗ");
-        if (!await db.UnitTypes.AnyAsync(t => t.UnitTypeId == req.UnitTypeId, ct))
-            throw AppException.NotFound("Không tìm thấy loại kho");
+        if (await db.Contracts.AnyAsync(c => c.UnitId == unitId
+                && (c.Status == ContractStatus.Active || c.Status == ContractStatus.Overdue), ct))
+            throw AppException.Conflict("Không thể sửa kho đang có hợp đồng hiệu lực");
+        var unitType = await db.UnitTypes.FindAsync([req.UnitTypeId], ct)
+            ?? throw AppException.NotFound("Không tìm thấy loại kho");
+        if (req.MonthlyPrice != unitType.BaseMonthlyRate)
+            throw AppException.BadRequest("Giá thuê kho phải bằng giá niêm yết của loại kho");
+        if (unit.Status == UnitStatus.Available && unit.UnitTypeId != req.UnitTypeId)
+        {
+            var available = await db.StorageUnits.CountAsync(u => u.FacilityId == facilityId
+                && u.UnitTypeId == unit.UnitTypeId && u.Status == UnitStatus.Available, ct);
+            var now = clock.GetLocalNow().DateTime;
+            var held = await db.Reservations.CountAsync(r => r.FacilityId == facilityId
+                && r.UnitTypeId == unit.UnitTypeId
+                && (r.Status == ReservationStatus.Confirmed
+                    || (r.Status == ReservationStatus.PendingDeposit && r.DepositDeadline > now)), ct);
+            if (available - 1 < held)
+                throw AppException.Conflict("Không thể đổi loại kho vì sẽ làm thiếu chỗ cho các đơn đã đặt");
+        }
         var unitCode = req.UnitCode.Trim();
         if (await db.StorageUnits.AnyAsync(u => u.FacilityId == facilityId
             && u.UnitId != unitId && u.UnitCode == unitCode, ct))
@@ -83,8 +103,9 @@ public sealed class FacilityManagementController(
         unit.UnitCode = unitCode;
         unit.FloorNumber = req.FloorNumber;
         unit.ZoneArea = Normalize(req.ZoneArea);
-        unit.MonthlyPrice = req.MonthlyPrice;
+        unit.MonthlyPrice = unitType.BaseMonthlyRate;
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return await ProjectUnit(unitId, ct);
     }
 
@@ -95,13 +116,26 @@ public sealed class FacilityManagementController(
         await EnsureManagerOwnsFacilityAsync(facilityId, ct);
         if (req.Status is not (UnitStatus.Available or UnitStatus.UnderMaintenance))
             throw AppException.BadRequest("Trạng thái kho chỉ có thể chuyển thủ công giữa Available và UnderMaintenance");
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var unit = await db.StorageUnits.FirstOrDefaultAsync(
             u => u.UnitId == unitId && u.FacilityId == facilityId, ct)
             ?? throw AppException.NotFound("Không tìm thấy kho tại cơ sở");
-        if (req.Status == UnitStatus.Available && await db.Contracts.AnyAsync(c =>
+        if (await db.Contracts.AnyAsync(c =>
             c.UnitId == unitId
             && (c.Status == ContractStatus.Active || c.Status == ContractStatus.Overdue), ct))
-            throw AppException.Conflict("Không thể chuyển kho đang có hợp đồng hiệu lực sang trạng thái trống");
+            throw AppException.Conflict("Không thể đổi trạng thái kho đang có hợp đồng hiệu lực");
+        if (req.Status == UnitStatus.UnderMaintenance && unit.Status == UnitStatus.Available)
+        {
+            var available = await db.StorageUnits.CountAsync(u => u.FacilityId == facilityId
+                && u.UnitTypeId == unit.UnitTypeId && u.Status == UnitStatus.Available, ct);
+            var now = clock.GetLocalNow().DateTime;
+            var held = await db.Reservations.CountAsync(r => r.FacilityId == facilityId
+                && r.UnitTypeId == unit.UnitTypeId
+                && (r.Status == ReservationStatus.Confirmed
+                    || (r.Status == ReservationStatus.PendingDeposit && r.DepositDeadline > now)), ct);
+            if (available - 1 < held)
+                throw AppException.Conflict("Không thể đưa kho vào bảo trì vì sẽ làm thiếu chỗ cho các đơn đã đặt");
+        }
 
         var oldStatus = unit.Status;
         unit.Status = req.Status;
@@ -114,6 +148,7 @@ public sealed class FacilityManagementController(
             CreatedAt = clock.GetLocalNow().DateTime,
         });
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return await ProjectUnit(unitId, ct);
     }
 
@@ -255,7 +290,7 @@ public sealed class FacilityManagementController(
     private Task<StorageUnitDto> ProjectUnit(int unitId, CancellationToken ct) =>
         db.StorageUnits.Where(u => u.UnitId == unitId)
             .Select(u => new StorageUnitDto(u.UnitId, u.UnitCode, u.FloorNumber, u.ZoneArea,
-                u.MonthlyPrice, u.Status, u.UnitTypeId, u.UnitType.TypeName))
+                u.UnitType.BaseMonthlyRate, u.Status, u.UnitTypeId, u.UnitType.TypeName))
             .SingleAsync(ct);
 
     private static string? Normalize(string? value) =>

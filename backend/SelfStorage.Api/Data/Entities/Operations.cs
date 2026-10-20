@@ -53,6 +53,10 @@ public class Payment
     public DateTime PaymentDate { get; set; }
     public string Status { get; set; } = "Success";
     public string? PaymentNotes { get; set; }
+    public string? GatewayPaymentUrl { get; set; }
+    public string? GatewayQrCodeUrl { get; set; }
+    public string? GatewayDeepLink { get; set; }
+    public string? GatewayDeepLinkWebInApp { get; set; }
 }
 
 public class HandoverRecord

@@ -64,6 +64,35 @@ public sealed class OperationsManagementController(
         return ToFacilityDto(facility);
     }
 
+    [HttpGet("unit-types")]
+    public Task<List<UnitTypeDto>> UnitTypes(CancellationToken ct) =>
+        db.UnitTypes.OrderBy(t => t.BaseMonthlyRate)
+            .Select(t => new UnitTypeDto(t.UnitTypeId, t.TypeName, t.LengthMeters, t.WidthMeters,
+                t.HeightMeters, t.VolumeCubicMeters, t.HasClimateControl, t.BaseDailyRate,
+                t.BaseMonthlyRate, t.Description))
+            .ToListAsync(ct);
+
+    [HttpPut("unit-types/{unitTypeId:int}/pricing")]
+    public async Task<UnitTypeDto> UpdateUnitTypePricing(
+        int unitTypeId, UpdateUnitTypePricingRequest req, CancellationToken ct)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            System.Data.IsolationLevel.Serializable, ct);
+        var unitType = await db.UnitTypes.FindAsync([unitTypeId], ct)
+            ?? throw AppException.NotFound("Không tìm thấy loại kho");
+        unitType.BaseDailyRate = req.BaseDailyRate;
+        unitType.BaseMonthlyRate = req.BaseMonthlyRate;
+        await db.StorageUnits.Where(u => u.UnitTypeId == unitTypeId)
+            .ExecuteUpdateAsync(update => update.SetProperty(u => u.MonthlyPrice, req.BaseMonthlyRate), ct);
+        AddLog("UnitTypePricingUpdated",
+            $"Updated prices for unit type {unitTypeId}: daily {req.BaseDailyRate:N2}, monthly {req.BaseMonthlyRate:N2}");
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return new UnitTypeDto(unitType.UnitTypeId, unitType.TypeName, unitType.LengthMeters,
+            unitType.WidthMeters, unitType.HeightMeters, unitType.VolumeCubicMeters,
+            unitType.HasClimateControl, unitType.BaseDailyRate, unitType.BaseMonthlyRate, unitType.Description);
+    }
+
     [HttpGet("rental-policies")]
     public Task<List<RentalPolicyDto>> RentalPolicies(CancellationToken ct) =>
         db.RentalPolicies.OrderByDescending(p => p.EffectiveDate).ThenBy(p => p.FacilityId)

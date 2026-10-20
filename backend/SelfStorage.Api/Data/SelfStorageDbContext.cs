@@ -4,9 +4,8 @@ using SelfStorage.Api.Data.Entities;
 namespace SelfStorage.Api.Data;
 
 /// <summary>
-/// Maps onto the existing SelfStorageDB schema (database/01_schema.sql), which must not be changed.
-/// The database is created by those scripts, not by EF migrations.
-/// Only the tables used by the current API are mapped; add the rest the same way.
+/// Maps the API entities onto the SQL schema maintained by database scripts, not EF migrations.
+/// Keep entity mappings and the ordered SQL migrations in sync.
 /// </summary>
 public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options) : DbContext(options)
 {
@@ -24,6 +23,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<AuthorizedPerson> AuthorizedPersons => Set<AuthorizedPerson>();
     public DbSet<AccessRecord> AccessRecords => Set<AccessRecord>();
+    public DbSet<VisitRegistration> VisitRegistrations => Set<VisitRegistration>();
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<InvoiceDetail> InvoiceDetails => Set<InvoiceDetail>();
@@ -154,12 +154,29 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
         {
             e.ToTable("AccessRecords");
             e.HasKey(x => x.AccessRecordId);
+            e.HasIndex(x => x.VisitRegistrationId);
             e.HasOne(x => x.Contract).WithMany().HasForeignKey(x => x.ContractId);
+            e.HasOne(x => x.VisitRegistration).WithMany().HasForeignKey(x => x.VisitRegistrationId);
             e.HasOne(x => x.Unit).WithMany().HasForeignKey(x => x.UnitId);
             e.HasOne<Facility>().WithMany().HasForeignKey(x => x.FacilityId);
             e.HasOne(x => x.AuthorizedPerson).WithMany().HasForeignKey(x => x.AuthorizedPersonId);
             e.HasOne(x => x.VerifiedByStaff).WithMany().HasForeignKey(x => x.VerifiedByStaffId);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.ExitConfirmedByStaffId);
+        });
+
+        b.Entity<VisitRegistration>(e =>
+        {
+            e.ToTable("VisitRegistrations");
+            e.HasKey(x => x.VisitRegistrationId);
+            e.Property(x => x.Purpose).HasMaxLength(255);
+            e.Property(x => x.Status).HasMaxLength(20);
+            e.Property(x => x.RequestedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.HasIndex(x => new { x.ContractId, x.ScheduledEntryAt });
+            e.HasIndex(x => new { x.Status, x.ScheduledEntryAt });
+            e.HasOne(x => x.Contract).WithMany().HasForeignKey(x => x.ContractId);
+            e.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId);
+            e.HasOne(x => x.AuthorizedPerson).WithMany().HasForeignKey(x => x.AuthorizedPersonId);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.ReviewedByStaffId);
         });
 
         b.Entity<ActivityLog>(e =>
@@ -199,6 +216,10 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
         {
             e.ToTable("Payments");
             e.HasKey(x => x.PaymentId);
+            e.Property(x => x.GatewayPaymentUrl).HasMaxLength(2048);
+            e.Property(x => x.GatewayQrCodeUrl).HasMaxLength(4000);
+            e.Property(x => x.GatewayDeepLink).HasMaxLength(2048);
+            e.Property(x => x.GatewayDeepLinkWebInApp).HasMaxLength(2048);
             e.Property(x => x.PaymentDate).HasDefaultValueSql("SYSDATETIME()");
             e.Property(x => x.Status).HasDefaultValue("Success");
             e.HasOne<Invoice>().WithMany(x => x.Payments).HasForeignKey(x => x.InvoiceId);
