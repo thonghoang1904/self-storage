@@ -5,7 +5,7 @@
  * Data lives in localStorage of this browser only; "Đặt lại dữ liệu demo" wipes it.
  */
 import type {
-  AccessIssue, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
+  AccessIssue, ActivityLog, AdminUser, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
   OverdueSummary, Person, Renewal, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate,
 } from '../types'
 import { Roles } from '../types'
@@ -15,7 +15,7 @@ const DB_KEY = 'ss_mock_db_v7'
 
 // ------------------------------------------------------------------ data model
 
-interface User { userId: number; username: string; password: string; fullName: string; email: string; phoneNumber: string; citizenId: string; role: string }
+interface User { userId: number; username: string; password: string; fullName: string; email: string; phoneNumber: string; citizenId: string | null; role: string; status?: string }
 interface Unit { unitId: number; facilityId: number; unitTypeId: number; unitCode: string; floorNumber: number; zoneArea: string; monthlyPrice: number; status: string }
 interface Rsv { reservationId: number; reservationCode: string; customerId: number; facilityId: number; unitTypeId: number; assignedUnitId: number | null; expectedStartDate: string; checkInAppointmentAt?: string | null; durationMonths: number; depositAmount: number; estimatedTotalFee: number; status: string; depositDeadline: string; createdAt: string }
 interface Ctr { contractId: number; contractNumber: string; customerId: number; unitId: number; startDate: string; endDate: string; monthlyRentFee: number; depositPaid: number; status: string }
@@ -43,6 +43,7 @@ interface Db {
   supports: Sup[]
   supportUpdates: SupUpd[]
   refunds?: { contractId: number; amount: number; at: string }[]
+  logs?: (ActivityLog & { userId: number })[]
 }
 
 // ------------------------------------------------------------------ time helpers (server local time, like SYSDATETIME)
@@ -363,6 +364,38 @@ function allInvoices(): { customerId: number; facilityId: number; invoice: Invoi
 }
 
 
+// ------------------------------------------------------------------ system administrator (SystemAdminController)
+
+// Same order as the Roles rows inserted by 01_schema.sql.
+const ROLE_ROWS = [
+  { roleId: 1, roleName: Roles.Customer, description: 'Khách hàng thuê và sử dụng kho tự quản' },
+  { roleId: 2, roleName: Roles.Staff, description: 'Nhân viên hỗ trợ bàn giao, kiểm tra và bảo trì tại chi nhánh' },
+  { roleId: 3, roleName: Roles.Manager, description: 'Quản lý chi nhánh kho, phân bổ nhân sự và giám sát hợp đồng' },
+  { roleId: 4, roleName: Roles.OpsManager, description: 'Quản trị viên vận hành kinh doanh, quản lý giá và toàn chuỗi' },
+  { roleId: 5, roleName: Roles.Admin, description: 'Quản trị hệ thống, tài khoản và an ninh dữ liệu' },
+]
+const roleRow = (roleId: number) => ROLE_ROWS.find((r) => r.roleId === roleId)
+const adminUserDto = (u: User): AdminUser => ({
+  userId: u.userId, username: u.username, fullName: u.fullName, email: u.email, phoneNumber: u.phoneNumber,
+  citizenId: u.citizenId, status: u.status ?? 'Active', roleId: ROLE_ROWS.find((r) => r.roleName === u.role)!.roleId, roleName: u.role,
+})
+function addLog(userId: number, action: string, details: string) {
+  db.logs ??= []
+  db.logs.push({ logId: nextId(), userId, action, details, ipAddress: '127.0.0.1', createdAt: localIso(new Date()) })
+}
+function adminTarget(token: string | null, userId: number) {
+  const me = currentUser(token)
+  requireRole(me, [Roles.Admin])
+  const u = db.users.find((x) => x.userId === userId)
+  if (!u) throw notFound('Không tìm thấy tài khoản')
+  return { me, u }
+}
+function ensureAnotherActiveAdmin(excludedUserId: number) {
+  if (!db.users.some((u) => u.userId !== excludedUserId && (u.status ?? 'Active') === 'Active' && u.role === Roles.Admin))
+    throw conflict('Không thể thay đổi trạng thái/vai trò của quản trị viên hoạt động cuối cùng')
+}
+const ACCOUNT_STATUSES = ['Active', 'Inactive', 'Suspended']
+
 // Reset tokens for the forgot-password flow: token -> { userId, password at issue time, expiry }.
 const resetTokens = new Map<string, { userId: number; password: string; expiresAt: number }>()
 
@@ -375,7 +408,7 @@ const routes: [string, RegExp, Handler][] = [
   // ---- auth
   ['POST', /^\/api\/auth\/login$/, (_m, { body }) => {
     const u = db.users.find((x) => x.username === body.username)
-    if (!u || u.password !== body.password) throw new MockHttpError(401, 'Sai tên đăng nhập hoặc mật khẩu')
+    if (!u || u.password !== body.password || (u.status ?? 'Active') !== 'Active') throw new MockHttpError(401, 'Sai tên đăng nhập hoặc mật khẩu')
     const res: LoginResponse = { token: `mock.${u.userId}`, expiresAt: localIso(addDays(new Date(), 1)), user: toUserDto(u) }
     return res
   }],
@@ -940,6 +973,63 @@ const routes: [string, RegExp, Handler][] = [
     if (r.result !== 'Granted' || r.exitTime) throw conflict('Lượt này không ở trạng thái đang ở trong kho')
     r.exitTime = localIso(new Date())
     return recordDto(r)
+  }],
+  // ---- system administrator
+  ['GET', /^\/api\/admin\/roles$/, (_m, { token }) => { requireRole(currentUser(token), [Roles.Admin]); return ROLE_ROWS }],
+  ['GET', /^\/api\/admin\/users$/, (_m, { token }) => {
+    requireRole(currentUser(token), [Roles.Admin])
+    return [...db.users].sort((a, b) => a.userId - b.userId).map(adminUserDto)
+  }],
+  ['POST', /^\/api\/admin\/users$/, (_m, { token, body }) => {
+    const me = currentUser(token)
+    requireRole(me, [Roles.Admin])
+    const f = body as Record<string, string>
+    for (const k of ['username', 'password', 'fullName', 'email', 'phoneNumber'])
+      if (!String(f[k] ?? '').trim()) throw bad('Vui lòng nhập đầy đủ thông tin')
+    if (f.username.trim().length < 3) throw bad('Tên đăng nhập cần ít nhất 3 ký tự')
+    if (f.password.length < 8) throw bad('Mật khẩu cần ít nhất 8 ký tự')
+    const role = roleRow(Number(body.roleId))
+    if (!role) throw notFound('Không tìm thấy vai trò')
+    const citizenId = String(f.citizenId ?? '').trim() || null
+    if (db.users.some((u) => u.username === f.username.trim() || u.email === f.email.trim() || (citizenId && u.citizenId === citizenId)))
+      throw conflict('Tên đăng nhập, email hoặc CCCD đã được sử dụng')
+    const facilityIds = [...new Set((body.facilityIds as number[] | undefined) ?? [])]
+    if (facilityIds.length && role.roleName !== Roles.Staff && role.roleName !== Roles.Manager)
+      throw bad('Chỉ nhân viên cơ sở hoặc quản lý cơ sở mới được phân công theo cơ sở')
+    if (facilityIds.some((id) => !facilityById(id))) throw bad('Danh sách có cơ sở không tồn tại')
+    const u: User = { userId: nextId(), username: f.username.trim(), password: f.password, fullName: f.fullName.trim(), email: f.email.trim(), phoneNumber: f.phoneNumber.trim(), citizenId, role: role.roleName, status: 'Active' }
+    db.users.push(u)
+    for (const facilityId of facilityIds) db.assignments.push({ facilityId, staffId: u.userId })
+    addLog(u.userId, 'AdminUserCreated', `Created account ${u.username} with role ${role.roleName}`)
+    return adminUserDto(u)
+  }],
+  ['PUT', /^\/api\/admin\/users\/(\d+)\/role$/, (m, { token, body }) => {
+    const { me, u } = adminTarget(token, Number(m[1]))
+    const role = roleRow(Number(body.roleId))
+    if (!role) throw notFound('Không tìm thấy vai trò')
+    if (u.userId === me.userId && u.role !== role.roleName) throw conflict('Không thể tự đổi vai trò của chính mình')
+    if (u.role === Roles.Admin && role.roleName !== Roles.Admin) ensureAnotherActiveAdmin(u.userId)
+    const old = u.role
+    u.role = role.roleName
+    if (!STAFF.includes(role.roleName)) db.assignments = db.assignments.filter((a) => a.staffId !== u.userId)
+    addLog(me.userId, 'AdminUserRoleChanged', `Changed user ${u.userId} role from ${old} to ${role.roleName}`)
+    return adminUserDto(u)
+  }],
+  ['PUT', /^\/api\/admin\/users\/(\d+)\/status$/, (m, { token, body }) => {
+    const status = String(body.status ?? '')
+    if (!ACCOUNT_STATUSES.includes(status)) throw bad('Trạng thái tài khoản không hợp lệ')
+    const { me, u } = adminTarget(token, Number(m[1]))
+    if (u.userId === me.userId && status !== 'Active') throw conflict('Không thể tự vô hiệu hóa tài khoản quản trị của mình')
+    if (u.role === Roles.Admin && status !== 'Active') ensureAnotherActiveAdmin(u.userId)
+    u.status = status
+    addLog(me.userId, 'AdminUserStatusChanged', `Changed user ${u.userId} status to ${status}`)
+    return adminUserDto(u)
+  }],
+  ['GET', /^\/api\/admin\/users\/(\d+)\/activity$/, (m, { token }) => {
+    const { u } = adminTarget(token, Number(m[1]))
+    return (db.logs ?? []).filter((l) => l.userId === u.userId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map<ActivityLog>(({ logId, action, details, ipAddress, createdAt }) => ({ logId, action, details, ipAddress, createdAt }))
   }],
 ]
 
