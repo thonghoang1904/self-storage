@@ -302,7 +302,7 @@ export function AdminLayout() {
 export function OpsLayout() {
   return (
     <ConsoleLayout
-      titles={{ '/ops/facilities': 'Quản Lý Cơ Sở' }}
+      titles={{ '/ops/facilities': 'Quản Lý Cơ Sở', '/ops/policies': 'Chính Sách & Giá' }}
       nav={[
         { icon: 'grid', label: 'Tổng Quan' },
         { icon: 'package', label: 'Vận Hành Kho' },
@@ -310,7 +310,7 @@ export function OpsLayout() {
         { icon: 'phone', label: 'Hỗ Trợ' },
         { icon: 'building', label: 'Cơ Sở', to: '/ops/facilities' },
         { icon: 'chart', label: 'Doanh Thu' },
-        { icon: 'file', label: 'Chính Sách' },
+        { icon: 'file', label: 'Chính Sách', to: '/ops/policies' },
         { icon: 'settings', label: 'Cài Đặt' },
       ]}
     />

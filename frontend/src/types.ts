@@ -444,3 +444,42 @@ export interface VisitRegistration {
 }
 
 export const VisitPurposes = ['Gửi đồ vào kho', 'Lấy đồ ra', 'Sắp xếp lại đồ', 'Tham quan và kiểm tra kho', 'Khác']
+
+// ---- operations manager: rental policies, fee table, promotions (OperationsManagementController)
+
+export interface RentalPolicy {
+  policyId: number
+  policyName: string
+  /** null = applies to every facility. */
+  facilityId: number | null
+  depositPercent: number
+  cancellationGraceHours: number
+  cancellationFeePercent: number
+  renewalNoticeDays: number
+  maxOverdueDaysBeforeLock: number
+  isActive: boolean
+  effectiveDate: string
+}
+
+export interface FeeConfiguration {
+  feeTypeId: number
+  feeCode: string
+  feeName: string
+  defaultAmount: number
+  calculationMethod: 'Fixed' | 'DailyRate' | 'Percentage' | string
+  description: string | null
+}
+
+export interface Promotion {
+  promotionId: number
+  promoCode: string
+  title: string
+  discountPercent: number
+  maxDiscountAmount: number | null
+  minRentalMonths: number
+  startDate: string
+  endDate: string
+  isActive: boolean
+}
+
+export const FeeMethods: Record<string, string> = { Fixed: 'Cố định', DailyRate: 'Theo ngày', Percentage: 'Theo %' }

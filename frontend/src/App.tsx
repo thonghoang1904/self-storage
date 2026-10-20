@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './auth'
 import { AdminLayout, OpsLayout, PortalLayout, StaffLayout } from './components/layout'
 import AdminUsers from './pages/AdminUsers'
 import OpsFacilities from './pages/OpsFacilities'
+import OpsPolicies from './pages/OpsPolicies'
 import ForgotPassword from './pages/ForgotPassword'
 import Gate from './pages/Gate'
 import ContractDetail from './pages/ContractDetail'
@@ -64,6 +65,7 @@ export default function App() {
           </Route>
           <Route element={<RequireRole roles={[Roles.OpsManager]}><OpsLayout /></RequireRole>}>
             <Route path="/ops/facilities" element={<OpsFacilities />} />
+            <Route path="/ops/policies" element={<OpsPolicies />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

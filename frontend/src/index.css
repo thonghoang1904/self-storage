@@ -721,3 +721,21 @@ textarea::placeholder { color: var(--muted-2); }
 .reg-match.ok { background: var(--ok-bg); color: #0e7a3c; }
 .reg-match.bad { background: var(--warn-bg); color: var(--warn); }
 .notice-icon.ok { background: var(--ok-bg); color: var(--ok); } .notice-icon.muted { background: #eef2f5; color: var(--muted); }
+
+/* ---- operations manager: policies, fees, promotions, unit-type prices (Figma policy-fee-discount-management) ---- */
+.filter-bar .policy-tabs { flex-wrap: wrap; }
+.policy-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; align-items: start; }
+.policy-list { display: grid; gap: 12px; }
+.policy-item { display: grid; gap: 8px; padding: 16px 18px; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+.policy-item:hover { border-color: var(--cyan-50); }
+.code-chip { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 6px; background: var(--bg-tint); color: var(--text-strong); }
+.policy-title { font-size: 15.5px; color: var(--text-strong); }
+.policy-amount { font-size: 17px; color: var(--cyan-600); }
+.policy-amount small { font-size: 12px; color: var(--muted); font-weight: 500; }
+.policy-facts { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13.5px; color: var(--muted); }
+.policy-facts b { color: var(--text-strong); }
+.policy-form { display: grid; gap: 14px; padding: 18px; border: 1px solid var(--cyan); border-radius: 12px; background: var(--cyan-25); }
+.policy-form h4 { font-size: 16px; font-weight: 800; }
+.fee-table { display: grid; gap: 10px; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+@media (max-width: 1100px) { .policy-workspace { grid-template-columns: minmax(0, 1fr); } }

@@ -6,7 +6,7 @@
  */
 import type {
   AccessIssue, ActivityLog, AdminUser, FacilityReport, OperationsReport, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
-  OverdueSummary, Person, Renewal, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate, VisitRegistration,
+  OverdueSummary, Person, Renewal, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate, VisitRegistration, RentalPolicy, FeeConfiguration, Promotion,
 } from '../types'
 import { Roles } from '../types'
 
@@ -41,6 +41,9 @@ interface Db {
   records: Rec[]
   /** Visit registrations (VisitRegistrations table): customer books a time, staff approves, the gate only admits approved ones. */
   visits: Vreg[]
+  policies?: RentalPolicy[]
+  fees?: FeeConfiguration[]
+  promotions?: Promotion[]
   renewals: Rnw[]
   /** Monthly rent paid at the counter in the demo, by `${contractId}:${periodStart}`. */
   rentPaid?: Record<string, Paid>
@@ -234,6 +237,23 @@ function visitDto(v: Vreg): VisitRegistration {
   }
 }
 const visitsOf = () => (db.visits ??= [])
+// Operations manager data, same seed rows as 01_schema.sql (created on first use).
+const policiesOf = () => (db.policies ??= [
+  { policyId: 1, policyName: 'Chính sách thuê kho tiêu chuẩn 2026', facilityId: null, depositPercent: 100, cancellationGraceHours: 24, cancellationFeePercent: 10, renewalNoticeDays: 7, maxOverdueDaysBeforeLock: 1, isActive: true, effectiveDate: '2026-01-01' },
+])
+const feesOf = () => (db.fees ??= [
+  { feeTypeId: 1, feeCode: 'CLEANING_FEE', feeName: 'Phí vệ sinh sau trả kho', defaultAmount: 200000, calculationMethod: 'Fixed', description: 'Áp dụng nếu kho bị bẩn hoặc để lại rác thải khi check-out' },
+  { feeTypeId: 2, feeCode: 'LATE_FEE_DAILY', feeName: 'Phí phạt quá hạn mỗi ngày', defaultAmount: 100000, calculationMethod: 'DailyRate', description: 'Tính lũy tiến cho mỗi ngày trễ hạn bàn giao hoặc thanh toán' },
+  { feeTypeId: 3, feeCode: 'LOCK_REPLACE_FEE', feeName: 'Phí thay mới ổ khóa thông minh', defaultAmount: 500000, calculationMethod: 'Fixed', description: 'Áp dụng trong trường hợp ổ khóa bị hỏng hóc do lỗi người dùng' },
+  { feeTypeId: 4, feeCode: 'LOST_CARD_FEE', feeName: 'Phí cấp lại thẻ từ truy cập', defaultAmount: 100000, calculationMethod: 'Fixed', description: 'Phí cấp mới thẻ từ mở cửa kho/thang máy' },
+  { feeTypeId: 5, feeCode: 'LOST_KEY_FEE', feeName: 'Phí cấp lại chìa khóa cơ', defaultAmount: 150000, calculationMethod: 'Fixed', description: 'Áp dụng khi khách hàng làm mất chìa khóa cơ vật lý' },
+])
+const promotionsOf = () => (db.promotions ??= [
+  { promotionId: 1, promoCode: 'WELCOME10', title: 'Giảm 10% tháng đầu cho khách mới', discountPercent: 10, maxDiscountAmount: 500000, minRentalMonths: 3, startDate: '2026-10-01', endDate: '2026-12-31', isActive: true },
+  { promotionId: 2, promoCode: 'TET2027', title: 'Ưu đãi Tết: giảm 15% thuê từ 6 tháng', discountPercent: 15, maxDiscountAmount: 1000000, minRentalMonths: 6, startDate: '2027-01-15', endDate: '2027-02-28', isActive: true },
+  { promotionId: 3, promoCode: 'SUMMER26', title: 'Hè 2026 cho sinh viên', discountPercent: 20, maxDiscountAmount: 300000, minRentalMonths: 1, startDate: '2026-06-01', endDate: '2026-08-31', isActive: false },
+])
+const opsOnly = (token: string | null) => requireRole(currentUser(token), [Roles.OpsManager])
 /** Approved registration whose window contains now, for this visitor (AccessService.GrantEntryAsync). */
 const approvedNow = (contractId: number, apId?: number | null) => {
   const now = Date.now()
@@ -469,6 +489,45 @@ function facilityFields(body: Body) {
 
 // Reset tokens for the forgot-password flow: token -> { userId, password at issue time, expiry }.
 const resetTokens = new Map<string, { userId: number; password: string; expiresAt: number }>()
+
+// Same checks as SaveRentalPolicyRequest / SaveFeeConfigurationRequest / SavePromotionRequest and the controller.
+function checkPolicy(b: Body): Omit<RentalPolicy, 'policyId'> {
+  const name = String(b.policyName ?? '').trim()
+  if (!name) throw bad('Vui lòng nhập tên chính sách')
+  const facilityId = b.facilityId == null || b.facilityId === '' ? null : Number(b.facilityId)
+  if (facilityId != null && !facilityById(facilityId)) throw notFound('Không tìm thấy cơ sở cho chính sách')
+  const n = (k: string) => Number(b[k])
+  if (!(n('depositPercent') >= 0.01 && n('depositPercent') <= 100)) throw bad('Tỷ lệ cọc phải từ 0,01 đến 100%')
+  if (!(n('cancellationFeePercent') >= 0 && n('cancellationFeePercent') <= 100)) throw bad('Phí hủy phải từ 0 đến 100%')
+  for (const [k, max] of [['cancellationGraceHours', 8760], ['renewalNoticeDays', 365], ['maxOverdueDaysBeforeLock', 365]] as const)
+    if (!(Number.isInteger(n(k)) && n(k) >= 0 && n(k) <= max)) throw bad('Giá trị số ngày/giờ không hợp lệ')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.effectiveDate ?? ''))) throw bad('Vui lòng chọn ngày hiệu lực')
+  return { policyName: name, facilityId, depositPercent: n('depositPercent'), cancellationGraceHours: n('cancellationGraceHours'),
+    cancellationFeePercent: n('cancellationFeePercent'), renewalNoticeDays: n('renewalNoticeDays'), maxOverdueDaysBeforeLock: n('maxOverdueDaysBeforeLock'),
+    isActive: b.isActive === true, effectiveDate: String(b.effectiveDate) }
+}
+function checkFee(b: Body, selfId: number | null): Omit<FeeConfiguration, 'feeTypeId'> {
+  const code = String(b.feeCode ?? '').trim().toUpperCase(), name = String(b.feeName ?? '').trim(), method = String(b.calculationMethod ?? '')
+  if (!code || !name) throw bad('Vui lòng nhập mã và tên loại phí')
+  if (!['Fixed', 'DailyRate', 'Percentage'].includes(method)) throw bad('Cách tính phí phải là Fixed, DailyRate hoặc Percentage')
+  if (code === 'LATE_FEE_DAILY' && method === 'Fixed') throw bad('LATE_FEE_DAILY chỉ hỗ trợ cách tính DailyRate hoặc Percentage')
+  if (!(Number(b.defaultAmount) >= 0)) throw bad('Số tiền không hợp lệ')
+  if (feesOf().some((f) => f.feeCode === code && f.feeTypeId !== selfId)) throw conflict('Mã loại phí đã tồn tại')
+  return { feeCode: code, feeName: name, defaultAmount: Number(b.defaultAmount), calculationMethod: method, description: String(b.description ?? '').trim() || null }
+}
+function checkPromotion(b: Body, selfId: number | null): Omit<Promotion, 'promotionId'> {
+  const code = String(b.promoCode ?? '').trim().toUpperCase(), title = String(b.title ?? '').trim()
+  if (!code || !title) throw bad('Vui lòng nhập mã và tên khuyến mãi')
+  const pct = Number(b.discountPercent), months = Number(b.minRentalMonths)
+  if (!(pct >= 0 && pct <= 100)) throw bad('Mức giảm phải từ 0 đến 100%')
+  if (!(Number.isInteger(months) && months >= 1 && months <= 60)) throw bad('Số tháng thuê tối thiểu từ 1 đến 60')
+  const start = String(b.startDate ?? ''), end = String(b.endDate ?? '')
+  if (!start || !end) throw bad('Vui lòng chọn thời gian áp dụng')
+  if (end < start) throw bad('Ngày kết thúc khuyến mãi phải từ ngày bắt đầu trở đi')
+  if (promotionsOf().some((p) => p.promoCode === code && p.promotionId !== selfId)) throw conflict('Mã khuyến mãi đã tồn tại')
+  const max = b.maxDiscountAmount == null || b.maxDiscountAmount === '' ? null : Number(b.maxDiscountAmount)
+  return { promoCode: code, title, discountPercent: pct, maxDiscountAmount: max, minRentalMonths: months, startDate: start, endDate: end, isActive: b.isActive === true }
+}
 
 // ------------------------------------------------------------------ routes
 
@@ -1205,6 +1264,58 @@ const routes: [string, RegExp, Handler][] = [
     if (!f.operatingHours) throw bad('Vui lòng nhập đầy đủ thông tin cơ sở')
     Object.assign(facility, f, { status })
     return facility
+  }],
+  // ---- operations manager: unit-type pricing, rental policies, fee table, promotions
+  ['GET', /^\/api\/operations\/unit-types$/, (_m, { token }) => { opsOnly(token); return [...db.unitTypes].sort((a, b) => a.baseMonthlyRate - b.baseMonthlyRate) }],
+  ['PUT', /^\/api\/operations\/unit-types\/(\d+)\/pricing$/, (m, { token, body }) => {
+    opsOnly(token)
+    const t = db.unitTypes.find((x) => x.unitTypeId === Number(m[1]))
+    if (!t) throw notFound('Không tìm thấy loại kho')
+    const daily = Number(body.baseDailyRate), monthly = Number(body.baseMonthlyRate)
+    if (!(daily >= 0) || !(monthly >= 0.01)) throw bad('Giá thuê không hợp lệ')
+    t.baseDailyRate = daily
+    t.baseMonthlyRate = monthly
+    db.units.filter((u) => u.unitTypeId === t.unitTypeId).forEach((u) => { u.monthlyPrice = monthly })
+    return t
+  }],
+  ['GET', /^\/api\/operations\/rental-policies$/, (_m, { token }) => { opsOnly(token); return [...policiesOf()].sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate)) }],
+  ['POST', /^\/api\/operations\/rental-policies$/, (_m, { token, body }) => {
+    opsOnly(token)
+    const p = { ...checkPolicy(body), policyId: nextId() }
+    policiesOf().push(p)
+    return p
+  }],
+  ['PUT', /^\/api\/operations\/rental-policies\/(\d+)$/, (m, { token, body }) => {
+    opsOnly(token)
+    const p = policiesOf().find((x) => x.policyId === Number(m[1]))
+    if (!p) throw notFound('Không tìm thấy chính sách thuê')
+    return Object.assign(p, checkPolicy(body))
+  }],
+  ['GET', /^\/api\/operations\/fees$/, (_m, { token }) => { opsOnly(token); return [...feesOf()].sort((a, b) => a.feeCode.localeCompare(b.feeCode)) }],
+  ['POST', /^\/api\/operations\/fees$/, (_m, { token, body }) => {
+    opsOnly(token)
+    const f = { ...checkFee(body, null), feeTypeId: nextId() }
+    feesOf().push(f)
+    return f
+  }],
+  ['PUT', /^\/api\/operations\/fees\/(\d+)$/, (m, { token, body }) => {
+    opsOnly(token)
+    const f = feesOf().find((x) => x.feeTypeId === Number(m[1]))
+    if (!f) throw notFound('Không tìm thấy loại phí')
+    return Object.assign(f, checkFee(body, f.feeTypeId))
+  }],
+  ['GET', /^\/api\/operations\/promotions$/, (_m, { token }) => { opsOnly(token); return [...promotionsOf()].sort((a, b) => b.startDate.localeCompare(a.startDate)) }],
+  ['POST', /^\/api\/operations\/promotions$/, (_m, { token, body }) => {
+    opsOnly(token)
+    const p = { ...checkPromotion(body, null), promotionId: nextId() }
+    promotionsOf().push(p)
+    return p
+  }],
+  ['PUT', /^\/api\/operations\/promotions\/(\d+)$/, (m, { token, body }) => {
+    opsOnly(token)
+    const p = promotionsOf().find((x) => x.promotionId === Number(m[1]))
+    if (!p) throw notFound('Không tìm thấy khuyến mãi')
+    return Object.assign(p, checkPromotion(body, p.promotionId))
   }],
   ['GET', /^\/api\/operations\/reports\/facilities$/, (_m, { token }) => {
     requireRole(currentUser(token), [Roles.OpsManager])
