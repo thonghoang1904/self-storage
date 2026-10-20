@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
+import { AppointmentPicker } from '../components/appointment'
 import { Empty, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
 import type { Availability, Facility, Reservation, UnitType } from '../types'
 
@@ -85,7 +86,7 @@ export default function Rent() {
               <h3>Đã giữ chỗ thành công · {created.reservationCode}</h3>
               <p>
                 {splitTypeName(created.unitTypeName).name} tại {created.facilityName}, bắt đầu {fmtDate(created.expectedStartDate)} trong {created.durationMonths} tháng.
-                Vui lòng đặt cọc <b>{fmtMoney(created.depositAmount)}</b> trước <b>{fmtTime(created.depositDeadline)}</b> — thanh toán online ở <Link to="/invoices" className="link">Hóa Đơn</Link> hoặc tại quầy. Nhân viên sẽ bàn giao kho cho bạn.
+                Vui lòng đặt cọc <b>{fmtMoney(created.depositAmount)}</b> trước <b>{fmtTime(created.depositDeadline)}</b> — thanh toán online ở <Link to="/invoices" className="link">Hóa Đơn</Link> hoặc tại quầy. Sau khi cọc được xác nhận, hãy đặt lịch nhận kho ở bảng bên dưới để nhân viên bàn giao.
               </p>
             </div>
             <button className="icon-btn" aria-label="Đóng" onClick={() => setCreated(null)}><Icon name="x" /></button>
@@ -202,14 +203,14 @@ export default function Rent() {
           </aside>
         </div>
 
-        <section className="stack">
+        <section className="stack" id="my-reservations">
           <div className="row between">
             <h2 className="section-title">Đơn Đặt Kho Của Tôi</h2>
             <Link to="/my-units" className="link">Xem kho của tôi <Icon name="arrowRight" size={14} /></Link>
           </div>
           <div className="table-card">
             <table>
-              <thead><tr><th>Mã đơn</th><th>Cơ sở · loại kho</th><th>Bắt đầu</th><th>Tiền cọc</th><th>Hạn cọc</th><th>Trạng thái</th></tr></thead>
+              <thead><tr><th>Mã đơn</th><th>Cơ sở · loại kho</th><th>Bắt đầu</th><th>Tiền cọc</th><th>Hạn cọc</th><th>Lịch nhận kho</th><th>Trạng thái</th></tr></thead>
               <tbody>
                 {reservations.map((r) => (
                   <tr key={r.reservationId}>
@@ -218,6 +219,8 @@ export default function Rent() {
                     <td>{fmtDate(r.expectedStartDate)}<br /><small className="muted">{r.durationMonths} tháng</small></td>
                     <td className="money">{fmtMoney(r.depositAmount)}</td>
                     <td>{r.status === 'PendingDeposit' ? fmtTime(r.depositDeadline) : '—'}</td>
+                    <td><AppointmentPicker reservation={r} operatingHours={facilities.find((f) => f.facilityName === r.facilityName)?.operatingHours}
+                      onSaved={(u) => setReservations((rs) => rs.map((x) => (x.reservationId === u.reservationId ? u : x)))} /></td>
                     <td><StatusBadge status={r.status} /></td>
                   </tr>
                 ))}

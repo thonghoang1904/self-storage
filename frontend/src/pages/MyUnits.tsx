@@ -2,8 +2,9 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
+import { AppointmentPicker } from '../components/appointment'
 import { Empty, Eyebrow, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
-import { DenyReasons, type AccessRecord, type Contract, type Person, type Reservation } from '../types'
+import { DenyReasons, type AccessRecord, type Contract, type Facility, type Person, type Reservation } from '../types'
 
 const daysUntil = (iso: string) => Math.ceil((new Date(`${iso}T00:00:00`).getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000)
 
@@ -12,6 +13,7 @@ export default function MyUnits() {
   const { user } = useAuth()
   const [contracts, setContracts] = useState<Contract[] | null>(null)
   const [reservations, setReservations] = useState<Reservation[]>([])
+  const [facilities, setFacilities] = useState<Facility[]>([])
   const [openId, setOpenId] = useState<number | null>(null)
   const [tab, setTab] = useState<'people' | 'history'>('people')
   const [error, setError] = useState('')
@@ -22,6 +24,7 @@ export default function MyUnits() {
       if (cs.length) setOpenId(cs[0].contractId)
     }).catch((e) => setError((e as Error).message))
     api<Reservation[]>('/api/reservations/my').then(setReservations).catch(() => {})
+    api<Facility[]>('/api/facilities').then(setFacilities).catch(() => {})
   }, [])
 
   const active = contracts?.filter((c) => c.status === 'Active' || c.status === 'Renewed').length ?? 0
@@ -134,11 +137,17 @@ export default function MyUnits() {
                 <div key={r.reservationId} className="notice">
                   <span className="notice-icon warn"><Icon name="wallet" size={16} /></span>
                   <div>
-                    <b>{r.status === 'PendingDeposit' ? 'Chờ đặt cọc' : 'Chờ bàn giao kho'}</b>
+                    <b>{r.status === 'PendingDeposit' ? 'Chờ đặt cọc' : r.checkInAppointmentAt ? 'Đã hẹn nhận kho' : 'Đặt lịch nhận kho'}</b>
                     <p>
                       Đơn {r.reservationCode} ({splitTypeName(r.unitTypeName).name}, {r.facilityName})
-                      {r.status === 'PendingDeposit' ? ` cần đặt cọc ${fmtMoney(r.depositAmount)} trước ${fmtTime(r.depositDeadline)}.` : ` đã nhận cọc, đến cơ sở từ ${fmtDate(r.expectedStartDate)} để nhận kho.`}
+                      {r.status === 'PendingDeposit' ? ` cần đặt cọc ${fmtMoney(r.depositAmount)} trước ${fmtTime(r.depositDeadline)}.`
+                        : r.checkInAppointmentAt ? ` — đến cơ sở đúng giờ hẹn để nhân viên bàn giao kho.`
+                        : ` đã nhận cọc. Chọn giờ đến nhận kho trong ngày ${fmtDate(r.expectedStartDate)}, nhân viên chỉ bàn giao từ giờ hẹn.`}
                     </p>
+                    {r.status === 'Confirmed' && (
+                      <AppointmentPicker reservation={r} operatingHours={facilities.find((f) => f.facilityName === r.facilityName)?.operatingHours}
+                        onSaved={(u) => setReservations((rs) => rs.map((x) => (x.reservationId === u.reservationId ? u : x)))} />
+                    )}
                   </div>
                 </div>
               ))}

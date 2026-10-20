@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useStaffFacility } from '../components/layout'
+import { appointmentReached } from '../components/appointment'
 import { Empty, Icon, splitTypeName, StatusBadge } from '../components/ui'
 import type { Reservation, StorageUnit } from '../types'
 
@@ -82,7 +83,7 @@ export default function StaffReservations() {
         {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Mã đơn</th><th>Khách</th><th>Loại kho</th><th>Bắt đầu</th><th>Cọc</th><th>Trạng thái</th><th className="right">Thao tác</th></tr></thead>
+            <thead><tr><th>Mã đơn</th><th>Khách</th><th>Loại kho</th><th>Bắt đầu</th><th>Lịch hẹn nhận kho</th><th>Cọc</th><th>Trạng thái</th><th className="right">Thao tác</th></tr></thead>
             <tbody>
               {shown.map((r) => (
                 <tr key={r.reservationId}>
@@ -90,6 +91,8 @@ export default function StaffReservations() {
                   <td><b>{r.customerName}</b></td>
                   <td>{splitTypeName(r.unitTypeName).name}{r.assignedUnitCode && <><br /><small className="muted">Kho {r.assignedUnitCode}</small></>}</td>
                   <td>{fmtDate(r.expectedStartDate)}<br /><small className="muted">{r.durationMonths} tháng</small></td>
+                  <td>{r.checkInAppointmentAt ? <b>{fmtTime(r.checkInAppointmentAt)}</b>
+                    : r.status === 'Confirmed' ? <span className="pill warn">Khách chưa đặt lịch</span> : <span className="muted">—</span>}</td>
                   <td className="money">{fmtMoney(r.depositAmount)}{r.status === 'PendingDeposit' && <><br /><small className="muted">hạn {fmtTime(r.depositDeadline)}</small></>}</td>
                   <td><StatusBadge status={r.status} /></td>
                   <td className="right">
@@ -98,7 +101,9 @@ export default function StaffReservations() {
                         <Icon name="wallet" size={15} /> Đã nhận cọc
                       </button>
                     )}
-                    {r.status === 'Confirmed' && (
+                    {r.status === 'Confirmed' && !r.checkInAppointmentAt && <span className="muted">Chờ khách đặt lịch nhận kho</span>}
+                    {r.status === 'Confirmed' && r.checkInAppointmentAt && !appointmentReached(r) && <span className="muted">Bàn giao từ {fmtTime(r.checkInAppointmentAt)}</span>}
+                    {r.status === 'Confirmed' && appointmentReached(r) && (
                       <CheckIn
                         units={units.filter((u) => u.unitTypeName === r.unitTypeName)}
                         onCheckIn={(unit) => act(() => api(`/api/reservations/${r.reservationId}/check-in`, { body: { unitId: unit.unitId } }), `Đã bàn giao kho ${unit.unitCode} cho ${r.customerName} và tạo hợp đồng.`)}

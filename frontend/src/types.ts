@@ -76,6 +76,8 @@ export interface Reservation {
   unitTypeName: string
   assignedUnitCode: string | null
   expectedStartDate: string
+  /** Pick-up time the customer booked (ISO-8601 with offset); staff can hand over only from this time. */
+  checkInAppointmentAt?: string | null
   durationMonths: number
   depositAmount: number
   estimatedTotalFee: number

@@ -613,3 +613,12 @@ textarea::placeholder { color: var(--muted-2); }
 /* ---- forgot / reset password (Figma 45:1230) ---- */
 .forgot-link { align-self: flex-end; margin-top: -12px; font-size: 13px; }
 .btn.upper { text-transform: uppercase; letter-spacing: 0.03em; }
+
+/* ---- check-in appointment (customer books the pick-up time, staff hands over from that time) ---- */
+.pill.warn { background: var(--warn-bg); color: var(--warn); }
+.appt { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.appt-time { display: inline-flex; align-items: center; gap: 5px; color: var(--text-strong); }
+.appt .link-btn { font-size: 12.5px; color: var(--cyan-600); }
+.appt.editing select { min-width: 92px; }
+.bad-text { color: var(--bad); display: inline-flex; align-items: center; gap: 4px; }
+.notice .appt { margin-top: 6px; }

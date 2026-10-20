@@ -11,13 +11,13 @@ import type {
 import { Roles } from '../types'
 
 export const DEMO_PASSWORD = 'Demo@12345'
-const DB_KEY = 'ss_mock_db_v6'
+const DB_KEY = 'ss_mock_db_v7'
 
 // ------------------------------------------------------------------ data model
 
 interface User { userId: number; username: string; password: string; fullName: string; email: string; phoneNumber: string; citizenId: string; role: string }
 interface Unit { unitId: number; facilityId: number; unitTypeId: number; unitCode: string; floorNumber: number; zoneArea: string; monthlyPrice: number; status: string }
-interface Rsv { reservationId: number; reservationCode: string; customerId: number; facilityId: number; unitTypeId: number; assignedUnitId: number | null; expectedStartDate: string; durationMonths: number; depositAmount: number; estimatedTotalFee: number; status: string; depositDeadline: string; createdAt: string }
+interface Rsv { reservationId: number; reservationCode: string; customerId: number; facilityId: number; unitTypeId: number; assignedUnitId: number | null; expectedStartDate: string; checkInAppointmentAt?: string | null; durationMonths: number; depositAmount: number; estimatedTotalFee: number; status: string; depositDeadline: string; createdAt: string }
 interface Ctr { contractId: number; contractNumber: string; customerId: number; unitId: number; startDate: string; endDate: string; monthlyRentFee: number; depositPaid: number; status: string }
 interface Rnw { renewalId: number; contractId: number; oldEndDate: string; newEndDate: string; extensionMonths: number; renewalFee: number; status: string; requestedAt: string }
 interface Sup { requestId: number; requestCode: string; customerId: number; facilityId: number; contractId: number; unitId: number; assignedStaffId: number | null; category: string; priority: string; title: string; description: string; status: string; createdAt: string; resolvedAt: string | null; checklist?: Chk[] }
@@ -122,8 +122,10 @@ function seed(): Db {
   const rsvBase = { facilityId: 1, assignedUnitId: null, durationMonths: 6, createdAt: localIso(now) }
   const reservations: Rsv[] = [
     { ...rsvBase, reservationId: 1, reservationCode: 'RSV-DEMO-100231', customerId: 5, unitTypeId: 2, expectedStartDate: dateOnly(addDays(now, 2)), depositAmount: 1200000, estimatedTotalFee: 7200000, status: 'PendingDeposit', depositDeadline: localIso(addDays(now, 1)) },
-    { ...rsvBase, reservationId: 2, reservationCode: 'RSV-DEMO-100198', customerId: 7, unitTypeId: 3, durationMonths: 3, expectedStartDate: dateOnly(now), depositAmount: 2400000, estimatedTotalFee: 7200000, status: 'Confirmed', depositDeadline: localIso(addDays(now, 1)) },
+    { ...rsvBase, reservationId: 2, reservationCode: 'RSV-DEMO-100198', customerId: 7, unitTypeId: 3, durationMonths: 3, expectedStartDate: dateOnly(now), checkInAppointmentAt: `${localIso(new Date(now.getTime() - 3600000))}+07:00`, depositAmount: 2400000, estimatedTotalFee: 7200000, status: 'Confirmed', depositDeadline: localIso(addDays(now, 1)) },
     { ...rsvBase, reservationId: 3, reservationCode: 'RSV-DEMO-099870', customerId: 4, unitTypeId: 2, durationMonths: 6, assignedUnitId: unit(1, 'B-01').unitId, expectedStartDate: dateOnly(addDays(now, -7)), depositAmount: 1200000, estimatedTotalFee: 7200000, status: 'CheckedIn', depositDeadline: localIso(addDays(now, -8)) },
+    // customer1 has paid the deposit and still has to book a pick-up time
+    { ...rsvBase, reservationId: 4, reservationCode: 'RSV-DEMO-100305', customerId: 4, unitTypeId: 3, durationMonths: 3, expectedStartDate: dateOnly(addDays(now, 1)), depositAmount: 2400000, estimatedTotalFee: 7200000, status: 'Confirmed', depositDeadline: localIso(addDays(now, 1)) },
   ]
 
   return {
@@ -229,6 +231,7 @@ function reservationDto(r: Rsv): Reservation {
     unitTypeName: typeById(r.unitTypeId).typeName,
     assignedUnitCode: r.assignedUnitId ? unitById(r.assignedUnitId).unitCode : null,
     expectedStartDate: r.expectedStartDate,
+    checkInAppointmentAt: r.checkInAppointmentAt ?? null,
     durationMonths: r.durationMonths,
     depositAmount: r.depositAmount,
     estimatedTotalFee: r.estimatedTotalFee,
@@ -485,6 +488,18 @@ const routes: [string, RegExp, Handler][] = [
     r.status = 'Confirmed'
     return reservationDto(r)
   }],
+  ['PUT', /^\/api\/reservations\/(\d+)\/appointment$/, (m, { token, body }) => {
+    const me = currentUser(token)
+    requireRole(me, [Roles.Customer])
+    const r = db.reservations.find((x) => x.reservationId === Number(m[1]) && x.customerId === me.userId)
+    if (!r) throw notFound('Không tìm thấy đơn đặt kho')
+    if (r.status !== 'Confirmed') throw conflict('Chỉ đơn đã xác nhận đặt cọc mới được đặt lịch nhận kho')
+    const at = String(body.appointmentAt ?? '')
+    if (!(new Date(at) > new Date()) || at.slice(0, 10) !== r.expectedStartDate)
+      throw bad('Lịch nhận kho phải là thời điểm trong tương lai thuộc ngày bắt đầu đã chọn')
+    r.checkInAppointmentAt = at
+    return reservationDto(r)
+  }],
   ['POST', /^\/api\/reservations\/(\d+)\/check-in$/, (m, { token, body }) => {
     const me = currentUser(token)
     requireRole(me, STAFF)
@@ -492,6 +507,8 @@ const routes: [string, RegExp, Handler][] = [
     if (!r) throw notFound('Không tìm thấy đơn đặt kho')
     ensureAssigned(me.userId, r.facilityId)
     if (r.status !== 'Confirmed') throw conflict('Đơn chưa được xác nhận cọc')
+    if (!r.checkInAppointmentAt) throw conflict('Khách hàng chưa đặt lịch nhận kho')
+    if (new Date() < new Date(r.checkInAppointmentAt)) throw conflict('Chưa đến thời gian hẹn nhận kho')
     const unit = db.units.find((u) => u.unitId === Number(body.unitId))
     if (!unit || unit.facilityId !== r.facilityId || unit.unitTypeId !== r.unitTypeId) throw bad('Kho không đúng cơ sở hoặc loại kho đã đặt')
     if (unit.status !== 'Available') throw conflict('Kho này không còn trống')
