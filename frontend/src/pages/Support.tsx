@@ -8,10 +8,14 @@ const EMPTY_FORM = { contractId: 0, category: 'LockIssue', priority: 'Medium', t
 
 /** Customer: send a support request for one of their units and follow how staff handle it. */
 export default function Support() {
-  const wanted = Number(new URLSearchParams(useLocation().search).get('contract') ?? 0)
+  const params = new URLSearchParams(useLocation().search)
+  const wanted = Number(params.get('contract') ?? 0)
+  const askReturn = params.get('topic') === 'return'
   const [contracts, setContracts] = useState<Contract[]>([])
   const [rows, setRows] = useState<SupportRequest[] | null>(null)
-  const [form, setForm] = useState(EMPTY_FORM)
+  const [form, setForm] = useState(askReturn
+    ? { ...EMPTY_FORM, category: 'Other', priority: 'Medium', title: 'Yêu cầu trả kho', description: 'Tôi muốn trả kho và nhận lại tiền cọc. Ngày giờ dự kiến đến trả kho: ' }
+    : EMPTY_FORM)
   const [openId, setOpenId] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')

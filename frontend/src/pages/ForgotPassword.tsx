@@ -80,6 +80,10 @@ export default function ForgotPassword() {
             <p className="hint"><Icon name="key" size={15} /> Bản demo không gửi email thật. Mã của bạn: <b>{demoToken}</b>
               <button type="button" className="link-btn" onClick={() => setToken(demoToken)}>Dán mã</button></p>
           )}
+          {IS_DEMO && !demoToken && (
+            <p className="alert warn"><Icon name="alert" size={16} /><span>Bản demo không có tài khoản nào dùng email <b>{email}</b> nên không có mã.
+              Bấm <b>Gửi lại mã</b> và nhập một email có sẵn: <b>customer1@example.com</b>, <b>customer2@example.com</b>, <b>staff1@example.com</b>.</span></p>
+          )}
           <Field label="Mã xác minh">
             <input value={token} onChange={(e) => setToken(e.target.value)} placeholder="Dán mã trong email" autoComplete="one-time-code" required />
           </Field>

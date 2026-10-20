@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
+import { useAuth } from '../auth'
 import { Empty, Icon, StatusBadge, UnitArt, splitTypeName } from '../components/ui'
 import type { AccessRecord, ContractDetail as Detail, Facility, Invoice, Person, Renewal, StorageUnit, UnitType } from '../types'
 
@@ -22,10 +23,49 @@ const addMonths = (iso: string, n: number) => {
   d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()))
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
-const INVOICE_TYPE: Record<string, string> = { DEPOSIT: 'Tiền cọc', RENEWAL: 'Gia hạn', MONTHLY_RENT: 'Tiền thuê', OVERDUE_FINE: 'Phí quá hạn' }
+const INVOICE_TYPE: Record<string, string> = { DEPOSIT: 'Tiền cọc', RENEWAL: 'Gia hạn', MONTHLY_RENT: 'Tiền thuê', OVERDUE_FINE: 'Phí quá hạn', EXTRA_CHARGE: 'Phí phát sinh' }
+const monthLabel = (iso: string) => `Tháng ${iso.slice(5, 7)}/${iso.slice(0, 4)}`
+
+type ScheduleRow = { key: string; period: string; note?: string; amount: number; due: string; state: 'paid' | 'soon' | 'overdue' | 'scheduled' | 'cancelled'; invoice: string | null }
+const STATE_BADGE: Record<ScheduleRow['state'], { label: string; tone: string }> = {
+  paid: { label: 'Đã thanh toán', tone: 'ok' },
+  soon: { label: 'Sắp đến hạn', tone: 'warn' },
+  overdue: { label: 'Quá hạn', tone: 'bad' },
+  scheduled: { label: 'Theo lịch', tone: 'muted' },
+  cancelled: { label: 'Đã hủy', tone: 'muted' },
+}
+
+/**
+ * Figma "Lịch Thanh Toán & Hóa Đơn": the contract's invoices by period (the backend bills rent monthly, see
+ * MonthlyRentInvoiceService), then the next periods that are not invoiced yet, shown as "Theo lịch / Chưa phát hành".
+ */
+function paymentSchedule(c: Detail, invoices: Invoice[]): ScheduleRow[] {
+  const today = new Date().setHours(0, 0, 0, 0)
+  const rows: ScheduleRow[] = [...invoices].sort((a, b) => (a.billingPeriodStart ?? a.dueDate).localeCompare(b.billingPeriodStart ?? b.dueDate)).map((i) => {
+    const due = asLocal(i.dueDate).getTime()
+    const state: ScheduleRow['state'] = i.status === 'Paid' ? 'paid' : i.status === 'Cancelled' ? 'cancelled'
+      : i.status === 'Overdue' || due < today ? 'overdue' : 'soon'
+    const period = i.invoiceType === 'MONTHLY_RENT' ? monthLabel(i.billingPeriodStart ?? i.dueDate)
+      : i.invoiceType === 'RENEWAL' ? `Gia hạn ${i.details[0]?.quantity ?? ''} tháng` : INVOICE_TYPE[i.invoiceType] ?? i.invoiceType
+    return { key: `i${i.invoiceId}`, period, amount: i.totalAmount, due: i.dueDate, state, invoice: i.invoiceNumber }
+  })
+  if (c.status === 'Active' || c.status === 'Renewed') {
+    const billed = new Set(invoices.filter((i) => i.invoiceType === 'MONTHLY_RENT').map((i) => i.billingPeriodStart ?? i.dueDate))
+    let added = 0
+    for (let k = 0; added < 2; k++) {
+      const start = addMonths(c.startDate, k)
+      if (start >= c.endDate) break
+      if (asLocal(start).getTime() <= today || billed.has(start)) continue
+      rows.push({ key: `s${start}`, period: monthLabel(start), amount: c.monthlyRentFee, due: start, state: 'scheduled', invoice: null })
+      added++
+    }
+  }
+  return rows
+}
 
 export default function ContractDetail() {
   const id = Number(useParams().id)
+  const { user } = useAuth()
   const wantRenew = useLocation().search.includes('renew')
   const [c, setC] = useState<Detail | null>(null)
   const [renewals, setRenewals] = useState<Renewal[]>([])
@@ -36,6 +76,7 @@ export default function ContractDetail() {
   const [people, setPeople] = useState<Person[]>([])
   const [lastVisit, setLastVisit] = useState<AccessRecord | null>(null)
   const [showRenew, setShowRenew] = useState(wantRenew)
+  const [showPolicy, setShowPolicy] = useState(false)
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
@@ -76,6 +117,10 @@ export default function ContractDetail() {
   const locked = c.unitStatus === 'OverdueLocked' || c.status === 'Overdue'
   const typeName = unit ? splitTypeName(unit.unitTypeName) : null
   const pending = renewals.find((r) => r.status === 'Pending')
+  const schedule = paymentSchedule(c, invoices)
+  const next = schedule.find((r) => r.state !== 'paid' && r.state !== 'cancelled')
+  const area = type ? Math.round(type.lengthMeters * type.widthMeters * 100) / 100 : null
+  const noticeDays = Math.round((asLocal(c.endDate).getTime() - new Date(c.renewalAvailableFrom).setHours(0, 0, 0, 0)) / DAY)
 
   return (
     <>
@@ -87,7 +132,7 @@ export default function ContractDetail() {
             <p>Theo dõi quyền truy cập, thời hạn, thanh toán và các thao tác hợp đồng của kho {c.unitCode}{typeName ? ` · ${typeName.name}` : ''}.</p>
           </div>
           <div className="hero-side">
-            <StatusBadge status={c.status} />
+            {c.status === 'Active' ? <span className="badge ok">Đang hoạt động</span> : <StatusBadge status={c.status} />}
             <small>Hợp đồng {c.contractNumber}</small>
           </div>
         </div>
@@ -96,23 +141,23 @@ export default function ContractDetail() {
       <div className="container page-body">
         {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
         <div className="detail-grid">
-          {/* left column */}
-          <div className="stack-lg">
+          {/* row 1 left: the unit */}
+          <div className="stack-lg area-unit">
             <section className="panel unit-panel">
               <div className="unit-photo"><UnitArt variant={unit ? unit.unitTypeId - 1 : 2} /></div>
               <div className="row between wrap">
                 <div>
-                  <h2 className="unit-title">{typeName?.name ?? `Kho ${c.unitCode}`} {typeName?.size && <small>{typeName.size}</small>}</h2>
+                  <h2 className="unit-title">{typeName?.name ?? `Kho ${c.unitCode}`}{area ? ` ${area.toLocaleString('vi-VN')}m²` : ''}</h2>
                   <p className="muted">Mã kho {c.unitCode} · {c.facilityName}</p>
                 </div>
                 <span className={`badge ${locked ? 'bad' : ended ? 'muted' : 'ok'}`}>{locked ? 'Khóa do quá hạn' : ended ? 'Đã trả kho' : 'Truy cập bình thường'}</span>
               </div>
               <dl className="spec-grid">
                 <div><dt>Cơ sở</dt><dd>{c.facilityName}</dd></div>
-                <div><dt>Vị trí</dt><dd>{unit ? `Tầng ${unit.floorNumber}${unit.zoneArea ? ` · ${unit.zoneArea}` : ''}` : '—'}</dd></div>
-                <div><dt>Kích thước</dt><dd>{type ? `${type.lengthMeters}m × ${type.widthMeters}m × ${type.heightMeters}m` : '—'}</dd></div>
                 <div><dt>Điều hòa</dt><dd>{type ? (type.hasClimateControl ? 'Có kiểm soát nhiệt độ' : 'Không') : '—'}</dd></div>
+                <div><dt>Vị trí</dt><dd>{unit ? `Tầng ${unit.floorNumber}${unit.zoneArea ? ` · ${unit.zoneArea}` : ''}` : '—'}</dd></div>
                 <div><dt>Giờ mở cửa</dt><dd>{facility?.operatingHours ?? '—'}</dd></div>
+                <div><dt>Kích thước</dt><dd>{type ? `${type.lengthMeters}m × ${type.widthMeters}m × ${type.heightMeters}m` : '—'}</dd></div>
                 <div><dt>Trạng thái kho</dt><dd><StatusBadge status={c.unitStatus} /></dd></div>
               </dl>
             </section>
@@ -128,81 +173,98 @@ export default function ContractDetail() {
                 </dl>
               </section>
             )}
-
-            <section className="panel">
-              <div>
-                <h3 className="panel-title">Lịch Thanh Toán & Hóa Đơn</h3>
-                <p className="muted">Phí thuê {fmtMoney(c.monthlyRentFee)}/tháng · hết hạn {fmtDate(c.endDate)}</p>
-              </div>
-              <div className="table-scroll">
-                <table>
-                  <thead><tr><th>Khoản</th><th>Số tiền</th><th>Ngày đến hạn</th><th>Trạng thái</th><th>Hóa đơn</th></tr></thead>
-                  <tbody>
-                    {invoices.map((i) => (
-                      <tr key={i.invoiceId}>
-                        <td>{INVOICE_TYPE[i.invoiceType] ?? i.invoiceType}<br /><small className="muted">{i.details[0]?.description}</small></td>
-                        <td className="money">{fmtMoney(i.totalAmount)}</td>
-                        <td>{fmtDate(i.dueDate)}</td>
-                        <td><StatusBadge status={i.status} /></td>
-                        <td className="code">{i.invoiceNumber}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {invoices.length === 0 && <Empty icon="wallet">Chưa có hóa đơn nào gắn với hợp đồng này.</Empty>}
-              </div>
-              <div className="row between wrap">
-                <small className="muted">Thanh toán online qua VNPay / MoMo hoặc tại quầy cơ sở.</small>
-                <Link to="/invoices" className="btn outline sm"><Icon name="card" size={14} /> Quản lý thanh toán</Link>
-              </div>
-            </section>
           </div>
 
-          {/* right column */}
-          <div className="stack-lg">
-            <section className="panel contract-card">
-              <h3 className="panel-title">Thông Tin Hợp Đồng</h3>
-              <div className="price-box">
-                <div className="row between"><small className="muted">Mã hợp đồng</small><b>{c.contractNumber}</b></div>
-                <div><b className="price-big">{fmtMoney(c.monthlyRentFee)}</b> <small className="muted">/ tháng</small></div>
-              </div>
-              <div className="info-row"><span className="muted">Ngày bắt đầu</span><b>{fmtDate(c.startDate)}</b></div>
-              <div className="info-row"><span className="muted">Ngày hết hạn</span><b>{fmtDate(c.endDate)}</b></div>
-              <div className="info-row"><span className="muted">Thời gian còn lại</span>
-                <b className={ended ? '' : left <= 7 ? 'warn-text' : 'cyan'}>{ended ? 'Đã kết thúc' : left > 0 ? `${left} ngày` : left === 0 ? 'Hết hạn hôm nay' : `Quá ${-left} ngày`}</b></div>
-              <div className="info-row"><span className="muted">Lịch trả kho</span><b>20:00 · {fmtDate(c.endDate)}</b></div>
-              <div className="info-row"><span className="muted">Tiền cọc</span><b>{fmtMoney(c.depositPaid)}</b></div>
-              <div className="info-row"><span className="muted">Phí quá hạn</span><b className={c.accumulatedLateFee > 0 ? 'danger-text' : ''}>{fmtMoney(c.accumulatedLateFee)}</b></div>
+          {/* row 1 right: the contract */}
+          <section className="panel contract-card area-contract">
+            <h3 className="panel-title">Thông Tin Hợp Đồng</h3>
+            <div className="price-box">
+              <div className="row between"><small className="muted">Mã hợp đồng</small><b>{c.contractNumber}</b></div>
+              <div><b className="price-big">{fmtMoney(c.monthlyRentFee)}</b> <small className="muted">/ tháng</small></div>
+            </div>
+            <div className="info-row"><span className="muted">Ngày bắt đầu</span><b>{fmtDate(c.startDate)}</b></div>
+            <div className="info-row"><span className="muted">Ngày hết hạn</span><b>{fmtDate(c.endDate)}</b></div>
+            <div className="info-row"><span className="muted">Thời gian còn lại</span>
+              <b className={ended ? '' : left <= 7 ? 'warn-text' : 'cyan'}>{ended ? 'Đã kết thúc' : left > 0 ? `${left} ngày` : left === 0 ? 'Hết hạn hôm nay' : `Quá ${-left} ngày`}</b></div>
+            <div className="info-row"><span className="muted">Chu kỳ thanh toán</span><b>Hàng tháng</b></div>
+            <div className="info-row"><span className="muted">Tiền cọc</span><b>{fmtMoney(c.depositPaid)}</b></div>
+            {c.accumulatedLateFee > 0 && <>
+              <div className="info-row"><span className="muted">Phí quá hạn</span><b className="danger-text">{fmtMoney(c.accumulatedLateFee)}</b></div>
               <div className="info-row"><span className="muted">Số dư cọc</span><b>{fmtMoney(c.depositBalance)}</b></div>
-              {!ended && (
-                <button className="btn primary self-start" onClick={() => setShowRenew(!showRenew)}>
-                  <Icon name="calendar" size={15} /> {pending ? 'Xem yêu cầu gia hạn' : 'Gia hạn hợp đồng'}
-                </button>
-              )}
-              {showRenew && <RenewalPanel contract={c} renewals={renewals} onChanged={load} />}
-              {!ended && (
-                <div className="row wrap">
-                  <Link to={`/support?contract=${c.contractId}`} className="btn outline sm"><Icon name="alert" size={14} /> Báo sự cố</Link>
-                </div>
-              )}
-            </section>
+            </>}
+            {!ended && (
+              <button className="btn primary self-start" onClick={() => setShowRenew(!showRenew)}>
+                <Icon name="calendar" size={15} /> {pending ? 'Xem yêu cầu gia hạn' : 'Gia hạn hợp đồng'}
+              </button>
+            )}
+            {showRenew && <RenewalPanel contract={c} renewals={renewals} onChanged={load} />}
+            <div className="action-grid">
+              {!ended && <Link to={`/support?contract=${c.contractId}`} className="btn soft sm"><Icon name="alert" size={14} /> Báo sự cố</Link>}
+              {!ended && <Link to={`/support?contract=${c.contractId}&topic=return`} className="btn soft sm"><Icon name="logout" size={14} /> Yêu cầu trả kho</Link>}
+              <button type="button" className={`btn soft sm ${showPolicy ? 'active' : ''}`} onClick={() => setShowPolicy(!showPolicy)}><Icon name="clipboard" size={14} /> Xem policy hợp đồng</button>
+              <Link to={`/my-units?contract=${c.contractId}&tab=history`} className="btn soft sm"><Icon name="shield" size={14} /> Bảo mật & nhật ký</Link>
+            </div>
+            {showPolicy && (
+              <ul className="policy-list">
+                <li>Phí thuê {fmtMoney(c.monthlyRentFee)}/tháng, hóa đơn phát hành theo từng kỳ một tháng kể từ ngày bắt đầu.</li>
+                <li>Tiền cọc {fmtMoney(c.depositPaid)}, hoàn lại sau khi trả kho và nhân viên kiểm tra kho đạt.</li>
+                <li>Gửi yêu cầu gia hạn trong {noticeDays} ngày trước ngày hết hạn, từ {fmtDate(c.renewalAvailableFrom)}.</li>
+                <li>Trả kho trước 20:00 ngày {fmtDate(c.endDate)}. Quá 24 giờ, kho bị khóa và tính phí lưu kho mỗi ngày bằng phí tháng / 30, cấn trừ vào tiền cọc.</li>
+                <li>Ra vào kho bằng CCCD của chủ hợp đồng hoặc người được ủy quyền, nhân viên cổng đối chiếu mỗi lượt.</li>
+              </ul>
+            )}
+          </section>
 
-            <section className="panel">
-              <div>
-                <h3 className="panel-title">Quyền Truy Cập</h3>
-                <p className="muted">Ra vào bằng CCCD, nhân viên cổng đối chiếu mỗi lượt.</p>
-              </div>
-              <div className={`access-state ${locked || ended ? 'off' : 'on'}`}>
-                <b>Trạng thái truy cập</b>
-                <span>{ended ? 'Đã kết thúc' : locked ? 'Đang khóa' : 'Đang bật'}</span>
-              </div>
-              <div className="info-row"><span className="muted">Xác thực</span><b>CCCD chủ hợp đồng</b></div>
-              <div className="info-row"><span className="muted">Người được ủy quyền</span><b>{people.length} người</b></div>
-              <div className="info-row"><span className="muted">Khung giờ</span><b>{facility?.operatingHours ?? '—'}</b></div>
-              <div className="info-row"><span className="muted">Lần vào gần nhất</span><b>{lastVisit ? fmtTime(lastVisit.entryTime) : 'Chưa có'}</b></div>
-              <Link to="/my-units" className="btn outline sm self-start"><Icon name="users" size={14} /> Quản lý người ủy quyền</Link>
-            </section>
-          </div>
+          {/* row 2 left: payments */}
+          <section className="panel area-pay">
+            <div>
+              <h3 className="panel-title">Lịch Thanh Toán & Hóa Đơn</h3>
+              <p className="muted">{next ? `Kỳ tiếp theo: ${fmtDate(next.due)}` : 'Không còn kỳ thanh toán nào'}</p>
+            </div>
+            <div className="table-scroll">
+              <table className="schedule-table">
+                <thead><tr><th>Kỳ thanh toán</th><th>Số tiền</th><th>Ngày đến hạn</th><th>Trạng thái</th><th>Hóa đơn</th></tr></thead>
+                <tbody>
+                  {schedule.map((r) => (
+                    <tr key={r.key}>
+                      <td>{r.period}</td>
+                      <td className="money">{fmtMoney(r.amount)}</td>
+                      <td>{fmtDate(r.due)}</td>
+                      <td><span className={`badge ${STATE_BADGE[r.state].tone}`}>{STATE_BADGE[r.state].label}</span></td>
+                      <td>{r.invoice ? <Link to="/invoices" className="code">{r.invoice}</Link> : <b className="plain-strong">Chưa phát hành</b>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {schedule.length === 0 && <Empty icon="wallet">Chưa có kỳ thanh toán nào cho hợp đồng này.</Empty>}
+            </div>
+            <div className="row between wrap">
+              <small className="muted">Thanh toán online qua VNPay / MoMo hoặc tại quầy cơ sở.</small>
+              <Link to="/invoices" className="btn soft sm"><Icon name="card" size={14} /> Quản lý thanh toán</Link>
+            </div>
+          </section>
+
+          {/* row 2 right: access */}
+          <section className="panel area-access">
+            <div>
+              <h3 className="panel-title">Quyền Truy Cập</h3>
+              <p className="muted">Chỉ hiển thị cho chủ hợp đồng</p>
+            </div>
+            <div className={`access-state ${locked || ended ? 'off' : 'on'}`}>
+              <b>Trạng thái truy cập</b>
+              <span>{ended ? 'Đã kết thúc' : locked ? 'Đang khóa' : 'Đang bật'}</span>
+            </div>
+            <div className="info-row"><span className="muted">Chủ hợp đồng</span><b>{user?.fullName ?? '—'}</b></div>
+            <div className="info-row"><span className="muted">Người được ủy quyền</span><b>{people.length} người</b></div>
+            <div className="info-row"><span className="muted">Xác thực</span><b>CCCD tại cổng</b></div>
+            <div className="info-row"><span className="muted">Khung giờ</span><b>{facility?.operatingHours ?? '—'}</b></div>
+            <div className="info-row"><span className="muted">Lần vào gần nhất</span><b>{lastVisit ? fmtTime(lastVisit.entryTime) : 'Chưa có'}</b></div>
+            <div className="action-grid">
+              {!ended && !locked && <Link to={`/my-units/${c.contractId}/visit`} className="btn primary sm"><Icon name="calendar" size={14} /> Đăng ký vào kho</Link>}
+              <Link to={`/my-units?contract=${c.contractId}&tab=people`} className="btn soft sm"><Icon name="users" size={14} /> Quản lý người ủy quyền</Link>
+              <Link to={`/my-units?contract=${c.contractId}&tab=history`} className="btn soft sm"><Icon name="shield" size={14} /> Bảo mật & nhật ký</Link>
+            </div>
+          </section>
         </div>
       </div>
     </>
@@ -211,7 +273,7 @@ export default function ContractDetail() {
 
 const MONTH_CHOICES = [1, 3, 6, 12]
 
-/** Request a renewal (open from 7 days before the end date until 20:00 on the end date). */
+/** Request a renewal (open from the facility's notice period before the end date until 20:00 on the end date). */
 function RenewalPanel({ contract: c, renewals, onChanged }: { contract: Detail; renewals: Renewal[]; onChanged: () => Promise<void> }) {
   const [months, setMonths] = useState(3)
   const [busy, setBusy] = useState(false)
@@ -266,7 +328,7 @@ function RenewalPanel({ contract: c, renewals, onChanged }: { contract: Detail; 
           <button className="btn primary block" onClick={submit} disabled={busy}>{busy ? 'Đang gửi…' : 'Gửi Yêu Cầu Gia Hạn'}</button>
         </div>
       ) : c.status === 'Active' && now < opensAt ? (
-        <p className="hint"><Icon name="calendar" size={15} /> Bạn có thể gửi yêu cầu gia hạn từ ngày <b>{fmtDate(c.renewalAvailableFrom)}</b> (7 ngày trước khi hết hạn).</p>
+        <p className="hint"><Icon name="calendar" size={15} /> Bạn có thể gửi yêu cầu gia hạn từ ngày <b>{fmtDate(c.renewalAvailableFrom)}</b>.</p>
       ) : (
         <p className="hint"><Icon name="alert" size={15} /> Hợp đồng không còn trong thời gian được gia hạn. Liên hệ cơ sở nếu bạn cần hỗ trợ.</p>
       )}

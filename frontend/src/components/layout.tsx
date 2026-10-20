@@ -49,7 +49,7 @@ export function PortalHeader() {
           {isCustomer ? (
             <>
               <NavLink to="/my-units">Kho Của Tôi</NavLink>
-              <NavLink to="/invoices">Hóa Đơn</NavLink>
+              <NavLink to="/invoices">Thanh Toán</NavLink>
               <NavLink to="/support">Hỗ Trợ</NavLink>
               <NavLink to="/rent">Thuê Kho</NavLink>
             </>

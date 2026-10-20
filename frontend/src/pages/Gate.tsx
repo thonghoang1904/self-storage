@@ -2,9 +2,17 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api, fmtDate, fmtTime, IS_DEMO } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
-import { DenyReasons, type AccessRecord, type Person, type VisitCandidate } from '../types'
+import { DenyReasons, type AccessRecord, type Person, type VisitCandidate, type VisitRegistration } from '../types'
 
 const REFRESH_MS = 5000
+const hhmm = (iso: string) => iso.slice(11, 16)
+const dmy = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/')
+/** Approved registration whose window covers now, for this contract and visitor (null = contract holder). */
+const activeRegistration = (regs: VisitRegistration[], contractId: number, authorizedPersonId: number | null) => {
+  const now = Date.now()
+  return regs.find((r) => r.contractId === contractId && r.status === 'Approved' && r.authorizedPersonId === authorizedPersonId
+    && new Date(r.scheduledEntryAt).getTime() <= now && new Date(r.scheduledExitAt).getTime() >= now)
+}
 
 /** "0792••••0123": staff must read the number off the card, the screen only confirms it. */
 const maskId = (id: string | null) => (id ? (id.length > 6 ? `${id.slice(0, 4)}${'•'.repeat(id.length - 7)}${id.slice(-3)}` : id) : '—')
@@ -20,6 +28,7 @@ export default function Gate() {
   const [candidates, setCandidates] = useState<VisitCandidate[] | null>(null)
   const [inside, setInside] = useState<AccessRecord[]>([])
   const [today, setToday] = useState<AccessRecord[]>([])
+  const [regs, setRegs] = useState<VisitRegistration[]>([])
   const [error, setError] = useState('')
   const [notice, setNotice] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null)
   const [searching, setSearching] = useState(false)
@@ -27,12 +36,14 @@ export default function Gate() {
   const refresh = useCallback(async () => {
     if (!facilityId) return
     try {
-      const [i, t] = await Promise.all([
+      const [i, t, v] = await Promise.all([
         api<AccessRecord[]>(`/api/gate/facilities/${facilityId}/inside`),
         api<AccessRecord[]>(`/api/gate/facilities/${facilityId}/today`),
+        api<VisitRegistration[]>(`/api/gate/facilities/${facilityId}/visit-registrations`),
       ])
       setInside(i)
       setToday(t)
+      setRegs(v)
     } catch (e) {
       setError((e as Error).message)
     }
@@ -67,11 +78,22 @@ export default function Gate() {
 
   const onRecorded = (rec: AccessRecord) => {
     setNotice(rec.result === 'Granted'
-      ? { tone: 'ok', text: `Đã cho ${rec.visitorName} vào kho ${rec.unitCode} lúc ${fmtTime(rec.entryTime)}.` }
+      ? { tone: 'ok', text: `Đã cho ${rec.visitorName}${(rec.companionCount ?? 0) > 0 ? ` và ${rec.companionCount} người đi cùng` : ''} vào kho ${rec.unitCode} lúc ${fmtTime(rec.entryTime)}.` }
       : { tone: 'bad', text: `Đã ghi nhận từ chối ${rec.visitorName} (kho ${rec.unitCode}): ${DenyReasons[rec.denyReason ?? 'Other']}.` })
     setCandidates(null)
     setQuery('')
     void refresh()
+  }
+
+  const review = async (r: VisitRegistration, approve: boolean, notes?: string) => {
+    setError('')
+    try {
+      await api(`/api/gate/facilities/${facilityId}/visit-registrations/${r.visitRegistrationId}/review`, { body: { approve, notes: notes || null } })
+      setNotice({ tone: approve ? 'ok' : 'bad', text: `${approve ? 'Đã duyệt' : 'Đã từ chối'} lịch của ${r.visitorName} (kho ${r.unitCode}) ${hhmm(r.scheduledEntryAt)} ngày ${dmy(r.scheduledEntryAt)}.` })
+      void refresh()
+    } catch (e) {
+      setError((e as Error).message)
+    }
   }
 
   const confirmExit = async (r: AccessRecord) => {
@@ -132,8 +154,10 @@ export default function Gate() {
 
       {candidates && candidates.length === 0 && <div className="panel"><Empty icon="search">Không tìm thấy hợp đồng nào khớp "{searched}" tại cơ sở này.</Empty></div>}
       {candidates?.map((c) => (
-        <VisitCard key={`${c.contractId}-${searched}`} facilityId={facilityId!} visit={c} query={searched} onRecorded={onRecorded} />
+        <VisitCard key={`${c.contractId}-${searched}`} facilityId={facilityId!} visit={c} query={searched} regs={regs} onRecorded={onRecorded} />
       ))}
+
+      <RegistrationsPanel regs={regs} onReview={review} />
 
       <section className="panel">
         <div className="panel-head">
@@ -146,7 +170,7 @@ export default function Gate() {
               {inside.map((r) => (
                 <tr key={r.accessRecordId}>
                   <td><span className="unit-code">{r.unitCode}</span></td>
-                  <td><b>{r.visitorName}</b><br /><small className="muted">HĐ {r.contractNumber}</small></td>
+                  <td><b>{r.visitorName}</b>{(r.companionCount ?? 0) > 0 && <span className="pill muted">+{r.companionCount} người</span>}<br /><small className="muted">HĐ {r.contractNumber}</small></td>
                   <td>{r.purpose ?? '—'}</td>
                   <td>{fmtTime(r.entryTime)}</td>
                   <td>{r.verifiedBy}</td>
@@ -169,7 +193,7 @@ export default function Gate() {
                 <tr key={r.accessRecordId}>
                   <td>{fmtTime(r.entryTime)}</td>
                   <td><span className="unit-code">{r.unitCode}</span></td>
-                  <td>{r.visitorName}</td>
+                  <td>{r.visitorName}{(r.companionCount ?? 0) > 0 && <small className="muted"> +{r.companionCount} người</small>}</td>
                   <td>{r.result === 'Granted'
                     ? <span className="badge ok">Cho vào</span>
                     : <span className="badge bad">Từ chối · {DenyReasons[r.denyReason ?? 'Other'] ?? r.denyReason}</span>}</td>
@@ -196,10 +220,66 @@ function StatCard({ icon, tone, label, value, note }: { icon: string; tone: stri
   )
 }
 
-function VisitCard({ facilityId, visit: v, query, onRecorded }: {
+/** Customers' visit registrations at this facility: pending ones to approve or reject, then today's approved ones. */
+function RegistrationsPanel({ regs, onReview }: { regs: VisitRegistration[]; onReview: (r: VisitRegistration, approve: boolean, notes?: string) => void }) {
+  const [tab, setTab] = useState<'Pending' | 'Approved'>('Pending')
+  const [rejecting, setRejecting] = useState<number | null>(null)
+  const [notes, setNotes] = useState('')
+  const now = Date.now()
+  const pending = regs.filter((r) => r.status === 'Pending')
+  const approved = regs.filter((r) => r.status === 'Approved' && new Date(r.scheduledExitAt).getTime() >= now)
+  const shown = tab === 'Pending' ? pending : approved
+  return (
+    <section className="panel">
+      <div className="panel-head wrap">
+        <div>
+          <h3 className="panel-title">Lịch đăng ký vào kho</h3>
+          <p className="muted">Khách đăng ký trước giờ đến. Chỉ lịch đã duyệt và đang trong khung giờ mới được cho vào cổng.</p>
+        </div>
+        <div className="segmented">
+          <button className={tab === 'Pending' ? 'active' : ''} onClick={() => setTab('Pending')}>Chờ duyệt {pending.length > 0 && <span className="pill">{pending.length}</span>}</button>
+          <button className={tab === 'Approved' ? 'active' : ''} onClick={() => setTab('Approved')}>Đã duyệt ({approved.length})</button>
+        </div>
+      </div>
+      <div>
+        {shown.map((r) => {
+          const live = new Date(r.scheduledEntryAt).getTime() <= now && new Date(r.scheduledExitAt).getTime() >= now
+          return (
+            <div key={r.visitRegistrationId} className="reg-row">
+              <div className="reg-time"><b>{hhmm(r.scheduledEntryAt)} – {hhmm(r.scheduledExitAt)}</b><small className="muted">{dmy(r.scheduledEntryAt)}</small></div>
+              <span className="unit-code">{r.unitCode}</span>
+              <div className="grow">
+                <b>{r.visitorName}</b> {r.authorizedPersonId != null && <span className="pill muted">Ủy quyền</span>}
+                <small className="muted block">HĐ {r.contractNumber} · {r.purpose}</small>
+              </div>
+              {tab === 'Approved' ? (
+                <span className={`badge ${live ? 'ok' : 'info'}`}>{live ? 'Đang trong giờ' : 'Sắp tới'}</span>
+              ) : rejecting === r.visitRegistrationId ? (
+                <span className="row wrap">
+                  <input value={notes} placeholder="Lý do từ chối" onChange={(e) => setNotes(e.target.value)} />
+                  <button className="btn danger sm" onClick={() => { onReview(r, false, notes); setRejecting(null); setNotes('') }}>Từ chối</button>
+                  <button className="btn ghost sm" onClick={() => setRejecting(null)}>Hủy</button>
+                </span>
+              ) : (
+                <span className="row">
+                  <button className="btn primary sm" onClick={() => onReview(r, true)}><Icon name="check" size={14} /> Duyệt</button>
+                  <button className="btn outline sm" onClick={() => { setRejecting(r.visitRegistrationId); setNotes('') }}>Từ chối</button>
+                </span>
+              )}
+            </div>
+          )
+        })}
+        {shown.length === 0 && <Empty icon="calendar">{tab === 'Pending' ? 'Không có lịch nào chờ duyệt.' : 'Chưa có lịch đã duyệt sắp tới.'}</Empty>}
+      </div>
+    </section>
+  )
+}
+
+function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
   facilityId: number
   visit: VisitCandidate
   query: string
+  regs: VisitRegistration[]
   onRecorded: (r: AccessRecord) => void
 }) {
   const people: Person[] = [v.customer, ...v.authorizedPersons]
@@ -215,6 +295,7 @@ function VisitCard({ facilityId, visit: v, query, onRecorded }: {
   const typed = citizenId.trim()
   const matches = typed !== '' && typed === (person.citizenId ?? '').trim()
   const alreadyInside = v.peopleInside.includes(person.fullName)
+  const reg = activeRegistration(regs, v.contractId, person.authorizedPersonId)
 
   const run = async (fn: () => Promise<AccessRecord>) => {
     setBusy(true)
@@ -231,7 +312,7 @@ function VisitCard({ facilityId, visit: v, query, onRecorded }: {
   const grant = () =>
     run(() =>
       api<AccessRecord>(`/api/gate/facilities/${facilityId}/entries`, {
-        body: { contractId: v.contractId, authorizedPersonId: person.authorizedPersonId, citizenId: typed, purpose: purpose || null },
+        body: { contractId: v.contractId, visitRegistrationId: reg?.visitRegistrationId, authorizedPersonId: person.authorizedPersonId, citizenId: typed, purpose: purpose || reg?.purpose || null },
       }),
     )
 
@@ -251,7 +332,7 @@ function VisitCard({ facilityId, visit: v, query, onRecorded }: {
             <p className="contract-no">{v.contractNumber}</p>
             <p className="muted">{fmtDate(v.startDate)} – {fmtDate(v.endDate)}</p>
           </div>
-          <span className={`badge ${v.canEnter ? 'ok' : 'bad'}`}>{v.canEnter ? 'Được phép vào' : 'Không được vào'}</span>
+          <span className={`badge ${v.issues.length ? 'bad' : v.canEnter ? 'ok' : 'warn'}`}>{v.issues.length ? 'Không được vào' : v.canEnter ? 'Có lịch đã duyệt' : 'Chưa có lịch đã duyệt'}</span>
         </div>
         <dl className="kv-grid">
           <div><dt>Chủ hợp đồng</dt><dd>{v.customer.fullName}</dd></div>
@@ -298,12 +379,15 @@ function VisitCard({ facilityId, visit: v, query, onRecorded }: {
         </label>
         <label className="field">
           <span>Mục đích (không bắt buộc)</span>
-          <input value={purpose} placeholder="Gửi đồ, lấy đồ…" onChange={(e) => setPurpose(e.target.value)} />
+          <input value={purpose} placeholder={reg?.purpose ?? 'Gửi đồ, lấy đồ…'} onChange={(e) => setPurpose(e.target.value)} />
         </label>
+        {reg
+          ? <p className="reg-match ok"><Icon name="calendar" size={15} /> Lịch đã duyệt: {hhmm(reg.scheduledEntryAt)} – {hhmm(reg.scheduledExitAt)} · {reg.purpose}</p>
+          : <p className="reg-match bad"><Icon name="alert" size={15} /> {person.fullName} chưa có lịch vào kho đã duyệt trong giờ này. Hướng dẫn khách đăng ký trên web, hoặc ghi nhận từ chối.</p>}
         {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
 
-        <div className={`decision ${v.canEnter ? '' : 'blocked'}`}>
-          <button className="btn primary block" disabled={busy || !v.canEnter || !typed || alreadyInside} onClick={grant}>
+        <div className={`decision ${reg && !v.issues.length ? '' : 'blocked'}`}>
+          <button className="btn primary block" disabled={busy || !reg || v.issues.length > 0 || !typed || alreadyInside} onClick={grant}>
             <Icon name="check" size={16} /> Xác nhận đúng người, cho vào
           </button>
           {alreadyInside && <small className="muted">Người này đang ở trong kho, hãy xác nhận ra trước.</small>}

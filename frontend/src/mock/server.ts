@@ -6,12 +6,12 @@
  */
 import type {
   AccessIssue, ActivityLog, AdminUser, FacilityReport, OperationsReport, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
-  OverdueSummary, Person, Renewal, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate,
+  OverdueSummary, Person, Renewal, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate, VisitRegistration,
 } from '../types'
 import { Roles } from '../types'
 
 export const DEMO_PASSWORD = 'Demo@12345'
-const DB_KEY = 'ss_mock_db_v8'
+const DB_KEY = 'ss_mock_db_v10'
 
 // ------------------------------------------------------------------ data model
 
@@ -25,7 +25,8 @@ interface Chk { checklistItemId: number; sortOrder: number; description: string;
 interface SupUpd { updateId: number; requestId: number; updatedByUserId: number; actionMessage: string; previousStatus: string | null; newStatus: string | null; createdAt: string }
 interface Ovd { overdueId: number; contractId: number; daysOverdue: number; accumulatedLateFee: number; lockAppliedAt: string; resolvedAt: string | null }
 interface AuthPerson { authorizedPersonId: number; contractId: number; fullName: string; phoneNumber: string; citizenId: string; relationship: string | null; status: string }
-interface Rec { accessRecordId: number; contractId: number; facilityId: number; unitId: number; authorizedPersonId: number | null; verifiedByStaffId: number; result: 'Granted' | 'Denied'; denyReason: string | null; purpose: string | null; entryTime: string; exitTime: string | null }
+interface Vreg { visitRegistrationId: number; contractId: number; customerId: number; authorizedPersonId: number | null; scheduledEntryAt: string; scheduledExitAt: string; purpose: string; status: string; requestedAt: string; reviewedAt: string | null; reviewNotes: string | null }
+interface Rec { accessRecordId: number; contractId: number; facilityId: number; unitId: number; authorizedPersonId: number | null; verifiedByStaffId: number; result: 'Granted' | 'Denied'; denyReason: string | null; purpose: string | null; companionCount?: number; entryTime: string; exitTime: string | null }
 
 interface Db {
   seq: number
@@ -38,7 +39,11 @@ interface Db {
   contracts: Ctr[]
   persons: AuthPerson[]
   records: Rec[]
+  /** Visit registrations (VisitRegistrations table): customer books a time, staff approves, the gate only admits approved ones. */
+  visits: Vreg[]
   renewals: Rnw[]
+  /** Monthly rent paid at the counter in the demo, by `${contractId}:${periodStart}`. */
+  rentPaid?: Record<string, Paid>
   overdues: Ovd[]
   supports: Sup[]
   supportUpdates: SupUpd[]
@@ -54,6 +59,8 @@ const localIso = (d: Date) =>
 const dateOnly = (d: Date) => localIso(d).slice(0, 10)
 const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x }
 const addMonths = (d: Date, n: number) => { const x = new Date(d); x.setMonth(x.getMonth() + n); return x }
+/** Vietnam-offset ISO time, as DateTimeOffset values come back from the API. */
+const tz = (d: Date) => `${localIso(d)}+07:00`
 const atToday = (h: number, m: number) => { const d = new Date(); d.setHours(h, m, 0, 0); return d }
 const today = () => dateOnly(new Date())
 
@@ -118,7 +125,7 @@ function seed(): Db {
     { accessRecordId: 2, contractId: 1, facilityId: 1, unitId: unit(1, 'B-01').unitId, authorizedPersonId: 1, verifiedByStaffId: 3, result: 'Granted', denyReason: null, purpose: 'Lấy đồ', entryTime: localIso(addDays(atToday(17, 20), -1)), exitTime: localIso(addDays(atToday(17, 40), -1)) },
     { accessRecordId: 3, contractId: 4, facilityId: 1, unitId: unit(1, 'C-02').unitId, authorizedPersonId: null, verifiedByStaffId: 3, result: 'Denied', denyReason: 'OverdueLocked', purpose: null, entryTime: localIso(atToday(7, 5)), exitTime: null },
     { accessRecordId: 4, contractId: 3, facilityId: 1, unitId: unit(1, 'C-01').unitId, authorizedPersonId: null, verifiedByStaffId: 3, result: 'Granted', denyReason: null, purpose: 'Lấy hàng', entryTime: localIso(atToday(6, 40)), exitTime: localIso(atToday(7, 15)) },
-    { accessRecordId: 5, contractId: 5, facilityId: 1, unitId: unit(1, 'D-01').unitId, authorizedPersonId: 2, verifiedByStaffId: 3, result: 'Granted', denyReason: null, purpose: 'Nhập hàng', entryTime: localIso(atToday(6, 50)), exitTime: null },
+    { accessRecordId: 5, contractId: 5, facilityId: 1, unitId: unit(1, 'D-01').unitId, authorizedPersonId: 2, verifiedByStaffId: 3, result: 'Granted', denyReason: null, purpose: 'Nhập hàng', companionCount: 2, entryTime: localIso(atToday(6, 50)), exitTime: null },
   ]
 
   const rsvBase = { facilityId: 1, assignedUnitId: null, durationMonths: 6, createdAt: localIso(now) }
@@ -136,6 +143,13 @@ function seed(): Db {
     facilities,
     assignments: [{ facilityId: 1, staffId: 2 }, { facilityId: 1, staffId: 3 }],
     unitTypes, units, reservations, contracts, persons, records,
+    visits: [
+      // Người Nhà of B-01 is approved to come in now (gate demo); the owner has one waiting for staff tomorrow.
+      { visitRegistrationId: 1, contractId: 1, customerId: 4, authorizedPersonId: 1, scheduledEntryAt: tz(new Date(now.getTime() - 3600000)), scheduledExitAt: tz(new Date(now.getTime() + 3 * 3600000)), purpose: 'Lấy đồ', status: 'Approved', requestedAt: localIso(addDays(now, -1)), reviewedAt: localIso(addDays(now, -1)), reviewNotes: null },
+      { visitRegistrationId: 2, contractId: 1, customerId: 4, authorizedPersonId: null, scheduledEntryAt: tz(addDays(atToday(9, 0), 1)), scheduledExitAt: tz(addDays(atToday(10, 30), 1)), purpose: 'Gửi thêm đồ', status: 'Pending', requestedAt: localIso(now), reviewedAt: null, reviewNotes: null },
+      { visitRegistrationId: 3, contractId: 5, customerId: 7, authorizedPersonId: 2, scheduledEntryAt: tz(atToday(6, 30)), scheduledExitAt: tz(atToday(12, 0)), purpose: 'Nhập hàng', status: 'Approved', requestedAt: localIso(addDays(now, -1)), reviewedAt: localIso(addDays(now, -1)), reviewNotes: null },
+      { visitRegistrationId: 4, contractId: 3, customerId: 5, authorizedPersonId: null, scheduledEntryAt: tz(addDays(atToday(14, 0), 1)), scheduledExitAt: tz(addDays(atToday(15, 0), 1)), purpose: 'Kiểm tra kho', status: 'Pending', requestedAt: localIso(now), reviewedAt: null, reviewNotes: null },
+    ],
     renewals: [],
     supports: [
       { requestId: 1, requestCode: 'SUP-DEMO-000101', customerId: 4, facilityId: 1, contractId: 1, unitId: unit(1, 'B-01').unitId, assignedStaffId: 3, category: 'LockIssue', priority: 'High', title: 'Ổ khóa kho B-01 bị kẹt', description: 'Sáng nay tôi mở khóa rất khó, chìa vặn không hết vòng.', status: 'InProgress', createdAt: localIso(addDays(atToday(8, 30), -1)), resolvedAt: null },
@@ -208,17 +222,40 @@ function ensureAssigned(staffId: number, facilityId: number) {
 
 // ------------------------------------------------------------------ projections (same shapes as the API DTOs)
 
+function visitDto(v: Vreg): VisitRegistration {
+  const c = db.contracts.find((x) => x.contractId === v.contractId)!
+  const p = v.authorizedPersonId ? db.persons.find((x) => x.authorizedPersonId === v.authorizedPersonId) : null
+  return {
+    visitRegistrationId: v.visitRegistrationId, contractId: v.contractId, contractNumber: c.contractNumber,
+    facilityId: unitById(c.unitId).facilityId, unitCode: unitById(c.unitId).unitCode, authorizedPersonId: v.authorizedPersonId,
+    visitorName: p ? p.fullName : userById(v.customerId).fullName,
+    scheduledEntryAt: v.scheduledEntryAt, scheduledExitAt: v.scheduledExitAt, purpose: v.purpose, status: v.status,
+    requestedAt: v.requestedAt, reviewedAt: v.reviewedAt, reviewNotes: v.reviewNotes,
+  }
+}
+const visitsOf = () => (db.visits ??= [])
+/** Approved registration whose window contains now, for this visitor (AccessService.GrantEntryAsync). */
+const approvedNow = (contractId: number, apId?: number | null) => {
+  const now = Date.now()
+  return visitsOf().filter((v) => v.contractId === contractId && v.status === 'Approved'
+    && new Date(v.scheduledEntryAt).getTime() <= now && new Date(v.scheduledExitAt).getTime() >= now
+    && (apId === undefined || v.authorizedPersonId === apId)
+    && !db.records.some((r) => (r as Rec & { visitRegistrationId?: number }).visitRegistrationId === v.visitRegistrationId && r.result === 'Granted'))
+}
+
 function recordDto(r: Rec): AccessRecord {
   const c = db.contracts.find((x) => x.contractId === r.contractId)!
   const p = r.authorizedPersonId ? db.persons.find((x) => x.authorizedPersonId === r.authorizedPersonId) : null
   return {
     accessRecordId: r.accessRecordId,
+    visitRegistrationId: (r as Rec & { visitRegistrationId?: number }).visitRegistrationId ?? null,
     unitCode: unitById(r.unitId).unitCode,
     contractNumber: c.contractNumber,
     visitorName: p ? p.fullName : userById(c.customerId).fullName,
     result: r.result,
     denyReason: r.denyReason,
     purpose: r.purpose,
+    companionCount: r.companionCount ?? 0,
     entryTime: r.entryTime,
     exitTime: r.exitTime,
     verifiedBy: userById(r.verifiedByStaffId).fullName,
@@ -361,7 +398,29 @@ function allInvoices(): { customerId: number; facilityId: number; invoice: Invoi
       payments: status === 'Paid' ? payments(1, r.renewalFee, p, r.requestedAt, 'Nhân viên xác nhận đã nhận phí gia hạn') : [] }
     return { customerId: c.customerId, facilityId: unitById(c.unitId).facilityId, invoice }
   })
-  return [...fromRsv, ...fromRenewals].sort((a, b) => b.invoice.createdAt.localeCompare(a.invoice.createdAt))
+  // Monthly rent, like MonthlyRentInvoiceService: one invoice per month from the start date, issued up to 7 days ahead,
+  // skipped when a paid renewal covers the month. Months already started count as paid in the demo history.
+  const horizon = dateOnly(addDays(new Date(), 7))
+  const fromRent = db.contracts.filter((c) => c.status === 'Active' || c.status === 'Renewed' || c.status === 'Overdue').flatMap((c) => {
+    const out: { customerId: number; facilityId: number; invoice: Invoice }[] = []
+    for (let k = 0; k < 120; k++) {
+      const periodStart = dateOnly(addMonths(new Date(c.startDate + 'T00:00:00'), k))
+      if (periodStart >= c.endDate || periodStart > horizon) break
+      const next = dateOnly(addMonths(new Date(c.startDate + 'T00:00:00'), k + 1))
+      const periodEnd = next > c.endDate ? c.endDate : next
+      if (db.renewals.some((r) => r.contractId === c.contractId && r.status === 'Paid' && r.oldEndDate <= periodStart && r.newEndDate >= periodEnd)) continue
+      const key = `${c.contractId}:${periodStart}`
+      const p = db.rentPaid?.[key]
+      const status = p || periodStart < today() ? 'Paid' : 'Unpaid'
+      const invoice: Invoice = { invoiceId: 30000 + c.contractId * 100 + k, invoiceNumber: `INV-RENT-${c.contractId}-${k + 1}`, contractId: c.contractId, reservationId: null, invoiceType: 'MONTHLY_RENT', subTotal: c.monthlyRentFee, discountAmount: 0, totalAmount: c.monthlyRentFee, dueDate: periodStart, status, createdAt: `${periodStart}T00:00:00`,
+        billingPeriodStart: periodStart, billingPeriodEnd: periodEnd,
+        details: [{ detailId: 1, description: `Tiền thuê kỳ ${periodStart.split('-').reverse().join('/')} - ${periodEnd.split('-').reverse().join('/')} cho hợp đồng ${c.contractNumber}`, quantity: 1, unitPrice: c.monthlyRentFee, lineTotal: c.monthlyRentFee }],
+        payments: status === 'Paid' ? payments(1, c.monthlyRentFee, p, `${periodStart}T09:00:00`, 'Thu tiền thuê tháng') : [] }
+      out.push({ customerId: c.customerId, facilityId: unitById(c.unitId).facilityId, invoice })
+    }
+    return out
+  })
+  return [...fromRsv, ...fromRenewals, ...fromRent].sort((a, b) => b.invoice.createdAt.localeCompare(a.invoice.createdAt))
 }
 
 
@@ -779,6 +838,8 @@ const routes: [string, RegExp, Handler][] = [
       if (r.status !== 'PendingDeposit' || r.depositDeadline <= now) throw conflict('Đơn đặt kho không còn chờ đặt cọc')
       r.status = 'Confirmed'
       ;(r as Rsv & { paid?: typeof paid }).paid = paid
+    } else if (inv.invoiceType === 'MONTHLY_RENT') {
+      db.rentPaid = { ...db.rentPaid, [`${inv.contractId}:${inv.billingPeriodStart}`]: paid }
     } else {
       const rn = db.renewals.find((x) => 20000 + x.renewalId === inv.invoiceId)!
       const c = db.contracts.find((x) => x.contractId === rn.contractId)!
@@ -890,6 +951,76 @@ const routes: [string, RegExp, Handler][] = [
     return supportDto(r)
   }],
 
+  // ---- visit registrations (customer books entry/exit times; staff approves; the gate admits only approved ones)
+  ['GET', /^\/api\/contracts\/(\d+)\/visit-registrations$/, (m, { token }) => {
+    const me = currentUser(token)
+    requireRole(me, [Roles.Customer])
+    const c = ownContract(me, Number(m[1]))
+    return visitsOf().filter((v) => v.contractId === c.contractId && v.customerId === me.userId)
+      .sort((a, b) => b.scheduledEntryAt.localeCompare(a.scheduledEntryAt)).map(visitDto)
+  }],
+  ['POST', /^\/api\/contracts\/(\d+)\/visit-registrations$/, (m, { token, body }) => {
+    const me = currentUser(token)
+    requireRole(me, [Roles.Customer])
+    const c = ownContract(me, Number(m[1]))
+    if (c.status !== 'Active' || findIssues(c).length) throw conflict('Chỉ khách có hợp đồng đang hoạt động và kho không bị khóa mới đăng ký ra/vào')
+    const apId = body.authorizedPersonId == null ? null : Number(body.authorizedPersonId)
+    const expected = resolveVisitor(c, apId)
+    if (!expected || String(body.citizenId ?? '').trim().toLowerCase() !== expected.trim().toLowerCase())
+      throw bad('CCCD không khớp với khách thuê hoặc người được ủy quyền trên hợp đồng')
+    const entry = String(body.scheduledEntryAt ?? ''), exit = String(body.scheduledExitAt ?? '')
+    const e1 = new Date(entry).getTime(), e2 = new Date(exit).getTime()
+    if (!(e1 > Date.now()) || !(e2 > e1)) throw bad('Giờ ra/vào phải hợp lệ và nằm trong tương lai')
+    if (entry.slice(0, 10) < c.startDate || entry.slice(0, 10) > c.endDate || exit.slice(0, 10) > c.endDate
+      || (exit.slice(0, 10) === c.endDate && exit.slice(11, 16) >= '20:00'))
+      throw bad('Thời gian đăng ký phải nằm trong thời hạn hợp đồng')
+    if (visitsOf().some((v) => v.contractId === c.contractId && v.customerId === me.userId && (v.status === 'Pending' || v.status === 'Approved')
+      && new Date(v.scheduledEntryAt).getTime() < e2 && e1 < new Date(v.scheduledExitAt).getTime()))
+      throw conflict('Bạn đã có lịch ra/vào đang chờ duyệt hoặc được duyệt trong khung giờ này')
+    const purpose = String(body.purpose ?? '').trim()
+    if (!purpose) throw bad('Vui lòng nhập mục đích vào kho')
+    const v: Vreg = { visitRegistrationId: nextId(), contractId: c.contractId, customerId: me.userId, authorizedPersonId: apId, scheduledEntryAt: entry, scheduledExitAt: exit, purpose, status: 'Pending', requestedAt: localIso(new Date()), reviewedAt: null, reviewNotes: null }
+    visitsOf().push(v)
+    return visitDto(v)
+  }],
+  ['DELETE', /^\/api\/contracts\/(\d+)\/visit-registrations\/(\d+)$/, (m, { token }) => {
+    const me = currentUser(token)
+    requireRole(me, [Roles.Customer])
+    const v = visitsOf().find((x) => x.visitRegistrationId === Number(m[2]) && x.contractId === Number(m[1]) && x.customerId === me.userId)
+    if (!v) throw notFound('Không tìm thấy lịch ra/vào')
+    if (v.status !== 'Pending') throw conflict('Chỉ có thể hủy lịch đang chờ staff duyệt')
+    v.status = 'Cancelled'
+    return visitDto(v)
+  }],
+  ['GET', /^\/api\/gate\/facilities\/(\d+)\/visit-registrations$/, (m, { token, query }) => {
+    const me = currentUser(token)
+    requireRole(me, STAFF)
+    const fid = Number(m[1])
+    ensureAssigned(me.userId, fid)
+    const st = query.get('status')
+    return visitsOf().filter((v) => unitById(db.contracts.find((c) => c.contractId === v.contractId)!.unitId).facilityId === fid && (!st || v.status === st))
+      .sort((a, b) => a.scheduledEntryAt.localeCompare(b.scheduledEntryAt)).map(visitDto)
+  }],
+  ['POST', /^\/api\/gate\/facilities\/(\d+)\/visit-registrations\/(\d+)\/review$/, (m, { token, body }) => {
+    const me = currentUser(token)
+    requireRole(me, STAFF)
+    const fid = Number(m[1])
+    ensureAssigned(me.userId, fid)
+    const v = visitsOf().find((x) => x.visitRegistrationId === Number(m[2]))
+    if (!v) throw notFound('Không tìm thấy lịch ra/vào tại cơ sở này')
+    if (v.status !== 'Pending') throw conflict('Lịch ra/vào này đã được staff xử lý')
+    const approve = body.approve === true
+    if (approve) {
+      if (new Date(v.scheduledEntryAt).getTime() <= Date.now()) throw conflict('Không thể duyệt lịch đã qua giờ vào dự kiến')
+      const c = db.contracts.find((x) => x.contractId === v.contractId)!
+      if (c.status !== 'Active' || findIssues(c).length) throw conflict('Hợp đồng hoặc kho không còn đủ điều kiện ra/vào')
+    }
+    v.status = approve ? 'Approved' : 'Rejected'
+    v.reviewedAt = localIso(new Date())
+    v.reviewNotes = String(body.notes ?? '').trim() || null
+    return visitDto(v)
+  }],
+
   // ---- gate
   ['GET', /^\/api\/gate\/my-facilities$/, (_m, { token }) => {
     const me = currentUser(token)
@@ -923,7 +1054,8 @@ const routes: [string, RegExp, Handler][] = [
           customer: { authorizedPersonId: null, fullName: cust.fullName, citizenId: cust.citizenId, phoneNumber: cust.phoneNumber, relationship: 'Chủ hợp đồng' },
           authorizedPersons: db.persons.filter((p) => p.contractId === c.contractId && p.status === 'Active').map(personDto),
           peopleInside: db.records.filter((r) => r.contractId === c.contractId && r.result === 'Granted' && !r.exitTime).map((r) => recordDto(r).visitorName),
-          issues, canEnter: issues.length === 0,
+          issues, hasApprovedVisitRegistration: approvedNow(c.contractId).length > 0,
+          canEnter: issues.length === 0 && approvedNow(c.contractId).length > 0,
         }
       })
   }],
@@ -941,9 +1073,17 @@ const routes: [string, RegExp, Handler][] = [
     if (!expected?.trim()) throw bad('Người này chưa có số CCCD trong hồ sơ, không thể xác thực. Hãy từ chối với lý do IdentityMismatch.')
     if (!typed) throw bad('Vui lòng nhập số CCCD trên thẻ của khách')
     if (typed.toLowerCase() !== expected.trim().toLowerCase()) throw bad('Số CCCD không khớp với hồ sơ. Hãy kiểm tra lại hoặc từ chối với lý do IdentityMismatch.')
+    const reg = visitsOf().find((v) => v.visitRegistrationId === Number(body.visitRegistrationId) && v.contractId === c.contractId && v.status === 'Approved')
+    if (!reg) throw conflict('Không tìm thấy lịch ra/vào đã được staff duyệt cho hợp đồng này')
+    const now = Date.now()
+    if (now < new Date(reg.scheduledEntryAt).getTime() || now > new Date(reg.scheduledExitAt).getTime())
+      throw conflict('Chỉ được vào trong khung giờ đã đăng ký')
+    if (reg.authorizedPersonId !== apId) throw forbidden()
+    if (db.records.some((r) => (r as Rec & { visitRegistrationId?: number }).visitRegistrationId === reg.visitRegistrationId && r.result === 'Granted'))
+      throw conflict('Lịch ra/vào này đã được sử dụng')
     if (db.records.some((r) => r.contractId === c.contractId && r.authorizedPersonId === apId && r.result === 'Granted' && !r.exitTime))
       throw conflict('Người này đang ở trong kho, hãy xác nhận ra trước')
-    const rec: Rec = { accessRecordId: nextId(), contractId: c.contractId, facilityId: fid, unitId: c.unitId, authorizedPersonId: apId, verifiedByStaffId: me.userId, result: 'Granted', denyReason: null, purpose: (body.purpose as string) || null, entryTime: localIso(new Date()), exitTime: null }
+    const rec: Rec & { visitRegistrationId?: number } = { accessRecordId: nextId(), contractId: c.contractId, facilityId: fid, unitId: c.unitId, authorizedPersonId: apId, verifiedByStaffId: me.userId, result: 'Granted', denyReason: null, purpose: (body.purpose as string) || reg.purpose, entryTime: localIso(new Date()), exitTime: null, visitRegistrationId: reg.visitRegistrationId }
     db.records.push(rec)
     return recordDto(rec)
   }],

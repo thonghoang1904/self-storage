@@ -646,3 +646,78 @@ textarea::placeholder { color: var(--muted-2); }
 .appt.editing select { min-width: 92px; }
 .bad-text { color: var(--bad); display: inline-flex; align-items: center; gap: 4px; }
 .notice .appt { margin-top: 6px; }
+
+/* ---- contract detail laid out as the Figma 2 x 2 grid ---- */
+.detail-grid { grid-template-areas: 'unit contract' 'pay access'; }
+.area-unit { grid-area: unit; }
+.area-contract { grid-area: contract; }
+.area-pay { grid-area: pay; }
+.area-access { grid-area: access; }
+.action-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn.soft { background: #fff; color: var(--text-strong); border: 1px solid var(--border); font-weight: 600; }
+.btn.soft:hover, .btn.soft.active { border-color: var(--cyan); color: var(--cyan-600); }
+.policy-list { margin: 0; padding: 12px 14px 12px 30px; border-radius: var(--radius); background: var(--bg-tint); font-size: 13px; line-height: 1.55; color: var(--text); display: grid; gap: 6px; }
+.schedule-table td .code, .schedule-table td .plain-strong { font-weight: 700; font-size: 13px; }
+.plain-strong { color: var(--text-strong); }
+@media (max-width: 1100px) { .detail-grid { grid-template-areas: 'unit' 'contract' 'pay' 'access'; } }
+.schedule-table td a.code { color: var(--cyan-600); }
+.info-row b.cyan { color: var(--cyan-600); }
+.schedule-table td a.code { text-decoration: none; }
+.detail-grid { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); }
+@media (max-width: 1100px) { .detail-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---- customer dashboard per Figma user-dashboard ---- */
+.notice-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.notice-head small { color: var(--muted-2); white-space: nowrap; font-size: 12px; }
+.pay-history td:nth-child(2) { max-width: 260px; }
+.dash-grid > .panel { min-width: 0; }
+#contract-detail { margin-bottom: 8px; }
+.dash-grid { grid-template-columns: minmax(0, 1fr) 360px; } @media (max-width: 1000px) { .dash-grid { grid-template-columns: minmax(0, 1fr); } }
+.pay-history td { white-space: nowrap; } .pay-history td:nth-child(2) { white-space: normal; min-width: 200px; }
+.pay-history td:nth-child(2) { min-width: 150px; } .pay-history th, .pay-history td { padding-left: 10px; padding-right: 10px; }
+.alert.warn { background: var(--warn-bg); color: var(--warn); } .alert.warn b { color: var(--text-strong); }
+.stepper-input { display: flex; align-items: center; gap: 8px; }
+.stepper-input input { width: 72px; text-align: center; }
+.stepper-input .btn { width: 36px; padding: 0; justify-content: center; font-size: 18px; }
+
+/* ---- customer visit registration (Figma 120:2111 "Đăng ký vào kho") ---- */
+.link.with-icon, a.with-icon { display: inline-flex; align-items: center; gap: 6px; }
+.journey { list-style: none; margin: 0; padding: 14px 18px; display: flex; flex-wrap: wrap; gap: 10px 28px; border: 1px dashed var(--border); border-radius: var(--radius-lg); background: #fff; }
+.journey li { display: inline-flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.journey li span { width: 26px; height: 26px; border-radius: 50%; display: inline-grid; place-items: center; background: #eef2f5; font-size: 12.5px; font-weight: 800; }
+.journey li.done span { background: var(--ok-bg); color: var(--ok); }
+.journey li.active { color: var(--text-strong); }
+.journey li.active span { background: var(--cyan); color: #fff; }
+.journey li.later { opacity: 0.7; }
+.journey li small { font-weight: 500; }
+.visit-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; align-items: start; }
+.info-notice { background: var(--cyan-25); border-color: var(--cyan-50); }
+.form-section { gap: 16px; }
+.form-section .section-head { display: flex; flex-direction: row; gap: 14px; align-items: flex-start; text-align: left; max-width: none; margin: 0; }
+.form-section .section-head h3 { font-size: 19px; font-weight: 800; }
+.step-no { flex-shrink: 0; width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; background: var(--cyan-50); color: var(--cyan-600); font-weight: 800; font-size: 13px; }
+.context-box { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; padding: 14px 16px; border-radius: var(--radius); background: var(--bg-tint); }
+.context-box dt { font-size: 12.5px; color: var(--muted-2); }
+.context-box dd { margin: 4px 0 0; font-weight: 700; color: var(--text-strong); font-size: 14px; }
+.form-grid.three { grid-template-columns: 1.3fr 1fr 1fr; }
+.check-line { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; color: var(--text); cursor: pointer; }
+.check-line input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--cyan); }
+.visit-list { display: grid; gap: 10px; }
+.visit-row { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); }
+.next-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.next-steps li { display: flex; gap: 12px; }
+.next-steps li > span { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: var(--cyan-50); color: var(--cyan-600); display: grid; place-items: center; font-weight: 800; font-size: 12.5px; }
+.next-steps p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.unit-photo.sm { height: 150px; border-radius: var(--radius); overflow: hidden; }
+@media (max-width: 1000px) { .visit-layout { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) { .form-grid.three, .context-box { grid-template-columns: 1fr; } .visit-row { flex-wrap: wrap; } }
+
+/* ---- staff: visit registrations to review at the gate ---- */
+.reg-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 0; border-top: 1px solid var(--border); }
+.reg-row:first-child { border-top: 0; }
+.reg-time { min-width: 120px; }
+.reg-time b { display: block; font-size: 15px; color: var(--text-strong); }
+.reg-match { padding: 10px 14px; border-radius: var(--radius); font-size: 13.5px; display: flex; gap: 8px; align-items: center; }
+.reg-match.ok { background: var(--ok-bg); color: #0e7a3c; }
+.reg-match.bad { background: var(--warn-bg); color: var(--warn); }
+.notice-icon.ok { background: var(--ok-bg); color: var(--ok); } .notice-icon.muted { background: #eef2f5; color: var(--muted); }

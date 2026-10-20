@@ -20,7 +20,8 @@ function openHours(operatingHours?: string): [number, number] {
 export function appointmentSlots(startDate: string, operatingHours?: string, now = new Date()): string[] {
   const [open, close] = openHours(operatingHours)
   const slots: string[] = []
-  for (let t = Math.ceil(open / 30) * 30; t <= close - 60; t += 30) {
+  // The backend accepts pick-up times before 20:00 only.
+  for (let t = Math.ceil(open / 30) * 30; t <= Math.min(close - 60, 19 * 60 + 30); t += 30) {
     const hhmm = `${pad(Math.floor(t / 60))}:${pad(t % 60)}`
     if (new Date(`${startDate}T${hhmm}:00+07:00`) > now) slots.push(hhmm)
   }

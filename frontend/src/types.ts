@@ -169,6 +169,9 @@ export interface Invoice {
   dueDate: string
   status: string
   createdAt: string
+  /** Monthly rent invoices only: the month this invoice bills. */
+  billingPeriodStart?: string | null
+  billingPeriodEnd?: string | null
   details: { detailId: number; description: string; quantity: number; unitPrice: number; lineTotal: number }[]
   payments: {
     paymentId: number
@@ -354,17 +357,22 @@ export interface VisitCandidate {
   authorizedPersons: Person[]
   peopleInside: string[]
   issues: AccessIssue[]
+  /** Someone on this contract has a staff-approved visit registration covering now. */
+  hasApprovedVisitRegistration?: boolean
   canEnter: boolean
 }
 
 export interface AccessRecord {
   accessRecordId: number
+  visitRegistrationId?: number | null
   unitCode: string
   contractNumber: string
   visitorName: string
   result: 'Granted' | 'Denied'
   denyReason: string | null
   purpose: string | null
+  /** People who came in with the visitor, not counting the visitor. */
+  companionCount?: number
   entryTime: string
   exitTime: string | null
   verifiedBy: string
@@ -415,3 +423,24 @@ export const DenyReasons: Record<string, string> = {
   UnitUnderMaintenance: 'Kho đang bảo trì',
   Other: 'Lý do khác',
 }
+
+/** A customer's booked entry/exit window for their unit, approved by facility staff (VisitRegistrationDto). */
+export interface VisitRegistration {
+  visitRegistrationId: number
+  contractId: number
+  contractNumber: string
+  facilityId: number
+  unitCode: string
+  /** null = the contract holder comes in person. */
+  authorizedPersonId: number | null
+  visitorName: string
+  scheduledEntryAt: string
+  scheduledExitAt: string
+  purpose: string
+  status: 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' | string
+  requestedAt: string
+  reviewedAt: string | null
+  reviewNotes: string | null
+}
+
+export const VisitPurposes = ['Gửi đồ vào kho', 'Lấy đồ ra', 'Sắp xếp lại đồ', 'Tham quan và kiểm tra kho', 'Khác']

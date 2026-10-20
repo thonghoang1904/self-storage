@@ -1,29 +1,63 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { AppointmentPicker } from '../components/appointment'
 import { Empty, Eyebrow, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
-import { DenyReasons, type AccessRecord, type Contract, type Facility, type Person, type Reservation } from '../types'
+import { DenyReasons, type AccessRecord, type Contract, type Facility, type Invoice, type Person, type Reservation } from '../types'
 
 const daysUntil = (iso: string) => Math.ceil((new Date(`${iso}T00:00:00`).getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000)
 
-/** Customer dashboard: rented units, authorized persons, entry history and open reservations. */
+const ago = (iso: string) => {
+  const d = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(iso).setHours(0, 0, 0, 0)) / 86400000)
+  return d <= 0 ? 'Hôm nay' : d === 1 ? '1 ngày trước' : `${d} ngày trước`
+}
+const PAY_STATE: Record<string, { label: string; tone: string }> = {
+  Paid: { label: 'Đã Thanh Toán', tone: 'ok' },
+  Unpaid: { label: 'Chờ Thanh Toán', tone: 'warn' },
+  Overdue: { label: 'Quá Hạn', tone: 'bad' },
+  Cancelled: { label: 'Đã Hủy', tone: 'muted' },
+}
+
+/** Short line like the Figma rows, e.g. "Kho A-02 – Tiền thuê tháng 09/2026". */
+function payLabel(i: Invoice, unit?: string) {
+  const where = unit ? `Kho ${unit} – ` : ''
+  const p = i.billingPeriodStart ?? i.dueDate
+  switch (i.invoiceType) {
+    case 'MONTHLY_RENT': return `${where}Tiền thuê tháng ${p.slice(5, 7)}/${p.slice(0, 4)}`
+    case 'RENEWAL': return `${where}Gia hạn ${String(i.details[0]?.quantity ?? '').padStart(2, '0')} tháng`
+    case 'DEPOSIT': return 'Tiền cọc đặt kho'
+    default: return `${where}${i.details[0]?.description ?? i.invoiceType}`
+  }
+}
+
+/**
+ * Figma "user-dashboard": rented units, payment history, quick actions and latest notices.
+ * The authorized-person / entry-history panel opens from the contract page (?contract=&tab=).
+ */
 export default function MyUnits() {
   const { user } = useAuth()
+  const query = new URLSearchParams(useLocation().search)
+  const wantedContract = Number(query.get('contract') ?? 0)
+  const wantedTab = query.get('tab') === 'history' ? 'history' : query.get('tab') === 'people' ? 'people' : null
   const [contracts, setContracts] = useState<Contract[] | null>(null)
   const [reservations, setReservations] = useState<Reservation[]>([])
+  const [invoices, setInvoices] = useState<Invoice[] | null>(null)
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [openId, setOpenId] = useState<number | null>(null)
-  const [tab, setTab] = useState<'people' | 'history'>('people')
+  const [tab, setTab] = useState<'people' | 'history'>(wantedTab ?? 'people')
   const [error, setError] = useState('')
 
   useEffect(() => {
     api<Contract[]>('/api/contracts/my').then((cs) => {
       setContracts(cs)
-      if (cs.length) setOpenId(cs[0].contractId)
+      if (wantedTab && cs.some((c) => c.contractId === wantedContract)) {
+        setOpenId(wantedContract)
+        setTimeout(() => document.getElementById('contract-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)
+      }
     }).catch((e) => setError((e as Error).message))
     api<Reservation[]>('/api/reservations/my').then(setReservations).catch(() => {})
+    api<Invoice[]>('/api/invoices/my').then(setInvoices).catch(() => setInvoices([]))
     api<Facility[]>('/api/facilities').then(setFacilities).catch(() => {})
   }, [])
 
@@ -31,20 +65,17 @@ export default function MyUnits() {
   const open = contracts?.find((c) => c.contractId === openId)
   const openReservations = reservations.filter((r) => r.status === 'PendingDeposit' || r.status === 'Confirmed')
   const ending = contracts?.filter((c) => c.status === 'Active' && daysUntil(c.endDate) <= 45) ?? []
-
-  const show = (id: number, t: 'people' | 'history') => {
-    setOpenId(id)
-    setTab(t)
-    setTimeout(() => document.getElementById('contract-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30)
-  }
+  const unpaid = invoices?.filter((i) => i.status === 'Unpaid' || i.status === 'Overdue') ?? []
+  const history = [...(invoices ?? [])].sort((a, b) => (b.payments[0]?.paymentDate ?? b.createdAt).localeCompare(a.payments[0]?.paymentDate ?? a.createdAt)).slice(0, 5)
+  const unitOf = (i: Invoice) => contracts?.find((c) => c.contractId === i.contractId)?.unitCode
 
   return (
     <>
       <section className="page-hero">
         <div className="container">
-          <Eyebrow dark>Tài khoản khách hàng</Eyebrow>
+          <Eyebrow dark>Tài khoản khách hàng thân thiết</Eyebrow>
           <h1>Xin Chào, {user?.fullName}!</h1>
-          <p>Quản lý kho lưu trữ của bạn · Ủy quyền người nhà · Theo dõi lịch sử ra vào.</p>
+          <p>Quản lý kho lưu trữ của bạn · Theo dõi hóa đơn, thời hạn và cập nhật dịch vụ.</p>
         </div>
       </section>
 
@@ -53,13 +84,13 @@ export default function MyUnits() {
 
         <section className="stack">
           <div className="row between wrap">
-            <h2 className="section-title with-icon"><Icon name="package" size={20} className="cyan" /> Kho Lưu Trữ Của Tôi {active > 0 && <span className="pill">{active} đang hoạt động</span>}</h2>
+            <h2 className="section-title with-icon"><Icon name="package" size={20} className="cyan" /> Kho Lưu Trữ Của Tôi {active > 0 && <span className="pill">{active} Đang Hoạt Động</span>}</h2>
           </div>
           <div className="my-unit-grid">
             {contracts?.map((c, i) => {
               const left = daysUntil(c.endDate)
               return (
-                <article key={c.contractId} className={`my-unit-card ${c.contractId === openId ? 'selected' : ''}`}>
+                <article key={c.contractId} className="my-unit-card">
                   <div className="my-unit-media">
                     <UnitArt variant={(i + 1) % 4} />
                     <span className="tag-dark">{c.unitCode}</span>
@@ -71,16 +102,14 @@ export default function MyUnits() {
                       <li><Icon name="calendar" size={14} /> Bắt đầu: {fmtDate(c.startDate)}</li>
                       <li><Icon name="clock" size={14} /> Hết hạn: <b>{fmtDate(c.endDate)}</b>{c.status === 'Active' && left >= 0 && left <= 45 && <span className="warn-text"> · còn {left} ngày</span>}</li>
                       <li><Icon name="card" size={14} /> Chi phí: <b className="cyan">{fmtMoney(c.monthlyRentFee)}/tháng</b></li>
-                      <li><Icon name="clipboard" size={14} /> HĐ {c.contractNumber}</li>
                     </ul>
                     <div className="row">
                       <Link to={`/my-units/${c.contractId}?renew=1`} className="btn primary sm grow">Gia Hạn</Link>
                       <Link to={`/my-units/${c.contractId}`} className="btn outline sm grow">Chi Tiết</Link>
                     </div>
-                    <div className="row">
-                      <button className="btn ghost sm grow" onClick={() => show(c.contractId, 'people')}>Người Ủy Quyền</button>
-                      <button className="btn ghost sm grow" onClick={() => show(c.contractId, 'history')}>Lịch Sử</button>
-                    </div>
+                    {(c.status === 'Active' || c.status === 'Renewed') && (
+                      <Link to={`/my-units/${c.contractId}/visit`} className="btn ghost sm block"><Icon name="calendar" size={14} /> Đăng Ký Ra Vào Kho</Link>
+                    )}
                   </div>
                 </article>
               )
@@ -88,32 +117,57 @@ export default function MyUnits() {
             <Link to="/rent" className="add-unit-card">
               <span className="add-circle"><Icon name="plus" size={22} /></span>
               <b>Thuê Thêm Kho</b>
-              <small>Mở rộng không gian lưu trữ chỉ với vài bước đơn giản</small>
+              <small>Mở rộng không gian lưu trữ dễ dàng chỉ với vài bước đơn giản</small>
             </Link>
           </div>
           {contracts && contracts.length === 0 && <p className="muted">Bạn chưa có hợp đồng thuê kho nào. Sau khi đặt cọc, nhân viên sẽ bàn giao kho và hợp đồng sẽ hiện ở đây.</p>}
         </section>
 
-        <div className="dash-grid">
-          <section className="stack" id="contract-detail">
-            {open ? (
-              <div className="panel">
-                <div className="panel-head">
-                  <div>
-                    <h2 className="section-title">Kho {open.unitCode} · {open.facilityName}</h2>
-                    <p className="muted">HĐ {open.contractNumber} · {fmtDate(open.startDate)} – {fmtDate(open.endDate)}</p>
-                  </div>
-                  <StatusBadge status={open.status} />
-                </div>
-                <div className="tabs">
-                  <button className={tab === 'people' ? 'active' : ''} onClick={() => setTab('people')}><Icon name="users" size={16} /> Người được ủy quyền</button>
-                  <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}><Icon name="history" size={16} /> Lịch sử ra vào</button>
-                </div>
-                {tab === 'people' ? <AuthorizedPeople contractId={open.contractId} /> : <History contractId={open.contractId} />}
+        {open && (
+          <section className="panel" id="contract-detail">
+            <div className="panel-head">
+              <div>
+                <h2 className="section-title">Kho {open.unitCode} · {open.facilityName}</h2>
+                <p className="muted">HĐ {open.contractNumber} · {fmtDate(open.startDate)} – {fmtDate(open.endDate)}</p>
               </div>
-            ) : contracts && contracts.length > 0 ? null : (
-              <div className="panel"><Empty icon="package">Chưa có kho nào để quản lý.</Empty></div>
-            )}
+              <span className="row"><StatusBadge status={open.status} /><button className="icon-btn" aria-label="Đóng" onClick={() => setOpenId(null)}><Icon name="x" /></button></span>
+            </div>
+            <div className="tabs">
+              <button className={tab === 'people' ? 'active' : ''} onClick={() => setTab('people')}><Icon name="users" size={16} /> Người được ủy quyền</button>
+              <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}><Icon name="history" size={16} /> Lịch sử ra vào</button>
+            </div>
+            {tab === 'people' ? <AuthorizedPeople contractId={open.contractId} /> : <History contractId={open.contractId} />}
+          </section>
+        )}
+
+        <div className="dash-grid">
+          <section className="panel">
+            <div className="row between wrap">
+              <h2 className="section-title with-icon"><Icon name="card" size={20} className="cyan" /> Lịch Sử Thanh Toán</h2>
+              <Link to="/invoices" className="link">Xem Tất Cả</Link>
+            </div>
+            <div className="table-scroll">
+              <table className="pay-history">
+                <thead><tr><th>Mã giao dịch</th><th>Kho lưu trữ</th><th>Số tiền</th><th>Ngày giao dịch</th><th>Trạng thái</th><th>Hành động</th></tr></thead>
+                <tbody>
+                  {history.map((i) => {
+                    const st = PAY_STATE[i.status] ?? { label: i.status, tone: 'muted' }
+                    const unit = unitOf(i)
+                    return (
+                      <tr key={i.invoiceId}>
+                        <td className="code">{i.invoiceNumber}</td>
+                        <td>{payLabel(i, unit)}</td>
+                        <td className="money">{fmtMoney(i.totalAmount)}</td>
+                        <td>{fmtDate((i.payments[0]?.paymentDate ?? i.dueDate).slice(0, 10))}</td>
+                        <td><span className={`badge ${st.tone}`}>{st.label}</span></td>
+                        <td><Link to="/invoices" className="link">{i.status === 'Paid' ? 'Xem hóa đơn' : 'Thanh toán'}</Link></td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              {invoices?.length === 0 && <Empty icon="wallet">Chưa có giao dịch nào.</Empty>}
+            </div>
           </section>
 
           <aside className="stack-lg">
@@ -121,7 +175,7 @@ export default function MyUnits() {
               <h3 className="aside-title">Thao Tác Nhanh</h3>
               <Link to="/rent" className="quick-action">
                 <span className="feature-icon sm"><Icon name="package" size={18} /></span>
-                <span className="grow"><b>Đặt Thêm Kho</b><small>Chọn kích thước và giữ chỗ trong 24 giờ</small></span>
+                <span className="grow"><b>Đặt Thêm Kho</b><small>Thuê thêm kho bảo mật cao</small></span>
                 <Icon name="arrowRight" size={16} className="cyan" />
               </Link>
               <Link to="/support" className="quick-action">
@@ -132,12 +186,21 @@ export default function MyUnits() {
             </div>
 
             <div className="stack">
-              <h3 className="aside-title">Thông Báo</h3>
-              {openReservations.map((r) => (
-                <div key={r.reservationId} className="notice">
+              <h3 className="aside-title">Thông Báo Mới Nhất</h3>
+              {unpaid.slice(0, 3).map((i) => (
+                <div key={`i${i.invoiceId}`} className="notice">
                   <span className="notice-icon warn"><Icon name="wallet" size={16} /></span>
-                  <div>
-                    <b>{r.status === 'PendingDeposit' ? 'Chờ đặt cọc' : r.checkInAppointmentAt ? 'Đã hẹn nhận kho' : 'Đặt lịch nhận kho'}</b>
+                  <div className="grow">
+                    <div className="notice-head"><b>Yêu cầu thanh toán</b><small>{ago(i.createdAt)}</small></div>
+                    <p>{unitOf(i) ? `Kho ${unitOf(i)}` : 'Hóa đơn'} {i.invoiceNumber} cần thanh toán {fmtMoney(i.totalAmount)} trước ngày {fmtDate(i.dueDate)}. <Link to="/invoices" className="link">Thanh toán</Link></p>
+                  </div>
+                </div>
+              ))}
+              {openReservations.map((r) => (
+                <div key={`r${r.reservationId}`} className="notice">
+                  <span className="notice-icon warn"><Icon name="calendar" size={16} /></span>
+                  <div className="grow">
+                    <div className="notice-head"><b>{r.status === 'PendingDeposit' ? 'Chờ đặt cọc' : r.checkInAppointmentAt ? 'Đã hẹn nhận kho' : 'Đặt lịch nhận kho'}</b><small>Nhận kho {fmtDate(r.expectedStartDate)}</small></div>
                     <p>
                       Đơn {r.reservationCode} ({splitTypeName(r.unitTypeName).name}, {r.facilityName})
                       {r.status === 'PendingDeposit' ? ` cần đặt cọc ${fmtMoney(r.depositAmount)} trước ${fmtTime(r.depositDeadline)}.`
@@ -152,21 +215,15 @@ export default function MyUnits() {
                 </div>
               ))}
               {ending.map((c) => (
-                <div key={c.contractId} className="notice">
+                <div key={`c${c.contractId}`} className="notice">
                   <span className="notice-icon bad"><Icon name="alert" size={16} /></span>
-                  <div>
-                    <b>Sắp hết hạn hợp đồng</b>
-                    <p>Kho {c.unitCode} kết thúc vào {fmtDate(c.endDate)}. <Link to={`/my-units/${c.contractId}?renew=1`} className="link">Gửi yêu cầu gia hạn</Link></p>
+                  <div className="grow">
+                    <div className="notice-head"><b>Cảnh báo hết hạn hợp đồng</b><small>Còn {daysUntil(c.endDate)} ngày</small></div>
+                    <p>Kho {c.unitCode} của bạn sắp kết thúc thời hạn thuê vào ngày {fmtDate(c.endDate)}. <Link to={`/my-units/${c.contractId}?renew=1`} className="link">Gửi yêu cầu gia hạn</Link></p>
                   </div>
                 </div>
               ))}
-              <div className="notice">
-                <span className="notice-icon info"><Icon name="idCard" size={16} /></span>
-                <div>
-                  <b>Khi đến kho</b>
-                  <p>Bạn hoặc người được ủy quyền xuất trình CCCD cho nhân viên trực cổng để được vào.</p>
-                </div>
-              </div>
+              {unpaid.length + openReservations.length + ending.length === 0 && <p className="muted">Không có thông báo mới.</p>}
             </div>
           </aside>
         </div>
@@ -270,7 +327,7 @@ function History({ contractId }: { contractId: number }) {
         <tbody>
           {rows?.map((r) => (
             <tr key={r.accessRecordId}>
-              <td><b>{r.visitorName}</b>{r.purpose && <><br /><small className="muted">{r.purpose}</small></>}</td>
+              <td><b>{r.visitorName}</b>{(r.companionCount ?? 0) > 0 && <small className="muted"> +{r.companionCount} người đi cùng</small>}{r.purpose && <><br /><small className="muted">{r.purpose}</small></>}</td>
               <td>{r.result === 'Granted'
                 ? <span className="badge ok">Được vào</span>
                 : <span className="badge bad">Từ chối · {DenyReasons[r.denyReason ?? 'Other'] ?? r.denyReason}</span>}</td>
