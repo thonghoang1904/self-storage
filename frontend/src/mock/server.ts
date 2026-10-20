@@ -5,13 +5,13 @@
  * Data lives in localStorage of this browser only; "Đặt lại dữ liệu demo" wipes it.
  */
 import type {
-  AccessIssue, ActivityLog, AdminUser, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
+  AccessIssue, ActivityLog, AdminUser, FacilityReport, OperationsReport, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
   OverdueSummary, Person, Renewal, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate,
 } from '../types'
 import { Roles } from '../types'
 
 export const DEMO_PASSWORD = 'Demo@12345'
-const DB_KEY = 'ss_mock_db_v7'
+const DB_KEY = 'ss_mock_db_v8'
 
 // ------------------------------------------------------------------ data model
 
@@ -84,6 +84,7 @@ function seed(): Db {
     { userId: 1, username: 'admin', password: DEMO_PASSWORD, fullName: 'Quản trị hệ thống', email: 'admin@example.com', phoneNumber: '0900000000', citizenId: '079000000001', role: Roles.Admin },
     { userId: 2, username: 'manager1', password: DEMO_PASSWORD, fullName: 'Trần Quản Lý', email: 'manager1@example.com', phoneNumber: '0900000000', citizenId: '079000000002', role: Roles.Manager },
     { userId: 3, username: 'staff1', password: DEMO_PASSWORD, fullName: 'Lê Nhân Viên', email: 'staff1@example.com', phoneNumber: '0900000000', citizenId: '079000000003', role: Roles.Staff },
+    { userId: 8, username: 'ops1', password: DEMO_PASSWORD, fullName: 'Ngô Vận Hành', email: 'ops1@example.com', phoneNumber: '0900000000', citizenId: '079000000008', role: Roles.OpsManager },
     { userId: 4, username: 'customer1', password: DEMO_PASSWORD, fullName: 'Nguyễn Văn Khách', email: 'customer1@example.com', phoneNumber: '0900000000', citizenId: '079200000123', role: Roles.Customer },
     // Extra demo customers so the gate screen has something to show.
     { userId: 5, username: 'customer2', password: DEMO_PASSWORD, fullName: 'Trần Hoàng Nam', email: 'customer2@example.com', phoneNumber: '0903456982', citizenId: '079200000814', role: Roles.Customer },
@@ -395,6 +396,17 @@ function ensureAnotherActiveAdmin(excludedUserId: number) {
     throw conflict('Không thể thay đổi trạng thái/vai trò của quản trị viên hoạt động cuối cùng')
 }
 const ACCOUNT_STATUSES = ['Active', 'Inactive', 'Suspended']
+
+/** Required text fields of a facility (CreateFacilityRequest / UpdateFacilityRequest). */
+function facilityFields(body: Body) {
+  const f = body as Record<string, string>
+  for (const k of ['facilityName', 'address', 'city', 'district', 'hotline'])
+    if (!String(f[k] ?? '').trim()) throw bad('Vui lòng nhập đầy đủ thông tin cơ sở')
+  return {
+    facilityName: f.facilityName.trim(), address: f.address.trim(), city: f.city.trim(), district: f.district.trim(),
+    hotline: f.hotline.trim(), operatingHours: String(f.operatingHours ?? '').trim(),
+  }
+}
 
 // Reset tokens for the forgot-password flow: token -> { userId, password at issue time, expiry }.
 const resetTokens = new Map<string, { userId: number; password: string; expiresAt: number }>()
@@ -1030,6 +1042,56 @@ const routes: [string, RegExp, Handler][] = [
     return (db.logs ?? []).filter((l) => l.userId === u.userId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map<ActivityLog>(({ logId, action, details, ipAddress, createdAt }) => ({ logId, action, details, ipAddress, createdAt }))
+  }],
+  // ---- business operations manager (OperationsManagementController, OperationsReportsController)
+  ['GET', /^\/api\/operations\/facilities$/, (_m, { token }) => {
+    requireRole(currentUser(token), [Roles.OpsManager])
+    return [...db.facilities].sort((a, b) => a.facilityName.localeCompare(b.facilityName))
+  }],
+  ['POST', /^\/api\/operations\/facilities$/, (_m, { token, body }) => {
+    requireRole(currentUser(token), [Roles.OpsManager])
+    const f = facilityFields(body)
+    const facility: Facility = { facilityId: nextId(), ...f, operatingHours: f.operatingHours || '24/7 Access', status: 'Active' }
+    db.facilities.push(facility)
+    return facility
+  }],
+  ['PUT', /^\/api\/operations\/facilities\/(\d+)$/, (m, { token, body }) => {
+    requireRole(currentUser(token), [Roles.OpsManager])
+    const status = String(body.status ?? '')
+    if (!['Active', 'Maintenance', 'Closed'].includes(status)) throw bad('Trạng thái cơ sở không hợp lệ')
+    const facility = facilityById(Number(m[1]))
+    if (!facility) throw notFound('Không tìm thấy cơ sở')
+    const f = facilityFields(body)
+    if (!f.operatingHours) throw bad('Vui lòng nhập đầy đủ thông tin cơ sở')
+    Object.assign(facility, f, { status })
+    return facility
+  }],
+  ['GET', /^\/api\/operations\/reports\/facilities$/, (_m, { token }) => {
+    requireRole(currentUser(token), [Roles.OpsManager])
+    const to = today()
+    const from = dateOnly(addDays(new Date(), -29))
+    const paid = allInvoices().flatMap(({ facilityId, invoice }) => invoice.payments.map((p) => ({ facilityId, p })))
+      .filter(({ p }) => p.status === 'Success' && p.paymentDate.slice(0, 10) >= from && p.paymentDate.slice(0, 10) <= to)
+    const reports = [...db.facilities].sort((a, b) => a.facilityName.localeCompare(b.facilityName)).map<FacilityReport>((f) => {
+      const units = db.units.filter((u) => u.facilityId === f.facilityId)
+      const count = (status: string) => units.filter((u) => u.status === status).length
+      const contracts = db.contracts.filter((c) => unitById(c.unitId).facilityId === f.facilityId)
+      return {
+        facilityId: f.facilityId, facilityName: f.facilityName, fromDate: from, toDate: to, totalUnits: units.length,
+        availableUnits: count('Available'), rentedUnits: count('Rented'), maintenanceUnits: count('UnderMaintenance'), overdueLockedUnits: count('OverdueLocked'),
+        activeContracts: contracts.filter((c) => c.status === 'Active').length, overdueContracts: contracts.filter((c) => c.status === 'Overdue').length,
+        openSupportRequests: db.supports.filter((r) => r.facilityId === f.facilityId && (r.status === 'Open' || r.status === 'InProgress')).length,
+        netRevenue: paid.filter((x) => x.facilityId === f.facilityId).reduce((sum, x) => sum + x.p.amountPaid, 0),
+      }
+    })
+    const sum = (k: keyof FacilityReport) => reports.reduce((s, r) => s + (r[k] as number), 0)
+    const result: OperationsReport = {
+      fromDate: from, toDate: to, facilityCount: reports.length, totalUnits: sum('totalUnits'), availableUnits: sum('availableUnits'),
+      rentedUnits: sum('rentedUnits'), maintenanceUnits: sum('maintenanceUnits'), overdueLockedUnits: sum('overdueLockedUnits'),
+      activeContracts: sum('activeContracts'), overdueContracts: sum('overdueContracts'), openSupportRequests: sum('openSupportRequests'),
+      netRevenue: sum('netRevenue'), facilities: reports,
+    }
+    return result
   }],
 ]
 

@@ -517,6 +517,24 @@ td.right .row { justify-content: flex-end; }
 .pager button:not(.icon-btn) { min-width: 32px; height: 32px; border-radius: 8px; border: 1.5px solid var(--border); background: #fff; font-weight: 700; font-size: 13px; cursor: pointer; color: var(--text); }
 .pager button.active { background: var(--cyan); border-color: var(--cyan); color: #fff; }
 .pager .icon-btn { width: 32px; height: 32px; }
+.facility-card { display: grid; grid-template-columns: 52px minmax(180px, 1.2fr) minmax(160px, 1fr) minmax(220px, 1.3fr) auto; gap: 20px; align-items: center; padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+.facility-mark { width: 52px; height: 52px; border-radius: 12px; display: grid; place-items: center; background: var(--cyan-25); color: var(--cyan); font-family: var(--font-head); font-weight: 800; font-size: 16px; }
+.facility-id { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.facility-id b { font-family: var(--font-head); font-size: 16px; color: var(--text-strong); }
+.facility-id small.cyan { font-weight: 700; font-size: 11px; }
+.occupancy { display: flex; flex-direction: column; gap: 7px; }
+.occupancy-track { height: 8px; border-radius: 4px; background: var(--bg-tint); overflow: hidden; }
+.occupancy-track i { display: block; height: 100%; border-radius: 4px; background: var(--cyan); }
+.occupancy-track i.warn { background: var(--warn); }
+.facility-metrics { display: flex; gap: 22px; flex-wrap: wrap; }
+.facility-metrics span { display: flex; flex-direction: column; gap: 2px; }
+.facility-metrics small { font-size: 11px; color: var(--muted-2); }
+.facility-metrics b { font-family: var(--font-head); font-size: 16px; color: var(--text-strong); }
+.facility-metrics b.ok { color: var(--ok); }
+.facility-metrics b.warn { color: var(--warn); }
+.facility-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.summary-band { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 18px; border-radius: 12px; background: var(--navy); color: #fff; font-size: 14px; }
+@media (max-width: 1100px) { .facility-card { grid-template-columns: 52px 1fr; } .facility-card > :nth-child(n+3) { grid-column: 1 / -1; } .facility-actions { flex-direction: row; justify-content: space-between; align-items: center; } }
 .pager .pager-text { padding: 0 12px; font-weight: 600; color: var(--muted); }
 .pager .pager-text:disabled { opacity: 0.45; cursor: default; }
 .pager .icon-btn:disabled { opacity: 0.35; cursor: default; }

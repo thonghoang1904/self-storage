@@ -12,7 +12,7 @@ export const Roles = {
 export const GATE_ROLES: string[] = [Roles.Staff, Roles.Manager]
 
 export const homeFor = (role: string) =>
-  GATE_ROLES.includes(role) ? '/gate' : role === Roles.Customer ? '/my-units' : role === Roles.Admin ? '/admin/users' : '/'
+  GATE_ROLES.includes(role) ? '/gate' : role === Roles.Customer ? '/my-units' : role === Roles.Admin ? '/admin/users' : role === Roles.OpsManager ? '/ops/facilities' : '/'
 
 export const RoleLabels: Record<string, string> = {
   [Roles.Customer]: 'Khách hàng',
@@ -62,6 +62,40 @@ export interface ActivityLog {
   details: string | null
   ipAddress: string | null
   createdAt: string
+}
+
+/** One facility in the operations report (GET /api/operations/reports/facilities). */
+export interface FacilityReport {
+  facilityId: number
+  facilityName: string
+  fromDate: string
+  toDate: string
+  totalUnits: number
+  availableUnits: number
+  rentedUnits: number
+  maintenanceUnits: number
+  overdueLockedUnits: number
+  activeContracts: number
+  overdueContracts: number
+  openSupportRequests: number
+  /** Payments received minus refunds between fromDate and toDate (last 30 days by default). */
+  netRevenue: number
+}
+
+export interface OperationsReport {
+  fromDate: string
+  toDate: string
+  facilityCount: number
+  totalUnits: number
+  availableUnits: number
+  rentedUnits: number
+  maintenanceUnits: number
+  overdueLockedUnits: number
+  activeContracts: number
+  overdueContracts: number
+  openSupportRequests: number
+  netRevenue: number
+  facilities: FacilityReport[]
 }
 
 export interface Facility {
