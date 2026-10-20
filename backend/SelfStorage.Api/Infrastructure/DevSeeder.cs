@@ -116,28 +116,6 @@ public static class DevSeeder
                     Relationship = "Vợ",
                 });
                 db.Contracts.Add(contract);
-
-                // A second contract that ends in 5 days, so the renewal flow (open 7 days before the end) can be tried.
-                var endingUnit = await db.StorageUnits
-                    .Where(u => u.FacilityId == facility.FacilityId)
-                    .OrderBy(u => u.UnitId)
-                    .Skip(1)
-                    .FirstOrDefaultAsync();
-                if (endingUnit is not null)
-                {
-                    endingUnit.Status = UnitStatus.Rented;
-                    db.Contracts.Add(new Contract
-                    {
-                        ContractNumber = "HD-DEMO-0002",
-                        CustomerId = customer.UserId,
-                        UnitId = endingUnit.UnitId,
-                        StaffCreatedId = manager.UserId,
-                        StartDate = today.AddMonths(-3).AddDays(5),
-                        EndDate = today.AddDays(5),
-                        MonthlyRentFee = endingUnit.MonthlyPrice,
-                        DepositPaid = endingUnit.MonthlyPrice,
-                    });
-                }
             }
         }
 
