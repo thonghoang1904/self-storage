@@ -18,6 +18,7 @@ public sealed class DevelopmentDatabaseBootstrapper(
         "07_monthly_rent_billing.sql",
         "08_check_in_appointments.sql",
         "09_cancellation_and_promotions.sql",
+        "10_access_companions.sql",
     ];
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)

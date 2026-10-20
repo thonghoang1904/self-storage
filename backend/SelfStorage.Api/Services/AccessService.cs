@@ -83,6 +83,12 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
         if (!string.Equals(req.CitizenId.Trim(), expectedCitizenId.Trim(), StringComparison.OrdinalIgnoreCase))
             throw AppException.BadRequest("Số CCCD không khớp với hồ sơ. Hãy kiểm tra lại hoặc từ chối với lý do IdentityMismatch.");
 
+        var entryTime = req.EntryTime ?? Now;
+        if (entryTime > Now.AddMinutes(1))
+            throw AppException.BadRequest("Giờ vào kho không được ở tương lai");
+        if (entryTime < Now.Date)
+            throw AppException.BadRequest("Chỉ được ghi nhận giờ vào kho trong ngày hôm nay");
+
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var alreadyInside = await db.AccessRecords.AnyAsync(r => r.ContractId == contract.ContractId
             && r.AuthorizedPersonId == req.AuthorizedPersonId
@@ -100,7 +106,8 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
             VerificationMethod = VerificationMethods.CitizenId,
             Result = AccessResult.Granted,
             Purpose = req.Purpose,
-            EntryTime = Now,
+            CompanionCount = req.CompanionCount,
+            EntryTime = entryTime,
             Notes = req.Notes,
         };
         db.AccessRecords.Add(record);
@@ -243,6 +250,7 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
             r.Result,
             r.DenyReason,
             r.Purpose,
+            r.CompanionCount,
             r.EntryTime,
             r.ExitTime,
             r.VerifiedByStaff.FullName));

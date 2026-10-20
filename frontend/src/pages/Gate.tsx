@@ -114,7 +114,7 @@ export default function Gate() {
           {inside.map((r) => (
             <tr key={r.accessRecordId}>
               <td><b>{r.unitCode}</b></td>
-              <td>{r.visitorName}</td>
+              <td>{r.visitorName}{r.companionCount > 0 && <span className="muted"> +{r.companionCount} người</span>}</td>
               <td>{r.purpose ?? '—'}</td>
               <td>{fmtTime(r.entryTime)}</td>
               <td>{r.verifiedBy}</td>
@@ -158,6 +158,7 @@ function VisitCard({ facilityId, visit: v, query, onRecorded }: {
     Math.max(0, people.findIndex((p) => p.citizenId === query || p.phoneNumber === query)))
   const [citizenId, setCitizenId] = useState('')
   const [purpose, setPurpose] = useState('')
+  const [companionCount, setCompanionCount] = useState(0)
   const [denyReason, setDenyReason] = useState(v.issues[0]?.code ?? 'IdentityMismatch')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -183,6 +184,7 @@ function VisitCard({ facilityId, visit: v, query, onRecorded }: {
           authorizedPersonId: person.authorizedPersonId,
           citizenId: citizenId.trim(),
           purpose: purpose || null,
+          companionCount,
         },
       }),
     )
@@ -224,6 +226,14 @@ function VisitCard({ facilityId, visit: v, query, onRecorded }: {
         onChange={(e) => setCitizenId(e.target.value)}
       />
       <input placeholder="Mục đích (gửi đồ, lấy đồ...)" value={purpose} onChange={(e) => setPurpose(e.target.value)} />
+      <label>Số người đi cùng (không tính người vào)</label>
+      <input
+        type="number"
+        min={0}
+        max={50}
+        value={companionCount}
+        onChange={(e) => setCompanionCount(Math.min(50, Math.max(0, Number(e.target.value) || 0)))}
+      />
       {error && <p className="error">{error}</p>}
 
       <button className="btn primary" disabled={busy || !v.canEnter || !citizenId.trim()} onClick={grant}>Xác nhận đúng người, cho vào</button>

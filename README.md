@@ -103,6 +103,8 @@ dotnet user-secrets set "ConnectionStrings:SelfStorageDB" "Server=.\SQLEXPRESS;D
 
 Thay `<mat-khau-sa>` bằng mật khẩu của tài khoản `sa`. User Secrets đã được khởi tạo cho project; cấu hình này chỉ áp dụng trên máy hiện tại khi chạy Development.
 
+**Email reset password khi chưa cấu hình SMTP:** ở môi trường Development, nếu chưa có thông tin SMTP (ví dụ vừa clone/pull về), `POST /api/auth/forgot-password` vẫn chạy bình thường nhưng không gửi mail thật: mã đặt lại mật khẩu được in ra console của backend và email được lưu thành file `.eml` trong `backend/SelfStorage.Api/dev-emails/` (đã gitignore). Muốn gửi mail thật thì cấu hình SMTP như dưới đây.
+
 **Cấu hình Gmail SMTP để gửi email reset password (Windows/PowerShell):**
 
 1. Bật **2-Step Verification** cho tài khoản Gmail gửi thư.

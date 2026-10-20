@@ -32,6 +32,8 @@ public class AccessRecord
     public string Result { get; set; } = null!;
     public string? DenyReason { get; set; }
     public string? Purpose { get; set; }
+    /// <summary>People who came in with the visitor, not counting the visitor.</summary>
+    public int CompanionCount { get; set; }
     public DateTime EntryTime { get; set; }
     public DateTime? ExitTime { get; set; }
     public int? ExitConfirmedByStaffId { get; set; }

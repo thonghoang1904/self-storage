@@ -4,3 +4,4 @@ node_modules/
 dist/
 *.user
 .vs/
+dev-emails/

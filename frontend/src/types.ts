@@ -153,6 +153,7 @@ export interface AccessRecord {
   result: 'Granted' | 'Denied'
   denyReason: string | null
   purpose: string | null
+  companionCount: number
   entryTime: string
   exitTime: string | null
   verifiedBy: string

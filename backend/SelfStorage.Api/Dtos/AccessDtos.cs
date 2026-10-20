@@ -31,7 +31,11 @@ public record GrantEntryRequest(
     // CCCD number read off the visitor's card, compared with the one on file.
     [Required, StringLength(25)] string CitizenId,
     [StringLength(255)] string? Purpose,
-    [StringLength(500)] string? Notes);
+    [StringLength(500)] string? Notes,
+    // People entering with the visitor, not counting the visitor.
+    [Range(0, 50)] int CompanionCount = 0,
+    // Null = now. Lets staff record an entry a little after the fact; never in the future.
+    DateTime? EntryTime = null);
 
 public record DenyEntryRequest(
     [Required] int ContractId,
@@ -47,6 +51,7 @@ public record AccessRecordDto(
     string Result,
     string? DenyReason,
     string? Purpose,
+    int CompanionCount,
     DateTime EntryTime,
     DateTime? ExitTime,
     string VerifiedBy);

@@ -25,7 +25,12 @@ builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<GoogleAuthOptions>(builder.Configuration.GetSection(GoogleAuthOptions.SectionName));
 builder.Services.Configure<SmtpEmailOptions>(builder.Configuration.GetSection(SmtpEmailOptions.SectionName));
 builder.Services.Configure<PaymentGatewayOptions>(builder.Configuration.GetSection(PaymentGatewayOptions.SectionName));
-builder.Services.AddTransient<IEmailSender, SmtpEmailSender>();
+// Fresh clones have no SMTP secrets: in Development fall back to logging the reset email instead of failing.
+var smtpOptions = builder.Configuration.GetSection(SmtpEmailOptions.SectionName).Get<SmtpEmailOptions>() ?? new();
+if (builder.Environment.IsDevelopment() && !smtpOptions.IsConfigured)
+    builder.Services.AddTransient<IEmailSender, DevelopmentEmailSender>();
+else
+    builder.Services.AddTransient<IEmailSender, SmtpEmailSender>();
 builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddScoped<AccessService>();

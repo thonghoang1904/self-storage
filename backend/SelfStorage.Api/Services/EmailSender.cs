@@ -15,6 +15,11 @@ public sealed class SmtpEmailOptions
     public string FromAddress { get; set; } = "";
     public string FromName { get; set; } = "Self-Storage";
     public bool EnableSsl { get; set; } = true;
+
+    public bool IsConfigured =>
+        !string.IsNullOrWhiteSpace(Username)
+        && !string.IsNullOrWhiteSpace(Password)
+        && MailAddress.TryCreate(FromAddress, out _);
 }
 
 public sealed class EmailDeliveryException(string message, Exception innerException)
@@ -69,7 +74,7 @@ public sealed class SmtpEmailSender(IOptions<SmtpEmailOptions> options) : IEmail
         }
     }
 
-    private static MailMessage CreateMessage(
+    internal static MailMessage CreateMessage(
         SmtpEmailOptions smtp, MailAddress recipient, string fullName, string token)
     {
         var safeName = WebUtility.HtmlEncode(fullName);
@@ -113,5 +118,36 @@ public sealed class SmtpEmailSender(IOptions<SmtpEmailOptions> options) : IEmail
         message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(text, Encoding.UTF8, "text/plain"));
         message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(html, Encoding.UTF8, "text/html"));
         return message;
+    }
+}
+
+/// <summary>
+/// Used in Development when no SMTP credentials are configured (e.g. right after cloning the repo):
+/// instead of sending, the reset token is logged and the email is saved as an .eml file under dev-emails/.
+/// </summary>
+public sealed class DevelopmentEmailSender(
+    IWebHostEnvironment environment, ILogger<DevelopmentEmailSender> logger) : IEmailSender
+{
+    public void ValidateConfiguration() { }
+
+    public async Task SendPasswordResetAsync(string email, string fullName, string token, CancellationToken ct)
+    {
+        if (!MailAddress.TryCreate(email, out var recipient))
+            throw new InvalidOperationException("Địa chỉ email nhận không hợp lệ.");
+
+        var folder = Path.Combine(environment.ContentRootPath, "dev-emails");
+        Directory.CreateDirectory(folder);
+        var smtp = new SmtpEmailOptions { FromAddress = "no-reply@self-storage.local" };
+        using var message = SmtpEmailSender.CreateMessage(smtp, recipient, fullName, token);
+        using var client = new SmtpClient
+        {
+            DeliveryMethod = SmtpDeliveryMethod.SpecifiedPickupDirectory,
+            PickupDirectoryLocation = folder,
+        };
+        await client.SendMailAsync(message, ct);
+
+        logger.LogWarning(
+            "SMTP chưa cấu hình, email không được gửi thật. Mã đặt lại mật khẩu cho {Email}: {Token} (bản email lưu tại {Folder})",
+            email, token, folder);
     }
 }
