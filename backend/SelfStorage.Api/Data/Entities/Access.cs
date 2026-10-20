@@ -24,6 +24,7 @@ public class AccessRecord
 {
     public long AccessRecordId { get; set; }
     public int ContractId { get; set; }
+    public long? VisitRegistrationId { get; set; }
     public int FacilityId { get; set; }
     public int UnitId { get; set; }
     public int? AuthorizedPersonId { get; set; }
@@ -38,7 +39,28 @@ public class AccessRecord
     public string? Notes { get; set; }
 
     public Contract Contract { get; set; } = null!;
+    public VisitRegistration? VisitRegistration { get; set; }
     public StorageUnit Unit { get; set; } = null!;
     public AuthorizedPerson? AuthorizedPerson { get; set; }
     public User VerifiedByStaff { get; set; } = null!;
+}
+
+public class VisitRegistration
+{
+    public long VisitRegistrationId { get; set; }
+    public int ContractId { get; set; }
+    public int CustomerId { get; set; }
+    public int? AuthorizedPersonId { get; set; }
+    public DateTimeOffset ScheduledEntryAt { get; set; }
+    public DateTimeOffset ScheduledExitAt { get; set; }
+    public string Purpose { get; set; } = null!;
+    public string Status { get; set; } = "Pending";
+    public DateTime RequestedAt { get; set; }
+    public int? ReviewedByStaffId { get; set; }
+    public DateTime? ReviewedAt { get; set; }
+    public string? ReviewNotes { get; set; }
+
+    public Contract Contract { get; set; } = null!;
+    public User Customer { get; set; } = null!;
+    public AuthorizedPerson? AuthorizedPerson { get; set; }
 }

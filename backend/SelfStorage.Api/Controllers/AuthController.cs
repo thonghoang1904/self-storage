@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using System.Data;
 using System.Net.Mail;
 using System.Security.Cryptography;
 using System.Text;
@@ -35,7 +36,11 @@ public class AuthController(
     [AllowAnonymous]
     public async Task<ActionResult<UserDto>> Register(RegisterRequest req, CancellationToken ct)
     {
-        if (await db.Users.AnyAsync(u => u.Username == req.Username || u.Email == req.Email || u.CitizenId == req.CitizenId, ct))
+        var username = req.Username.Trim();
+        var email = req.Email.Trim();
+        var citizenId = req.CitizenId.Trim();
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        if (await db.Users.AnyAsync(u => u.Username == username || u.Email == email || u.CitizenId == citizenId, ct))
             throw AppException.Conflict("Tên đăng nhập, email hoặc CCCD đã được sử dụng");
 
         var role = await db.Roles.SingleAsync(r => r.RoleName == AppRoles.Customer, ct);
@@ -43,15 +48,16 @@ public class AuthController(
         {
             RoleId = role.RoleId,
             Role = role,
-            Username = req.Username,
-            FullName = req.FullName,
-            Email = req.Email,
-            PhoneNumber = req.PhoneNumber,
-            CitizenId = req.CitizenId,
+            Username = username,
+            FullName = req.FullName.Trim(),
+            Email = email,
+            PhoneNumber = req.PhoneNumber.Trim(),
+            CitizenId = citizenId,
         };
         user.PasswordHash = hasher.HashPassword(user, req.Password);
         db.Users.Add(user);
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return ToDto(user);
     }
 
@@ -63,6 +69,16 @@ public class AuthController(
         if (user is null || user.Status != "Active" ||
             hasher.VerifyHashedPassword(user, user.PasswordHash, req.Password) == PasswordVerificationResult.Failed)
             throw new AppException(StatusCodes.Status401Unauthorized, "Sai tên đăng nhập hoặc mật khẩu");
+
+        db.ActivityLogs.Add(new ActivityLog
+        {
+            UserId = user.UserId,
+            Action = "PasswordLogin",
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+            Details = "Authenticated using username and password",
+            CreatedAt = clock.GetLocalNow().DateTime,
+        });
+        await db.SaveChangesAsync(ct);
 
         var (token, expires) = tokens.CreateToken(user);
         return new LoginResponse(token, expires, ToDto(user));

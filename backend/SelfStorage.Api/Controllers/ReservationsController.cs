@@ -31,10 +31,12 @@ public class ReservationsController(
             throw AppException.BadRequest("Ngày bắt đầu không được ở quá khứ");
 
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
-        if (!await db.Facilities.AnyAsync(f => f.FacilityId == req.FacilityId && f.Status != "Closed", ct))
+        if (!await db.Facilities.AnyAsync(f => f.FacilityId == req.FacilityId && f.Status == "Active", ct))
             throw AppException.NotFound("Không tìm thấy cơ sở đang hoạt động");
         var unitType = await db.UnitTypes.FindAsync([req.UnitTypeId], ct)
                        ?? throw AppException.NotFound("Không tìm thấy loại kho");
+        if (unitType.BaseMonthlyRate <= 0)
+            throw AppException.Conflict("Loại kho chưa được cấu hình giá thuê tháng hợp lệ");
         var now = Now;
         var available = await db.StorageUnits.CountAsync(u => u.FacilityId == req.FacilityId
             && u.UnitTypeId == req.UnitTypeId && u.Status == UnitStatus.Available, ct);
@@ -116,9 +118,12 @@ public class ReservationsController(
             ?? throw AppException.NotFound("Không tìm thấy đơn đặt kho");
         if (reservation.Status != ReservationStatus.Confirmed)
             throw AppException.Conflict("Chỉ đơn đã xác nhận đặt cọc mới được đặt lịch nhận kho");
+        var appointmentLocal = req.AppointmentAt.ToLocalTime().DateTime;
         if (req.AppointmentAt <= clock.GetUtcNow()
-            || DateOnly.FromDateTime(req.AppointmentAt.DateTime) != reservation.ExpectedStartDate)
-            throw AppException.BadRequest("Lịch nhận kho phải là thời điểm trong tương lai thuộc ngày bắt đầu đã chọn");
+            || DateOnly.FromDateTime(appointmentLocal) != reservation.ExpectedStartDate
+            || TimeOnly.FromDateTime(appointmentLocal) >= new TimeOnly(20, 0))
+            throw AppException.BadRequest(
+                "Lịch nhận kho phải trong tương lai, trước 20:00 và thuộc ngày bắt đầu đã chọn");
 
         reservation.CheckInAppointmentAt = req.AppointmentAt;
         await db.SaveChangesAsync(ct);
@@ -135,6 +140,9 @@ public class ReservationsController(
             ?? throw AppException.NotFound("Không tìm thấy đơn đặt kho");
         if (reservation.Status is not (ReservationStatus.PendingDeposit or ReservationStatus.Confirmed))
             throw AppException.Conflict("Chỉ có thể yêu cầu hủy đơn chưa nhận kho");
+        if (reservation.Status == ReservationStatus.Confirmed
+            && Now >= reservation.ExpectedStartDate.ToDateTime(new TimeOnly(20, 0)))
+            throw AppException.Conflict("Đơn đã qua thời hạn nhận kho; vui lòng liên hệ nhân viên cơ sở");
         if (await db.ReservationCancellationRequests.AnyAsync(r =>
                 r.ReservationId == id && r.Status == "Pending", ct))
             throw AppException.Conflict("Đơn này đang có yêu cầu hủy chờ xử lý");
@@ -239,7 +247,18 @@ public class ReservationsController(
             r.Status = ReservationStatus.Expired;
             var expiredInvoice = await db.Invoices.FirstOrDefaultAsync(i =>
                 i.ReservationId == id && i.InvoiceType == "DEPOSIT" && i.Status == "Unpaid", ct);
-            if (expiredInvoice is not null) expiredInvoice.Status = "Cancelled";
+            if (expiredInvoice is not null)
+            {
+                expiredInvoice.Status = "Cancelled";
+                var pendingPayments = await db.Payments
+                    .Where(p => p.InvoiceId == expiredInvoice.InvoiceId && p.Status == "Pending")
+                    .ToListAsync(ct);
+                foreach (var payment in pendingPayments)
+                {
+                    payment.Status = "Failed";
+                    payment.PaymentNotes = "Giao dịch bị hủy do đơn đặt kho đã hết hạn.";
+                }
+            }
             await db.SaveChangesAsync(ct);
             throw AppException.Conflict("Đơn đã quá hạn đặt cọc, khách cần đặt lại");
         }
@@ -263,6 +282,15 @@ public class ReservationsController(
         await access.EnsureAssignedAsync(staffId, r.FacilityId, ct);
         if (r.Status != ReservationStatus.Confirmed)
             throw AppException.Conflict("Đơn chưa được xác nhận đặt cọc");
+        if (clock.GetLocalNow().DateTime >= r.ExpectedStartDate.ToDateTime(new TimeOnly(20, 0)))
+            throw AppException.Conflict("Đơn đã quá 20:00 ngày bắt đầu và hết hạn do khách không đến nhận kho");
+        var depositInvoice = await db.Invoices.Include(i => i.Payments)
+            .FirstOrDefaultAsync(i => i.ReservationId == r.ReservationId && i.InvoiceType == "DEPOSIT", ct)
+            ?? throw AppException.Conflict("Không tìm thấy hóa đơn cọc cho đơn đặt kho");
+        if (depositInvoice.Status != "Paid"
+            || !depositInvoice.Payments.Any(p => p.Status == "Success"
+                && p.AmountPaid == depositInvoice.TotalAmount))
+            throw AppException.Conflict("Chỉ được bàn giao kho sau khi đã xác nhận thanh toán đủ tiền cọc");
         if (r.CheckInAppointmentAt is null)
             throw AppException.Conflict("Khách hàng chưa đặt lịch nhận kho");
         if (clock.GetUtcNow() < r.CheckInAppointmentAt.Value.ToUniversalTime())

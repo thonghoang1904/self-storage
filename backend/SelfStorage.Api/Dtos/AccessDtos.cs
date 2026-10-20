@@ -22,10 +22,12 @@ public record VisitCandidateDto(
     IReadOnlyList<PersonDto> AuthorizedPersons,
     IReadOnlyList<string> PeopleInside,
     IReadOnlyList<AccessIssueDto> Issues,
+    bool HasApprovedVisitRegistration,
     bool CanEnter);
 
 public record GrantEntryRequest(
     [Required] int ContractId,
+    [Required] long VisitRegistrationId,
     // Null = the contract's customer came in person.
     int? AuthorizedPersonId,
     // CCCD number read off the visitor's card, compared with the one on file.
@@ -39,8 +41,36 @@ public record DenyEntryRequest(
     [Required] string Reason,
     [StringLength(500)] string? Notes);
 
+public record CreateVisitRegistrationRequest(
+    [Required, StringLength(25)] string CitizenId,
+    int? AuthorizedPersonId,
+    [Required] DateTimeOffset ScheduledEntryAt,
+    [Required] DateTimeOffset ScheduledExitAt,
+    [Required, StringLength(255)] string Purpose);
+
+public record ReviewVisitRegistrationRequest(
+    [Required] bool Approve,
+    [StringLength(500)] string? Notes);
+
+public record VisitRegistrationDto(
+    long VisitRegistrationId,
+    int ContractId,
+    string ContractNumber,
+    int FacilityId,
+    string UnitCode,
+    int? AuthorizedPersonId,
+    string VisitorName,
+    DateTimeOffset ScheduledEntryAt,
+    DateTimeOffset ScheduledExitAt,
+    string Purpose,
+    string Status,
+    DateTime RequestedAt,
+    DateTime? ReviewedAt,
+    string? ReviewNotes);
+
 public record AccessRecordDto(
     long AccessRecordId,
+    long? VisitRegistrationId,
     string UnitCode,
     string ContractNumber,
     string VisitorName,

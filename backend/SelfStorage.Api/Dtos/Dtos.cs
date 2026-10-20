@@ -96,6 +96,9 @@ public record SavePromotionRequest(
 
 public record UnitTypeDto(int UnitTypeId, string TypeName, decimal LengthMeters, decimal WidthMeters, decimal HeightMeters,
     decimal VolumeCubicMeters, bool HasClimateControl, decimal BaseDailyRate, decimal BaseMonthlyRate, string? Description);
+public record UpdateUnitTypePricingRequest(
+    [Range(typeof(decimal), "0", "9999999999999999")] decimal BaseDailyRate,
+    [Range(typeof(decimal), "0.01", "9999999999999999")] decimal BaseMonthlyRate);
 
 public record StorageUnitDto(int UnitId, string UnitCode, int FloorNumber, string? ZoneArea, decimal MonthlyPrice,
     string Status, int UnitTypeId, string UnitTypeName);
@@ -221,7 +224,8 @@ public record RecordPaymentRequest(
     [StringLength(100)] string? TransactionCode,
     [StringLength(255)] string? PaymentNotes);
 public record CheckoutResponse(string Provider, int PaymentId, string TransactionReference,
-    decimal Amount, string PaymentUrl);
+    decimal Amount, string PaymentUrl, string? QrCodeUrl = null, string? Deeplink = null,
+    string? DeeplinkWebInApp = null);
 public record RecordDepositRefundRequest(
     [Required] string PaymentMethod,
     [Required, Range(typeof(decimal), "0.01", "9999999999999999")] decimal Amount,

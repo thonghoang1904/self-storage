@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -11,7 +12,7 @@ namespace SelfStorage.Api.Controllers;
 
 [ApiController]
 [Route("api/facilities/{facilityId:int}")]
-[Authorize(Roles = AppRoles.GateRoles)]
+[Authorize]
 public sealed class FacilityOperationsController(
     SelfStorageDbContext db,
     AccessService access,
@@ -19,6 +20,7 @@ public sealed class FacilityOperationsController(
     TimeProvider clock) : ControllerBase
 {
     [HttpGet("daily-operations")]
+    [Authorize(Roles = AppRoles.GateRoles)]
     public async Task<FacilityWorkQueueDto> DailyOperations(
         int facilityId, [FromQuery] DateOnly? date, CancellationToken ct)
     {
@@ -69,6 +71,7 @@ public sealed class FacilityOperationsController(
     }
 
     [HttpGet("contracts")]
+    [Authorize(Roles = AppRoles.GateRoles)]
     public async Task<List<ContractDto>> Contracts(
         int facilityId, [FromQuery] string? status, CancellationToken ct)
     {
@@ -89,6 +92,7 @@ public sealed class FacilityOperationsController(
     }
 
     [HttpGet("cancellation-requests")]
+    [Authorize(Roles = AppRoles.GateRoles)]
     public async Task<List<CancellationRequestDto>> CancellationRequests(
         int facilityId, [FromQuery] string? status, CancellationToken ct)
     {
@@ -105,11 +109,13 @@ public sealed class FacilityOperationsController(
     }
 
     [HttpPost("cancellation-requests/{requestId:int}/resolve")]
+    [Authorize(Roles = AppRoles.GateRoles)]
     public async Task<CancellationRequestDto> ResolveCancellation(
         int facilityId, int requestId, ResolveCancellationRequest req, CancellationToken ct)
     {
         var staffId = User.GetUserId();
         await access.EnsureAssignedAsync(staffId, facilityId, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var request = await db.ReservationCancellationRequests
             .Include(r => r.Reservation)
             .FirstOrDefaultAsync(r => r.CancellationRequestId == requestId
@@ -157,6 +163,7 @@ public sealed class FacilityOperationsController(
             CreatedAt = clock.GetLocalNow().DateTime,
         });
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return await db.ReservationCancellationRequests
             .Where(r => r.CancellationRequestId == requestId)
             .Select(r => new CancellationRequestDto(r.CancellationRequestId, r.ReservationId,

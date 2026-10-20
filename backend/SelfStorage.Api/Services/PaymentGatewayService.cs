@@ -93,32 +93,62 @@ public sealed class PaymentGatewayService(
             throw AppException.BadRequest("MoMo chỉ hỗ trợ hóa đơn có số tiền nguyên VND");
         if (paymentMethod == "VNPay" && invoice.TotalAmount * 100m > 999999999999m)
             throw AppException.BadRequest("Số tiền hóa đơn vượt giới hạn giao dịch của VNPay");
-        if (await db.Payments.AnyAsync(p => p.InvoiceId == invoiceId && p.Status == "Pending", ct))
-            throw AppException.Conflict("Hóa đơn đang có giao dịch trực tuyến chưa được xác nhận");
 
         await ValidateInvoiceCanBePaidAsync(invoice, ct);
 
-        var reference = Guid.NewGuid().ToString("N");
-        var payment = new Payment
+        var payment = await db.Payments.FirstOrDefaultAsync(
+            p => p.InvoiceId == invoiceId && p.Status == "Pending", ct);
+        if (payment is not null && payment.PaymentMethod != paymentMethod)
+            throw AppException.Conflict("Hóa đơn đang có giao dịch chờ xử lý qua cổng thanh toán khác");
+        if (payment is not null && payment.AmountPaid != invoice.TotalAmount)
+            throw AppException.Conflict("Số tiền hóa đơn đã thay đổi trong khi giao dịch thanh toán đang chờ xử lý");
+
+        if (payment is null)
         {
-            InvoiceId = invoiceId,
-            PaymentMethod = paymentMethod,
-            TransactionCode = reference,
-            AmountPaid = invoice.TotalAmount,
-            PaymentDate = clock.GetLocalNow().DateTime,
-            Status = "Pending",
-            PaymentNotes = $"Đang chờ thanh toán {paymentMethod}.",
-        };
-        db.Payments.Add(payment);
-        await db.SaveChangesAsync(ct);
+            payment = new Payment
+            {
+                InvoiceId = invoiceId,
+                PaymentMethod = paymentMethod,
+                TransactionCode = Guid.NewGuid().ToString("N"),
+                AmountPaid = invoice.TotalAmount,
+                PaymentDate = clock.GetLocalNow().DateTime,
+                Status = "Pending",
+                PaymentNotes = $"Đang chờ thanh toán {paymentMethod}.",
+            };
+            db.Payments.Add(payment);
+            await db.SaveChangesAsync(ct);
+        }
         await transaction.CommitAsync(ct);
 
         try
         {
-            var paymentUrl = paymentMethod == "VNPay"
-                ? CreateVnPayUrl(payment, invoice, clientIp)
-                : await CreateMomoPaymentUrlAsync(payment, invoice, ct);
-            return new CheckoutResponse(paymentMethod, payment.PaymentId, reference, invoice.TotalAmount, paymentUrl);
+            if (paymentMethod == "VNPay")
+            {
+                return new CheckoutResponse(paymentMethod, payment.PaymentId, payment.TransactionCode!,
+                    invoice.TotalAmount, CreateVnPayUrl(payment, invoice, clientIp));
+            }
+
+            if (payment.GatewayQrCodeUrl is not null || payment.GatewayPaymentUrl is not null
+                || payment.GatewayDeepLink is not null || payment.GatewayDeepLinkWebInApp is not null)
+            {
+                return new CheckoutResponse(paymentMethod, payment.PaymentId, payment.TransactionCode!,
+                    invoice.TotalAmount,
+                    payment.GatewayPaymentUrl ?? payment.GatewayDeepLinkWebInApp
+                        ?? payment.GatewayDeepLink ?? payment.GatewayQrCodeUrl!,
+                    payment.GatewayQrCodeUrl, payment.GatewayDeepLink, payment.GatewayDeepLinkWebInApp);
+            }
+
+            var momoCheckout = await CreateMomoPaymentAsync(payment, invoice, ct);
+            payment.GatewayPaymentUrl = momoCheckout.PayUrl;
+            payment.GatewayQrCodeUrl = momoCheckout.QrCodeUrl;
+            payment.GatewayDeepLink = momoCheckout.Deeplink;
+            payment.GatewayDeepLinkWebInApp = momoCheckout.DeeplinkWebInApp;
+            await db.SaveChangesAsync(ct);
+            return new CheckoutResponse(paymentMethod, payment.PaymentId, payment.TransactionCode!,
+                invoice.TotalAmount,
+                payment.GatewayPaymentUrl ?? payment.GatewayDeepLinkWebInApp
+                    ?? payment.GatewayDeepLink ?? payment.GatewayQrCodeUrl!,
+                payment.GatewayQrCodeUrl, payment.GatewayDeepLink, payment.GatewayDeepLinkWebInApp);
         }
         catch (HttpRequestException)
         {
@@ -168,6 +198,9 @@ public sealed class PaymentGatewayService(
     public async Task ProcessMomoIpnAsync(MomoIpnRequest request, CancellationToken ct)
     {
         if (request.PartnerCode != settings.Momo.PartnerCode
+            || string.IsNullOrWhiteSpace(request.OrderId)
+            || !string.Equals(request.OrderId, request.RequestId, StringComparison.Ordinal)
+            || request.Amount <= 0
             || !VerifyMomoIpnSignature(request, settings.Momo.AccessKey, settings.Momo.SecretKey))
             throw AppException.BadRequest("Chữ ký hoặc mã đối tác MoMo không hợp lệ");
 
@@ -201,7 +234,13 @@ public sealed class PaymentGatewayService(
         {
             var renewal = await db.ContractRenewals.FirstOrDefaultAsync(r => r.InvoiceId == invoice.InvoiceId, ct)
                 ?? throw AppException.Conflict("Hóa đơn không liên kết với yêu cầu gia hạn");
-            if (renewal.Status != "Pending" || renewal.RenewalFee != invoice.TotalAmount)
+            var contract = await db.Contracts.FirstOrDefaultAsync(c => c.ContractId == renewal.ContractId, ct)
+                ?? throw AppException.NotFound("Không tìm thấy hợp đồng gia hạn");
+            if (renewal.Status != "Pending"
+                || contract.Status != ContractStatus.Active
+                || contract.EndDate != renewal.OldEndDate
+                || now >= renewal.OldEndDate.ToDateTime(new TimeOnly(20, 0))
+                || renewal.RenewalFee != invoice.TotalAmount)
                 throw AppException.Conflict("Yêu cầu gia hạn không còn hợp lệ");
         }
     }
@@ -225,7 +264,8 @@ public sealed class PaymentGatewayService(
                 || string.IsNullOrWhiteSpace(settings.Momo.AccessKey)
                 || string.IsNullOrWhiteSpace(settings.Momo.SecretKey))
                 throw AppException.Conflict("Thiếu cấu hình PartnerCode, AccessKey hoặc SecretKey của MoMo");
-            RequireAbsoluteUrl(settings.Momo.CreateUrl, "Momo:CreateUrl");
+            RequirePublicHttpsUrl(settings.PublicBaseUrl, "PaymentGateways:PublicBaseUrl");
+            RequireAbsoluteUrl(settings.Momo.CreateUrl, "PaymentGateways:Momo:CreateUrl");
         }
     }
 
@@ -257,7 +297,7 @@ public sealed class PaymentGatewayService(
         return $"{settings.VnPay.PaymentUrl}?{query}";
     }
 
-    private async Task<string> CreateMomoPaymentUrlAsync(
+    private async Task<MomoCreateResponse> CreateMomoPaymentAsync(
         Payment payment,
         Data.Entities.Invoice invoice,
         CancellationToken ct)
@@ -278,13 +318,36 @@ public sealed class PaymentGatewayService(
         request.Signature = SignMomoRequest(request, settings.Momo.AccessKey, settings.Momo.SecretKey);
         using var response = await http.PostAsJsonAsync(settings.Momo.CreateUrl, request, ct);
         var result = await response.Content.ReadFromJsonAsync<MomoCreateResponse>(cancellationToken: ct);
-        if (!response.IsSuccessStatusCode || result?.ResultCode != 0 || string.IsNullOrWhiteSpace(result.PayUrl))
+        if (!response.IsSuccessStatusCode
+            || result is null
+            || result.ResultCode != 0
+            || (!string.IsNullOrWhiteSpace(result.OrderId)
+                && !string.Equals(result.OrderId, request.OrderId, StringComparison.Ordinal))
+            || (!string.IsNullOrWhiteSpace(result.RequestId)
+                && !string.Equals(result.RequestId, request.RequestId, StringComparison.Ordinal)))
         {
             await MarkCheckoutFailedAsync(payment.PaymentId, ct);
             throw new AppException(StatusCodes.Status502BadGateway,
                 $"MoMo không tạo được giao dịch (mã phản hồi {result?.ResultCode.ToString(CultureInfo.InvariantCulture) ?? "không rõ"}).");
         }
-        return result.PayUrl;
+
+        if (string.IsNullOrWhiteSpace(result.QrCodeUrl))
+        {
+            await MarkCheckoutFailedAsync(payment.PaymentId, ct);
+            throw new AppException(StatusCodes.Status502BadGateway,
+                "MoMo tạo giao dịch nhưng không trả về mã QR. Hãy kiểm tra cấu hình sản phẩm sandbox của merchant.");
+        }
+
+        if (result.QrCodeUrl.Length > 4000
+            || result.PayUrl?.Length > 2048
+            || result.Deeplink?.Length > 2048
+            || result.DeeplinkWebInApp?.Length > 2048)
+        {
+            await MarkCheckoutFailedAsync(payment.PaymentId, ct);
+            throw new AppException(StatusCodes.Status502BadGateway,
+                "MoMo trả về đường dẫn thanh toán vượt quá giới hạn lưu trữ.");
+        }
+        return result;
     }
 
     private async Task MarkCheckoutFailedAsync(int paymentId, CancellationToken ct)
@@ -301,6 +364,16 @@ public sealed class PaymentGatewayService(
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)
             || uri.Scheme is not ("http" or "https"))
             throw AppException.Conflict($"Cấu hình {settingName} phải là URL đầy đủ (http/https)");
+        return uri;
+    }
+
+    private static Uri RequirePublicHttpsUrl(string value, string settingName)
+    {
+        var uri = RequireAbsoluteUrl(value, settingName);
+        if (uri.Scheme != Uri.UriSchemeHttps
+            || uri.IsLoopback
+            || uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase))
+            throw AppException.Conflict($"{settingName} phải là URL HTTPS công khai để MoMo gọi callback");
         return uri;
     }
 
@@ -372,6 +445,12 @@ public sealed class PaymentGatewayService(
     private sealed class MomoCreateResponse
     {
         [JsonPropertyName("resultCode")] public int ResultCode { get; set; }
+        [JsonPropertyName("message")] public string? Message { get; set; }
+        [JsonPropertyName("orderId")] public string? OrderId { get; set; }
+        [JsonPropertyName("requestId")] public string? RequestId { get; set; }
         [JsonPropertyName("payUrl")] public string? PayUrl { get; set; }
+        [JsonPropertyName("qrCodeUrl")] public string? QrCodeUrl { get; set; }
+        [JsonPropertyName("deeplink")] public string? Deeplink { get; set; }
+        [JsonPropertyName("deeplinkWebInApp")] public string? DeeplinkWebInApp { get; set; }
     }
 }

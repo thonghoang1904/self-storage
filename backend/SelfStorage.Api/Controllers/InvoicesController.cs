@@ -77,7 +77,10 @@ public class InvoicesController(
             payment.AmountPaid, payment.PaymentDate, payment.Status, payment.PaymentNotes, staffName);
     }
 
-    /// <summary>Starts a VNPay or MoMo checkout for an unpaid customer invoice.</summary>
+    /// <summary>
+    /// Starts or resumes a VNPay/MoMo checkout. MoMo returns its QR URL, app deep links,
+    /// and a payment URL; invoice status is confirmed only by the verified provider IPN.
+    /// </summary>
     [HttpPost("{id:int}/checkout/{provider}")]
     [Authorize(Roles = AppRoles.Customer)]
     public Task<CheckoutResponse> StartCheckout(int id, string provider, CancellationToken ct) =>

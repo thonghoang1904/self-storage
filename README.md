@@ -8,29 +8,28 @@ Khung dự án gồm:
 | `backend/` | ASP.NET Core Web API (.NET 10), EF Core cho SQL Server, Swagger, JWT |
 | `frontend/` | React + TypeScript (Vite): trang khách hàng và màn hình nhân viên trực cổng |
 
-## 1. Luồng ra vào kho (chỉ xác thực bằng CCCD, không dùng PIN)
+## 1. Luồng đăng ký và ra vào kho (xác thực bằng CCCD, không dùng PIN)
 
 Theo sơ đồ trạng thái "Unit Access Visit": `PendingVerification → InsideFacility → Exited`, hoặc `PendingVerification → Denied`.
 
 ```
-Khách / người được ủy quyền          Nhân viên trực cổng (màn hình "Cổng ra vào")
-───────────────────────────          ────────────────────────────────────────────
-Đến cổng, đưa CCCD ────────────────► Tìm theo mã kho, số CCCD, SĐT hoặc số hợp đồng
-  (PendingVerification:               Hệ thống hiện: hợp đồng, kho, chủ HĐ + CCCD trong hồ sơ,
-   chỉ là bước trên màn hình,         người được ủy quyền, ai đang ở trong, và cảnh báo
-   chưa ghi vào database)             (HĐ đã kết thúc, quá hạn/kho bị khóa, kho bảo trì)
-                                     Chọn đúng người, gõ số CCCD trên thẻ
-                                       ├─ khớp và không có cảnh báo → "Cho vào"
-                                       │    → AccessRecords: Granted, EntryTime, VerifiedByStaffID
-                                       └─ không khớp / có cảnh báo → "Ghi nhận từ chối"
-                                            → AccessRecords: Denied + DenyReason
-Khách ra về ───────────────────────► Bấm "Xác nhận ra" → ExitTime, ExitConfirmedByStaffID
+Khách thuê đăng ký giờ vào/ra ─────► Staff xem lịch và duyệt/từ chối
+  POST /api/contracts/{id}/visit-registrations
+  (CCCD của khách thuê hoặc người được ủy quyền)
+                                         │
+Đến cơ sở trong giờ đã đăng ký ─────► Staff tìm lịch/hợp đồng, kiểm tra CCCD trên thẻ
+                                         ├─ lịch Approved, khớp CCCD, hợp đồng hợp lệ
+                                         │    → Granted + VisitRegistrationID + giờ vào
+                                         └─ sai lịch/CCCD hoặc không đủ điều kiện
+                                              → Denied + DenyReason
+Khách ra về ───────────────────────► Staff xác nhận ra → ExitTime, ExitConfirmedByStaffID
 ```
 
 Quy tắc chính:
 
 - Không có PIN hay thiết bị kiosk. Mọi lượt vào đều do nhân viên xác nhận và ghi tên nhân viên vào `VerifiedByStaffID`.
-- Người được ủy quyền (bảng `AuthorizedPersons`) vào thay chủ hợp đồng bằng **CCCD của chính họ**. Khách tự thêm/thu hồi người được ủy quyền trong trang "Kho của tôi".
+- Chủ hợp đồng đăng ký lịch cho mình hoặc người được ủy quyền (bảng `AuthorizedPersons`); CCCD cung cấp phải khớp hồ sơ của đúng người. Người được ủy quyền chỉ vào thay chủ hợp đồng bằng **CCCD của chính họ**.
+- Chỉ lịch được staff duyệt mới được dùng để vào; thời điểm đến phải nằm trong khoảng `ScheduledEntryAt`–`ScheduledExitAt`. Một lịch đã ghi nhận vào không thể dùng lại.
 - Chỉ chấp nhận CCCD (`VerificationMethod` luôn là `CitizenID`). Nhân viên phải gõ số trên thẻ và hệ thống so khớp với hồ sơ, tránh việc bấm "Cho vào" mà không kiểm tra. Người chưa có CCCD trong hồ sơ thì không thể được cho vào.
 - Hệ thống không cho bấm "Cho vào" khi hợp đồng đã kết thúc/chưa bắt đầu, quá hạn thanh toán, kho bị khóa hoặc đang bảo trì; mã cảnh báo trùng với `DenyReason` để nhân viên ghi nhận từ chối luôn.
 - Một người đang ở trong kho thì không thể được cho vào lần nữa trước khi xác nhận ra.
@@ -46,6 +45,7 @@ Quy tắc chính:
 | Đặt kho | `POST /api/reservations`, `GET /api/reservations/my` | Khách |
 | Nhận kho | `GET /api/facilities/{id}/reservations`, `POST /api/reservations/{id}/confirm-deposit`, `POST /api/reservations/{id}/check-in` | Nhân viên, quản lý cơ sở |
 | Hợp đồng | `GET /api/contracts/my`, `GET /api/contracts/{id}`, `POST /api/contracts/{id}/renewals`, `GET /api/contracts/{id}/renewals`, `GET/POST/DELETE /api/contracts/{id}/authorized-persons`, `GET /api/contracts/{id}/access-history` | Khách |
+| Đăng ký ra/vào | `POST/GET /api/contracts/{id}/visit-registrations`, `DELETE /api/contracts/{id}/visit-registrations/{registrationId}` | Khách thuê |
 | Gia hạn | `GET /api/contracts/facilities/{facilityId}/renewals`, `POST /api/contracts/renewals/{renewalId}/confirm-payment`, `POST /api/contracts/renewals/{renewalId}/reject` | Nhân viên, quản lý cơ sở |
 | Trả kho/quá hạn | `POST /api/contracts/{id}/return`, `GET /api/contracts/facilities/{facilityId}/overdue` | Nhân viên, quản lý cơ sở |
 | Hóa đơn/thanh toán | `GET /api/invoices/my`, `GET /api/invoices/{id}`, `POST /api/invoices/{id}/checkout/vnpay`, `POST /api/invoices/{id}/checkout/momo` | Khách |
@@ -53,9 +53,11 @@ Quy tắc chính:
 | Hoàn cọc | `POST /api/contracts/{id}/deposit-refunds` | Nhân viên, quản lý cơ sở |
 | Callback thanh toán | `GET /api/payments/vnpay/ipn`, `GET /api/payments/vnpay/return`, `POST /api/payments/momo/ipn`, `GET /api/payments/momo/return` | VNPay/MoMo |
 | Hỗ trợ | `POST /api/support-requests`, `GET /api/support-requests/my`, `GET /api/support-requests/{requestId}/updates`, `GET /api/support-requests/{requestId}/checklist`, `PUT /api/support-requests/{requestId}/checklist/{itemId}`, `GET /api/support-requests/facilities/{facilityId}`, `PUT /api/support-requests/{requestId}` | Khách; nhân viên, quản lý cơ sở |
-| Cổng | `GET /api/gate/my-facilities`, `GET /api/gate/facilities/{id}/lookup?q=`, `POST /api/gate/facilities/{id}/entries`, `POST /api/gate/facilities/{id}/denials`, `GET /api/gate/facilities/{id}/inside`, `GET /api/gate/facilities/{id}/today`, `POST /api/gate/access-records/{id}/exit` | Nhân viên, quản lý cơ sở |
+| Cổng | `GET /api/gate/my-facilities`, `GET /api/gate/facilities/{id}/lookup?q=`, `GET /api/gate/facilities/{id}/visit-registrations?status=Pending`, `POST /api/gate/facilities/{id}/visit-registrations/{registrationId}/review`, `POST /api/gate/facilities/{id}/entries`, `POST /api/gate/facilities/{id}/denials`, `GET /api/gate/facilities/{id}/inside`, `GET /api/gate/facilities/{id}/today`, `POST /api/gate/access-records/{id}/exit` | Nhân viên, quản lý cơ sở |
 
-Quy tắc hợp đồng: cọc ban đầu bằng một tháng tiền thuê; khách gửi yêu cầu gia hạn trong 7 ngày trước ngày hết hạn, nhân viên xác nhận đã thu phí để kích hoạt; lịch trả kho từ 20:00 ngày hết hạn. Nếu chưa trả sau 24 giờ, dịch vụ nền khóa kho và tính phí mỗi ngày theo `MonthlyRentFee / 30`, cấn trừ vào cọc; chi tiết hợp đồng trả về số dư cọc và khoản phí còn phải thu. Bàn giao/trả kho và yêu cầu hỗ trợ được ghi nhận để nhân viên xử lý tại cơ sở được phân công.
+Lịch ra/vào cần thời gian ISO-8601 kèm offset và CCCD của người sẽ đến. Ví dụ body cho khách thuê tự đăng ký: `{"citizenId":"079300000456","authorizedPersonId":null,"scheduledEntryAt":"2026-10-21T09:00:00+07:00","scheduledExitAt":"2026-10-21T11:00:00+07:00","purpose":"Đưa đồ vào kho"}`. Staff duyệt với `{"approve":true,"notes":"Đã kiểm tra lịch"}`. Khi khách đến, staff dùng `POST /api/gate/facilities/{facilityId}/entries` với `contractId`, `visitRegistrationId`, `authorizedPersonId` tương ứng và CCCD đọc từ thẻ; hệ thống kiểm tra lại lịch, CCCD, hợp đồng và trạng thái kho trước khi ghi nhận vào.
+
+Quy tắc hợp đồng: cọc ban đầu bằng một tháng tiền thuê; khách gửi yêu cầu gia hạn trong 7 ngày trước ngày hết hạn, nhân viên xác nhận đã thu phí để kích hoạt; lịch trả kho từ 20:00 ngày hết hạn. Nếu chưa trả sau 24 giờ, dịch vụ nền khóa kho và tính phí mỗi ngày theo `MonthlyRentFee / 30`, cấn trừ vào cọc; chi tiết hợp đồng trả về số dư cọc và khoản phí còn phải thu. Đơn đã cọc nhưng khách không nhận kho sẽ tự hết hạn lúc 20:00 ngày bắt đầu, bỏ giữ chỗ và áp dụng phí hủy theo policy; khoản hoàn được duyệt tự động nhưng nhân viên phải ghi nhận số tiền hoàn thực tế. Bàn giao/trả kho và yêu cầu hỗ trợ được ghi nhận để nhân viên xử lý tại cơ sở được phân công.
 
 Checklist ticket được tạo theo loại sự cố khi khách gửi yêu cầu. Khách và nhân viên cơ sở được phân công xem checklist; nhân viên tiếp nhận ticket trước khi cập nhật từng mục qua `PUT /api/support-requests/{requestId}/checklist/{itemId}`. API chuyển ticket sang `Resolved` chỉ thành công khi tất cả mục đã hoàn tất; mọi cập nhật checklist được lưu vào lịch sử ticket.
 
@@ -77,7 +79,7 @@ Hóa đơn cọc được tạo cùng lúc đặt kho; hóa đơn gia hạn đư
 
 Cần: .NET SDK 10, Node.js 20+, SQL Server (Express/Developer đều được).
 
-**Development local:** chỉ cần khởi động backend bằng `dotnet run`. Backend tự tạo database `SelfStorageDB` nếu chưa tồn tại, sau đó tự áp dụng schema/migration `02`–`09` theo thứ tự. Nếu database đã có dữ liệu, backend chỉ chạy các migration có thể chạy lặp lại; không chạy lại `01_schema.sql` và không xóa dữ liệu. Frontend chỉ gọi API, không kết nối hay tự cập nhật database.
+**Development local:** chỉ cần khởi động backend bằng `dotnet run`. Backend tự tạo database `SelfStorageDB` nếu chưa tồn tại, sau đó tự áp dụng schema/migration `02`–`11` theo thứ tự. Nếu database đã có dữ liệu, backend chỉ chạy các migration có thể chạy lặp lại; không chạy lại `01_schema.sql` và không xóa dữ liệu. Frontend chỉ gọi API, không kết nối hay tự cập nhật database.
 
 **Tạo database thủ công hoặc khôi phục môi trường mới:** có thể chạy một lệnh từ thư mục gốc repo:
 
@@ -93,7 +95,7 @@ sqlcmd -S .\SQLEXPRESS -U sa -C -I -f 65001 -b -i database/setup_fresh.sql
 sqlcmd -S .\SQLEXPRESS -U sa -C -I -f 65001 -b -d SelfStorageDB -i database/upgrade_existing.sql
 ```
 
-`upgrade_existing.sql` chạy các migration `02`–`09` theo đúng thứ tự; có thể chạy lại nếu cần. Nếu chạy bằng SSMS, bật **SQLCMD Mode** rồi mở script tổng tương ứng. Giữ các file migration riêng để kiểm tra thay đổi và dùng trong quy trình deploy có kiểm soát. Tự động cập nhật database hiện chỉ bật cho môi trường Development; trước khi deploy môi trường thật, cần có quy trình backup và migrate phù hợp, không reset database.
+`upgrade_existing.sql` chạy các migration `02`–`12` theo đúng thứ tự; có thể chạy lại nếu cần. Nếu chạy bằng SSMS, bật **SQLCMD Mode** rồi mở script tổng tương ứng. Giữ các file migration riêng để kiểm tra thay đổi và dùng trong quy trình deploy có kiểm soát. Tự động cập nhật database hiện chỉ bật cho môi trường Development; trước khi deploy môi trường thật, cần có quy trình backup và migrate phù hợp, không reset database.
 
 **Backend.** Chuỗi kết nối mặc định trong `appsettings.json` dùng Windows Authentication. Để dùng SQL Authentication cho môi trường Development, lưu chuỗi kết nối bằng User Secrets (không ghi mật khẩu vào file trong repo):
 
@@ -118,12 +120,13 @@ Backend gửi qua `smtp.gmail.com:587` với TLS. Chức năng này không cần
 Các API frontend cho vận hành:
 
 - Nhân viên/quản lý: `GET /api/facilities/{facilityId}/daily-operations`, `GET /api/facilities/{facilityId}/contracts`, `GET /api/gate/my-facilities`.
-- Khách hàng đặt lịch nhận kho sau khi cọc được xác nhận: `PUT /api/reservations/{id}/appointment` với `AppointmentAt` dạng ISO-8601 có offset (ví dụ `2026-05-10T10:00:00+07:00`). Check-in cần đợi tới lịch; danh sách công việc theo ngày sẽ hiển thị các lịch hẹn.
+- Khách hàng đặt lịch nhận kho sau khi cọc được xác nhận: `PUT /api/reservations/{id}/appointment` với `AppointmentAt` dạng ISO-8601 có offset (ví dụ `2026-05-10T10:00:00+07:00`); lịch phải trước 20:00 ngày bắt đầu. Check-in cần đợi tới lịch; đơn chưa nhận kho tự hết hạn lúc 20:00; danh sách công việc theo ngày sẽ hiển thị các lịch hẹn.
 - Khách hàng có thể gửi mã `PromoCode` khi `POST /api/reservations`; mã chỉ được nhận nếu khách chưa có hợp đồng thuê, và giảm một lần trên hóa đơn thuê đầu tiên. Nhân viên xử lý yêu cầu hủy tại `/api/facilities/{facilityId}/cancellation-requests`; hoàn cọc được ghi nhận riêng sau khi chuyển tiền thực tế.
 - Khách hàng gửi yêu cầu hủy tại `POST /api/reservations/{id}/cancellation-requests` và xem trạng thái tại `GET /api/reservations/{id}/cancellation-requests/my`. Nhân viên duyệt/từ chối tại `POST /api/facilities/{facilityId}/cancellation-requests/{requestId}/resolve`; sau khi duyệt, ghi nhận khoản hoàn thực tế bằng `POST /api/reservations/{id}/cancellation-refunds`.
 - Quản lý cơ sở: `GET/POST /api/facility-management/facilities/{facilityId}/units`, `PUT /units/{unitId}`, `PUT /units/{unitId}/status`, quản lý nhân viên tại `/staff`, và tạo phụ thu tại `/contracts/{contractId}/extra-charges`.
 - Báo cáo: `GET /api/facilities/{facilityId}/dashboard` cho quản lý cơ sở; `GET /api/operations/reports/facilities` cho quản lý vận hành toàn hệ thống.
 - Quản lý vận hành: `GET/POST/PUT /api/operations/facilities`, `/rental-policies`, `/fees`, `/promotions`.
+- Giá thuê quản lý theo loại kho: `GET /api/operations/unit-types` và `PUT /api/operations/unit-types/{unitTypeId}/pricing`. Đây là giá chuẩn dùng cho tiền cọc, hợp đồng và hóa đơn; các unit cùng loại không có giá riêng.
 - Quản trị hệ thống: `GET /api/admin/roles`, quản lý tài khoản tại `/api/admin/users`, cập nhật vai trò/trạng thái bằng `/users/{userId}/role` và `/users/{userId}/status`, xem lịch sử tại `/users/{userId}/activity`.
 - Tiền thuê: API tạo hóa đơn tháng đầu khi bàn giao; worker tạo hóa đơn kỳ tiếp theo trước hạn 7 ngày và đánh dấu hóa đơn chưa trả là quá hạn.
 
@@ -205,31 +208,31 @@ Tích hợp hiện dùng API sandbox. Không gửi các khóa merchant qua chat 
 1. Đăng ký sandbox merchant để lấy thông tin kết nối:
    - [VNPay Sandbox](https://sandbox.vnpayment.vn/devreg/) — `TmnCode` và `HashSecret`.
    - [MoMo Developer](https://developers.momo.vn/) — `PartnerCode`, `AccessKey` và `SecretKey`.
-2. Cổng cần gọi được callback trên API qua HTTPS công khai. Khi chạy local, dùng một HTTPS tunnel (ví dụ ngrok) trỏ đến cổng API `5080`; đặt `PublicBaseUrl` thành URL HTTPS được cấp. Không mở SQL Server ra internet.
-3. Mở PowerShell tại repo và điền URL/credentials của chính merchant sandbox của bạn:
+2. Cổng cần gọi được callback trên API qua HTTPS công khai. Khi chạy local, mở một terminal riêng và tạo HTTPS tunnel tới API (mặc định port `5080`), ví dụ `ngrok http 5080`. Không mở SQL Server ra internet.
+3. Chạy script dưới đây trong PowerShell tại thư mục repo. Script yêu cầu URL tunnel, mã merchant và nhập AccessKey/SecretKey ở chế độ ẩn; các giá trị được lưu vào User Secrets cục bộ của project, không in secret ra màn hình:
 
 ```powershell
-$project = "backend\SelfStorage.Api\SelfStorage.Api.csproj"
-dotnet user-secrets set "PaymentGateways:PublicBaseUrl" "https://<api-public-url>" --project $project
-dotnet user-secrets set "PaymentGateways:FrontendReturnUrl" "http://localhost:5173/payment-result" --project $project
-dotnet user-secrets set "PaymentGateways:VnPay:Enabled" "true" --project $project
-dotnet user-secrets set "PaymentGateways:VnPay:TmnCode" "<vnpay-tmn-code>" --project $project
-dotnet user-secrets set "PaymentGateways:VnPay:HashSecret" "<vnpay-hash-secret>" --project $project
-dotnet user-secrets set "PaymentGateways:Momo:Enabled" "true" --project $project
-dotnet user-secrets set "PaymentGateways:Momo:PartnerCode" "<momo-partner-code>" --project $project
-dotnet user-secrets set "PaymentGateways:Momo:AccessKey" "<momo-access-key>" --project $project
-dotnet user-secrets set "PaymentGateways:Momo:SecretKey" "<momo-secret-key>" --project $project
+.\scripts\configure-momo-sandbox.ps1
 ```
 
-4. Đăng ký VNPay IPN là `https://<api-public-url>/api/payments/vnpay/ipn` trong merchant sandbox. MoMo nhận `https://<api-public-url>/api/payments/momo/ipn` trong từng yêu cầu tạo giao dịch. Hai URL `/return` đưa trình duyệt quay về `FrontendReturnUrl`; chúng không tự xác nhận hóa đơn.
-5. Đăng nhập với tài khoản customer, lấy `InvoiceId` từ `GET /api/invoices/my`, rồi gọi một trong hai endpoint bằng JWT:
+Script cấu hình URL sandbox MoMo mặc định là `https://test-payment.momo.vn/v2/gateway/api/create`; `FrontendReturnUrl` mặc định là `http://localhost:5173/payment-result`. Giữ terminal tunnel chạy, khởi động lại backend sau khi cấu hình. Callback IPN được gửi tới `https://<api-public-url>/api/payments/momo/ipn`; URL `/return` chỉ đưa trình duyệt quay về, không phải bằng chứng thanh toán.
+
+Đăng nhập bằng tài khoản customer và tạo khoản cần thanh toán:
 
 ```http
-POST /api/invoices/{invoiceId}/checkout/vnpay
+GET  /api/invoices/my
 POST /api/invoices/{invoiceId}/checkout/momo
 ```
 
-Response trả `paymentUrl`; giao diện ở mục **Hóa đơn** tự chuyển khách tới cổng để hoàn tất sandbox. Khi cổng đưa khách về `/payment-result`, trang hiển thị trạng thái hóa đơn; IPN đã xác thực là nguồn cập nhật cuối cùng. Mỗi hóa đơn chỉ cho phép một giao dịch `Pending` tại một thời điểm; giao dịch chưa nhận callback cần đối soát trước khi có thể khởi tạo giao dịch khác.
+Checkout trả `paymentUrl`, `qrCodeUrl`, `deeplink` và `deeplinkWebInApp` (nếu MoMo cung cấp). Dùng `qrCodeUrl` để hiển thị mã QR hoặc deep link để mở ứng dụng MoMo. Luồng này áp dụng cho cả hóa đơn cọc và hóa đơn gia hạn. Để gia hạn, trước tiên gọi `POST /api/contracts/{contractId}/renewals` trong thời hạn gia hạn của hợp đồng; dùng `invoiceId` của yêu cầu đó để checkout. Mỗi hóa đơn chỉ cho phép một giao dịch `Pending` tại một thời điểm; gọi lại checkout sẽ nhận lại thông tin QR/deep link đã tạo.
+
+Sau khi khách thanh toán, chỉ IPN MoMo có chữ ký hợp lệ mới xác nhận hóa đơn và hoàn tất gia hạn. Return URL không cập nhật trạng thái. Kiểm tra kết quả bằng `GET /api/invoices/{invoiceId}` hoặc `GET /api/invoices/my`; cần đối chiếu trạng thái hóa đơn/payment là `Paid`/`Success`, không chỉ dựa vào trang redirect.
+
+Nếu đang bật VNPay, đăng ký IPN là `https://<api-public-url>/api/payments/vnpay/ipn` trong merchant sandbox. Hai gateway đều cần callback HTTPS truy cập được từ bên ngoài.
+
+```http
+POST /api/invoices/{invoiceId}/checkout/vnpay
+```
 
 Tài liệu giao thức: [VNPay PAY API](https://sandbox.vnpayment.vn/apis/docs/thanh-toan-pay/pay.html), [MoMo One-Time Checkout](https://developers.momo.vn/v3/docs/payment/api/wallet/onetime/) và [MoMo IPN](https://developers.momo.vn/v3/docs/payment/api/result-handling/notification/). Chỉ đưa hệ thống thật vào sử dụng sau khi thay sandbox URL/credentials bằng cấu hình production do merchant cấp và kiểm thử IPN qua HTTPS.
 

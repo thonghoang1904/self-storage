@@ -136,6 +136,7 @@ public class ContractsController(
     [Authorize(Roles = AppRoles.GateRoles)]
     public async Task<IActionResult> RejectRenewal(int renewalId, CancellationToken ct)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var renewal = await db.ContractRenewals.FirstOrDefaultAsync(r => r.RenewalId == renewalId, ct)
                       ?? throw AppException.NotFound("Không tìm thấy yêu cầu gia hạn");
         var contract = await db.Contracts.Include(c => c.Unit)
@@ -151,9 +152,20 @@ public class ContractsController(
         {
             var invoice = await db.Invoices.FirstOrDefaultAsync(i => i.InvoiceId == invoiceId, ct);
             if (invoice is not null && invoice.Status == "Unpaid")
+            {
                 invoice.Status = "Cancelled";
+                var pendingPayments = await db.Payments
+                    .Where(p => p.InvoiceId == invoiceId && p.Status == "Pending")
+                    .ToListAsync(ct);
+                foreach (var payment in pendingPayments)
+                {
+                    payment.Status = "Failed";
+                    payment.PaymentNotes = "Giao dịch bị hủy do yêu cầu gia hạn bị từ chối.";
+                }
+            }
         }
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return NoContent();
     }
 
@@ -361,6 +373,26 @@ public class ContractsController(
         }
         return await access.GetHistoryAsync(id, ct);
     }
+
+    [HttpPost("{id:int}/visit-registrations")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public Task<VisitRegistrationDto> CreateVisitRegistration(
+        int id, CreateVisitRegistrationRequest req, CancellationToken ct) =>
+        access.CreateVisitRegistrationAsync(User.GetUserId(), id, req, ct);
+
+    [HttpGet("{id:int}/visit-registrations")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public async Task<List<VisitRegistrationDto>> MyVisitRegistrations(int id, CancellationToken ct)
+    {
+        if (!await db.Contracts.AnyAsync(c => c.ContractId == id && c.CustomerId == User.GetUserId(), ct))
+            throw AppException.NotFound("Không tìm thấy hợp đồng");
+        return await access.GetCustomerVisitRegistrationsAsync(User.GetUserId(), id, ct);
+    }
+
+    [HttpDelete("{id:int}/visit-registrations/{registrationId:long}")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public Task<VisitRegistrationDto> CancelVisitRegistration(int id, long registrationId, CancellationToken ct) =>
+        access.CancelVisitRegistrationAsync(User.GetUserId(), id, registrationId, ct);
 
     private async Task<Contract> LoadOwnAsync(int id, CancellationToken ct)
     {
