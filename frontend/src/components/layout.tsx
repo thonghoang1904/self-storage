@@ -61,6 +61,7 @@ export function PortalHeader() {
           )}
           {isStaff && <NavLink to="/gate">Màn hình nhân viên</NavLink>}
           {user?.role === Roles.Admin && <NavLink to="/admin/users">Màn hình quản trị</NavLink>}
+          {user?.role === Roles.OpsManager && <NavLink to="/ops/facilities">Màn hình vận hành</NavLink>}
           <div className="portal-nav-actions">
             {user ? (
               <>
@@ -232,28 +233,27 @@ export function StaffLayout() {
   )
 }
 
-// ------------------------------------------------------------------ system administrator console (same dark sidebar)
+// ------------------------------------------------------------------ management consoles (admin, operations manager): same dark sidebar
 
-export function AdminLayout() {
+/** A sidebar entry: a built screen has a route, the rest of the Figma menu shows greyed out. */
+interface ConsoleNavItem { icon: string; label: string; to?: string }
+
+function ConsoleLayout({ nav, titles }: { nav: ConsoleNavItem[]; titles: Record<string, string> }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
   useEffect(() => setMenuOpen(false), [pathname])
+  const title = Object.entries(titles).find(([path]) => pathname.startsWith(path))?.[1] ?? ''
 
   return (
     <div className="staff">
       <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
         <div className="sidebar-brand"><Logo admin light /></div>
         <nav className="sidebar-nav">
-          {/* Same menu as the Figma admin screens; only the staff screen is built so far. */}
-          <span className="soon" title="Chưa có màn hình"><Icon name="grid" /> Tổng Quan</span>
-          <span className="soon" title="Chưa có màn hình"><Icon name="building" /> Kho Lưu Trữ</span>
-          <span className="soon" title="Chưa có màn hình"><Icon name="users" /> Khách Hàng</span>
-          <NavLink to="/admin/users"><Icon name="user" /> Nhân Viên</NavLink>
-          <span className="soon" title="Chưa có màn hình"><Icon name="chart" /> Doanh Thu</span>
-          <span className="soon" title="Chưa có màn hình"><Icon name="file" /> Báo Cáo</span>
-          <span className="soon" title="Chưa có màn hình"><Icon name="settings" /> Cài Đặt</span>
+          {nav.map((n) => n.to
+            ? <NavLink key={n.label} to={n.to}><Icon name={n.icon} /> {n.label}</NavLink>
+            : <span key={n.label} className="soon" title="Chưa có màn hình"><Icon name={n.icon} /> {n.label}</span>)}
           <Link to="/"><Icon name="arrowRight" className="flip" /> Trang khách hàng</Link>
         </nav>
         {user && (
@@ -272,10 +272,47 @@ export function AdminLayout() {
         <DemoBar />
         <header className="staff-topbar">
           <button className="icon-btn menu-toggle" aria-label="Mở menu" onClick={() => setMenuOpen(true)}><Icon name="menu" /></button>
-          <h2>Nhân Viên Hệ Thống</h2>
+          <h2>{title}</h2>
         </header>
         <main className="staff-content"><Outlet /></main>
       </div>
     </div>
+  )
+}
+
+/** System administrator, menu of the Figma "staff-management" screen. */
+export function AdminLayout() {
+  return (
+    <ConsoleLayout
+      titles={{ '/admin/users': 'Nhân Viên Hệ Thống' }}
+      nav={[
+        { icon: 'grid', label: 'Tổng Quan' },
+        { icon: 'building', label: 'Kho Lưu Trữ' },
+        { icon: 'users', label: 'Khách Hàng' },
+        { icon: 'user', label: 'Nhân Viên', to: '/admin/users' },
+        { icon: 'chart', label: 'Doanh Thu' },
+        { icon: 'file', label: 'Báo Cáo' },
+        { icon: 'settings', label: 'Cài Đặt' },
+      ]}
+    />
+  )
+}
+
+/** Business operations manager, menu of the Figma "facility-branch-management" screen. */
+export function OpsLayout() {
+  return (
+    <ConsoleLayout
+      titles={{ '/ops/facilities': 'Quản Lý Cơ Sở' }}
+      nav={[
+        { icon: 'grid', label: 'Tổng Quan' },
+        { icon: 'package', label: 'Vận Hành Kho' },
+        { icon: 'users', label: 'Khách Hàng' },
+        { icon: 'phone', label: 'Hỗ Trợ' },
+        { icon: 'building', label: 'Cơ Sở', to: '/ops/facilities' },
+        { icon: 'chart', label: 'Doanh Thu' },
+        { icon: 'file', label: 'Chính Sách' },
+        { icon: 'settings', label: 'Cài Đặt' },
+      ]}
+    />
   )
 }
