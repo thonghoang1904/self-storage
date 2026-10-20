@@ -2,7 +2,8 @@ import type { ReactNode } from 'react'
 import { BrowserRouter, HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { IS_DEMO } from './api'
 import { AuthProvider, useAuth } from './auth'
-import { PortalLayout, StaffLayout } from './components/layout'
+import { AdminLayout, PortalLayout, StaffLayout } from './components/layout'
+import AdminUsers from './pages/AdminUsers'
 import ForgotPassword from './pages/ForgotPassword'
 import Gate from './pages/Gate'
 import ContractDetail from './pages/ContractDetail'
@@ -54,6 +55,9 @@ export default function App() {
             <Route path="/staff-contracts" element={<StaffContracts />} />
             <Route path="/staff-return" element={<StaffReturn />} />
             <Route path="/staff-support" element={<StaffSupport />} />
+          </Route>
+          <Route element={<RequireRole roles={[Roles.Admin]}><AdminLayout /></RequireRole>}>
+            <Route path="/admin/users" element={<AdminUsers />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
