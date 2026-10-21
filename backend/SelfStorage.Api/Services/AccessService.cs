@@ -14,7 +14,7 @@ namespace SelfStorage.Api.Services;
 /// </summary>
 public class AccessService(SelfStorageDbContext db, TimeProvider clock)
 {
-    private DateTime Now => clock.GetLocalNow().DateTime;   // DB defaults use SYSDATETIME() (server local time)
+    private DateTime Now => clock.GetLocalNow().DateTime;
 
     public async Task<VisitRegistrationDto> CreateVisitRegistrationAsync(
         int customerId, int contractId, CreateVisitRegistrationRequest req, CancellationToken ct)

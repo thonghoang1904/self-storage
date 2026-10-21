@@ -4,7 +4,7 @@ Khung dự án gồm:
 
 | Thư mục | Nội dung |
 |---|---|
-| `database/` | `01_schema.sql`: đúng file `sqlquery.txt` của bạn, **không sửa gì**. Backend dùng nguyên database này. |
+| `database/` | SQL schema và migrations có thể chạy lặp lại; timestamp mặc định mới dùng múi giờ nghiệp vụ Việt Nam. |
 | `backend/` | ASP.NET Core Web API (.NET 10), EF Core cho SQL Server, Swagger, JWT |
 | `frontend/` | React + TypeScript (Vite): trang khách hàng và màn hình nhân viên trực cổng |
 
@@ -81,7 +81,7 @@ Hóa đơn cọc được tạo cùng lúc đặt kho; hóa đơn gia hạn đư
 
 Cần: .NET SDK 10, Node.js 20+, SQL Server (Express/Developer đều được).
 
-**Development local:** chỉ cần khởi động backend bằng `dotnet run`. Backend tự tạo database `SelfStorageDB` nếu chưa tồn tại, sau đó tự áp dụng schema/migration `02`–`13` theo thứ tự. Nếu database đã có dữ liệu, backend chỉ chạy các migration có thể chạy lặp lại; không chạy lại `01_schema.sql` và không xóa dữ liệu. Frontend chỉ gọi API, không kết nối hay tự cập nhật database.
+**Development local:** chỉ cần khởi động backend bằng `dotnet run`. Backend tự tạo database `SelfStorageDB` nếu chưa tồn tại, sau đó tự áp dụng schema/migration `02`–`14` theo thứ tự. Nếu database đã có dữ liệu, backend chỉ chạy các migration có thể chạy lặp lại; không chạy lại `01_schema.sql` và không xóa dữ liệu. Múi giờ nghiệp vụ được cố định theo Việt Nam (`Asia/Ho_Chi_Minh`); migration `14` chỉ thay default cho bản ghi mới, không chuyển đổi timestamp hiện có. Frontend chỉ gọi API, không kết nối hay tự cập nhật database.
 
 **Tạo database thủ công hoặc khôi phục môi trường mới:** có thể chạy một lệnh từ thư mục gốc repo:
 
@@ -97,7 +97,7 @@ sqlcmd -S .\SQLEXPRESS -U sa -C -I -f 65001 -b -i database/setup_fresh.sql
 sqlcmd -S .\SQLEXPRESS -U sa -C -I -f 65001 -b -d SelfStorageDB -i database/upgrade_existing.sql
 ```
 
-`upgrade_existing.sql` chạy các migration `02`–`13` theo đúng thứ tự; có thể chạy lại nếu cần. Nếu chạy bằng SSMS, bật **SQLCMD Mode** rồi mở script tổng tương ứng. Giữ các file migration riêng để kiểm tra thay đổi và dùng trong quy trình deploy có kiểm soát. Tự động cập nhật database hiện chỉ bật cho môi trường Development; trước khi deploy môi trường thật, cần có quy trình backup và migrate phù hợp, không reset database.
+`upgrade_existing.sql` chạy các migration `02`–`14` theo đúng thứ tự; có thể chạy lại nếu cần. Migration `14_business_timezone_defaults.sql` yêu cầu SQL Server 2016 trở lên để dùng `AT TIME ZONE`. Nếu chạy bằng SSMS, bật **SQLCMD Mode** rồi mở script tổng tương ứng. Giữ các file migration riêng để kiểm tra thay đổi và dùng trong quy trình deploy có kiểm soát. Tự động cập nhật database hiện chỉ bật cho môi trường Development; trước khi deploy môi trường thật, cần có quy trình backup và migrate phù hợp, không reset database.
 
 **Backend.** Chuỗi kết nối mặc định trong `appsettings.json` dùng Windows Authentication. Để dùng SQL Authentication cho môi trường Development, lưu chuỗi kết nối bằng User Secrets (không ghi mật khẩu vào file trong repo):
 

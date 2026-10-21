@@ -30,7 +30,7 @@ Chạy backend trong môi trường Development:
 dotnet run --project backend\SelfStorage.Api\SelfStorage.Api.csproj
 ```
 
-Mở `http://localhost:5080/swagger`. Khi chạy Development, database bootstrapper áp dụng migration `12_visit_registrations.sql` tự động. Nếu chạy môi trường khác, migration này cần được áp dụng theo quy trình database của môi trường đó.
+Mở `http://localhost:5080/swagger`. Khi chạy Development, database bootstrapper tự áp dụng các migration đến `14_business_timezone_defaults.sql`. Migration 14 đồng bộ các giá trị thời gian mặc định mới theo múi giờ Việt Nam, không thay đổi dữ liệu ngày giờ hiện có. Nếu chạy môi trường khác, áp dụng migration theo quy trình database của môi trường đó.
 
 ## 3. Tạo tài khoản khách và đăng nhập
 
@@ -335,6 +335,8 @@ Dashboard cho Admin:
 - `GET /api/operations/reports/details?fromDate=2026-10-01&toDate=2026-10-31&facilityId=1&unitTypeId=1&contractStatus=Active`: báo cáo chi tiết theo cơ sở và loại kho, gồm tồn kho, tỷ lệ sử dụng, số hợp đồng theo trạng thái và doanh thu ròng. Các bộ lọc ID/trạng thái là tùy chọn.
 - `GET /api/operations/reports/details.csv?fromDate=2026-10-01&toDate=2026-10-31`: tải báo cáo chi tiết CSV; có thể dùng chung các bộ lọc như endpoint JSON.
 - `GET /api/facilities/{facilityId}/dashboard?fromDate=2026-10-01&toDate=2026-10-31`: dashboard từng cơ sở.
+
+Khoảng ngày chỉ lọc doanh thu theo ngày thanh toán. Số kho, tỷ lệ sử dụng, trạng thái hợp đồng và ticket là snapshot tại thời điểm gọi API, không phải số liệu lịch sử tại `toDate`.
 
 Admin cập nhật hồ sơ tài khoản bằng `PUT /api/admin/users/{userId}/profile`:
 

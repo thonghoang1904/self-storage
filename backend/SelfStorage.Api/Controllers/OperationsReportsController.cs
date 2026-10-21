@@ -24,6 +24,7 @@ public sealed class OperationsReportsController(SelfStorageDbContext db, TimePro
         ContractStatus.Liquidated,
     ];
 
+    /// <summary>Returns current facility inventory and contract snapshots with revenue paid in the selected date range.</summary>
     [HttpGet("facilities")]
     public async Task<OperationsDashboardDto> Facilities(
         [FromQuery] DateOnly? fromDate,
@@ -80,6 +81,7 @@ public sealed class OperationsReportsController(SelfStorageDbContext db, TimePro
             reports.Sum(r => r.OpenSupportRequests), reports.Sum(r => r.NetRevenue), reports);
     }
 
+    /// <summary>Returns current inventory and contract snapshots with net revenue paid in the selected date range.</summary>
     [HttpGet("details")]
     public Task<List<OperationsReportRowDto>> Details(
         [FromQuery] DateOnly? fromDate,
@@ -90,6 +92,7 @@ public sealed class OperationsReportsController(SelfStorageDbContext db, TimePro
         CancellationToken ct) =>
         GetReportRowsAsync(fromDate, toDate, facilityId, unitTypeId, contractStatus, ct);
 
+    /// <summary>Exports current inventory and contract snapshots with net revenue paid in the selected date range.</summary>
     [HttpGet("details.csv")]
     public async Task<IActionResult> ExportDetails(
         [FromQuery] DateOnly? fromDate,

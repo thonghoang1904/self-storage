@@ -9,6 +9,11 @@ namespace SelfStorage.Api.Data;
 /// </summary>
 public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options) : DbContext(options)
 {
+    private const string BusinessDateTimeDefaultSql =
+        "CONVERT(datetime2, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time')";
+    private const string BusinessDateDefaultSql =
+        "CONVERT(date, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time')";
+
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<User> Users => Set<User>();
     public DbSet<FacilityStaffAssignment> FacilityStaffAssignments => Set<FacilityStaffAssignment>();
@@ -50,7 +55,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
             e.HasKey(x => x.UserId);
             e.Property(x => x.GoogleSubject).HasMaxLength(255).IsUnicode(false);
             e.HasIndex(x => x.GoogleSubject).IsUnique().HasFilter("[GoogleSubject] IS NOT NULL");
-            e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.Property(x => x.CreatedAt).HasDefaultValueSql(BusinessDateTimeDefaultSql);
             e.HasOne(x => x.Role).WithMany().HasForeignKey(x => x.RoleId);
         });
 
@@ -58,7 +63,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
         {
             e.ToTable("FacilityStaffAssignments");
             e.HasKey(x => x.AssignmentId);
-            e.Property(x => x.AssignedDate).HasDefaultValueSql("CAST(SYSDATETIME() AS DATE)");
+            e.Property(x => x.AssignedDate).HasDefaultValueSql(BusinessDateDefaultSql);
             e.HasOne(x => x.Facility).WithMany().HasForeignKey(x => x.FacilityId);
             e.HasOne(x => x.Staff).WithMany().HasForeignKey(x => x.StaffId);
         });
@@ -67,7 +72,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
         {
             e.ToTable("Facilities");
             e.HasKey(x => x.FacilityId);
-            e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.Property(x => x.CreatedAt).HasDefaultValueSql(BusinessDateTimeDefaultSql);
         });
 
         b.Entity<RentalPolicy>(e =>
@@ -102,7 +107,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
         {
             e.ToTable("StorageUnits");
             e.HasKey(x => x.UnitId);
-            e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.Property(x => x.CreatedAt).HasDefaultValueSql(BusinessDateTimeDefaultSql);
             e.HasOne(x => x.Facility).WithMany(f => f.Units).HasForeignKey(x => x.FacilityId);
             e.HasOne(x => x.UnitType).WithMany().HasForeignKey(x => x.UnitTypeId);
         });
@@ -111,7 +116,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
         {
             e.ToTable("Reservations");
             e.HasKey(x => x.ReservationId);
-            e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.Property(x => x.CreatedAt).HasDefaultValueSql(BusinessDateTimeDefaultSql);
             e.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId);
             e.HasOne(x => x.Facility).WithMany().HasForeignKey(x => x.FacilityId);
             e.HasOne(x => x.UnitType).WithMany().HasForeignKey(x => x.UnitTypeId);
@@ -123,7 +128,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
         {
             e.ToTable("Contracts");
             e.HasKey(x => x.ContractId);
-            e.Property(x => x.SignedDate).HasDefaultValueSql("SYSDATETIME()");
+            e.Property(x => x.SignedDate).HasDefaultValueSql(BusinessDateTimeDefaultSql);
             e.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId);
             e.HasOne(x => x.Unit).WithMany().HasForeignKey(x => x.UnitId);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.StaffCreatedId);
@@ -136,7 +141,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
         {
             e.ToTable("ReservationCancellationRequests");
             e.HasKey(x => x.CancellationRequestId);
-            e.Property(x => x.RequestedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.Property(x => x.RequestedAt).HasDefaultValueSql(BusinessDateTimeDefaultSql);
             e.HasIndex(x => x.ReservationId).IsUnique().HasFilter("[Status] = 'Pending'");
             e.HasOne(x => x.Reservation).WithMany().HasForeignKey(x => x.ReservationId);
             e.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId);
@@ -147,7 +152,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
         {
             e.ToTable("AuthorizedPersons");
             e.HasKey(x => x.AuthorizedPersonId);
-            e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.Property(x => x.CreatedAt).HasDefaultValueSql(BusinessDateTimeDefaultSql);
             e.HasOne(x => x.Contract).WithMany(c => c.AuthorizedPersons).HasForeignKey(x => x.ContractId);
         });
 
@@ -171,7 +176,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
             e.HasKey(x => x.VisitRegistrationId);
             e.Property(x => x.Purpose).HasMaxLength(255);
             e.Property(x => x.Status).HasMaxLength(20);
-            e.Property(x => x.RequestedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.Property(x => x.RequestedAt).HasDefaultValueSql(BusinessDateTimeDefaultSql);
             e.HasIndex(x => new { x.ContractId, x.ScheduledEntryAt });
             e.HasIndex(x => new { x.Status, x.ScheduledEntryAt });
             e.HasOne(x => x.Contract).WithMany().HasForeignKey(x => x.ContractId);
@@ -184,7 +189,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
         {
             e.ToTable("ActivityLogs");
             e.HasKey(x => x.LogId);
-            e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.Property(x => x.CreatedAt).HasDefaultValueSql(BusinessDateTimeDefaultSql);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId);
         });
 
@@ -207,7 +212,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
             e.ToTable("Invoices");
             e.HasKey(x => x.InvoiceId);
             e.Property(x => x.TotalAmount).HasComputedColumnSql("[SubTotal] - [DiscountAmount]", stored: true);
-            e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.Property(x => x.CreatedAt).HasDefaultValueSql(BusinessDateTimeDefaultSql);
             e.Property(x => x.DiscountAmount).HasDefaultValue(0m);
             e.Property(x => x.Status).HasDefaultValue("Unpaid");
             e.HasIndex(x => new { x.ContractId, x.BillingPeriodStart })
@@ -235,7 +240,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
             e.Property(x => x.GatewayQrCodeUrl).HasMaxLength(4000);
             e.Property(x => x.GatewayDeepLink).HasMaxLength(2048);
             e.Property(x => x.GatewayDeepLinkWebInApp).HasMaxLength(2048);
-            e.Property(x => x.PaymentDate).HasDefaultValueSql("SYSDATETIME()");
+            e.Property(x => x.PaymentDate).HasDefaultValueSql(BusinessDateTimeDefaultSql);
             e.Property(x => x.Status).HasDefaultValue("Success");
             e.HasOne<Invoice>().WithMany(x => x.Payments).HasForeignKey(x => x.InvoiceId);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.ReceivedByStaffId);
@@ -245,7 +250,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
         {
             e.ToTable("HandoverRecords");
             e.HasKey(x => x.HandoverId);
-            e.Property(x => x.HandoverDateTime).HasDefaultValueSql("SYSDATETIME()");
+            e.Property(x => x.HandoverDateTime).HasDefaultValueSql(BusinessDateTimeDefaultSql);
             e.HasOne(x => x.Contract).WithMany().HasForeignKey(x => x.ContractId);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.StaffId);
         });
@@ -254,7 +259,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
         {
             e.ToTable("ContractRenewals");
             e.HasKey(x => x.RenewalId);
-            e.Property(x => x.RequestedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.Property(x => x.RequestedAt).HasDefaultValueSql(BusinessDateTimeDefaultSql);
             e.HasOne<Contract>().WithMany().HasForeignKey(x => x.ContractId);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.ApprovedByStaffId);
             e.HasOne<Invoice>().WithMany().HasForeignKey(x => x.InvoiceId);
@@ -274,7 +279,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
         {
             e.ToTable("SupportRequests");
             e.HasKey(x => x.RequestId);
-            e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.Property(x => x.CreatedAt).HasDefaultValueSql(BusinessDateTimeDefaultSql);
             e.Property(x => x.Status).HasDefaultValue("Open");
             e.HasOne(x => x.Contract).WithMany().HasForeignKey(x => x.ContractId);
             e.HasOne(x => x.Unit).WithMany().HasForeignKey(x => x.UnitId);
@@ -287,7 +292,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
         {
             e.ToTable("SupportUpdates");
             e.HasKey(x => x.UpdateId);
-            e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.Property(x => x.CreatedAt).HasDefaultValueSql(BusinessDateTimeDefaultSql);
             e.HasOne(x => x.Request).WithMany().HasForeignKey(x => x.RequestId);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UpdatedByUserId);
         });

@@ -38,7 +38,7 @@ BEGIN
         CustomerID INT NOT NULL,
         Reason NVARCHAR(1000) NOT NULL,
         Status VARCHAR(20) NOT NULL CONSTRAINT DF_CancellationRequests_Status DEFAULT 'Pending',
-        RequestedAt DATETIME2 NOT NULL CONSTRAINT DF_CancellationRequests_RequestedAt DEFAULT SYSDATETIME(),
+        RequestedAt DATETIME2 NOT NULL CONSTRAINT DF_CancellationRequests_RequestedAt DEFAULT CONVERT(datetime2, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time'),
         ResolvedByStaffID INT NULL,
         ResolvedAt DATETIME2 NULL,
         ResolutionNotes NVARCHAR(1000) NULL,

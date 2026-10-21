@@ -12,7 +12,7 @@ BEGIN
         ScheduledExitAt DATETIMEOFFSET NOT NULL,
         Purpose NVARCHAR(255) NOT NULL,
         Status VARCHAR(20) NOT NULL CONSTRAINT DF_VisitRegistrations_Status DEFAULT 'Pending',
-        RequestedAt DATETIME2 NOT NULL CONSTRAINT DF_VisitRegistrations_RequestedAt DEFAULT SYSDATETIME(),
+        RequestedAt DATETIME2 NOT NULL CONSTRAINT DF_VisitRegistrations_RequestedAt DEFAULT CONVERT(datetime2, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time'),
         ReviewedByStaffID INT NULL,
         ReviewedAt DATETIME2 NULL,
         ReviewNotes NVARCHAR(500) NULL,

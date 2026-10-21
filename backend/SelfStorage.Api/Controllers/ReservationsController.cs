@@ -122,7 +122,7 @@ public class ReservationsController(
             ?? throw AppException.NotFound("Không tìm thấy đơn đặt kho");
         if (reservation.Status != ReservationStatus.Confirmed)
             throw AppException.Conflict("Chỉ đơn đã xác nhận đặt cọc mới được đặt lịch nhận kho");
-        var appointmentLocal = req.AppointmentAt.ToLocalTime().DateTime;
+        var appointmentLocal = TimeZoneInfo.ConvertTime(req.AppointmentAt, clock.LocalTimeZone).DateTime;
         if (req.AppointmentAt <= clock.GetUtcNow()
             || DateOnly.FromDateTime(appointmentLocal) != reservation.ExpectedStartDate
             || TimeOnly.FromDateTime(appointmentLocal) >= new TimeOnly(20, 0))
@@ -232,8 +232,12 @@ public class ReservationsController(
     public async Task<List<ReservationDto>> ForFacility(int facilityId, [FromQuery] string? status, CancellationToken ct)
     {
         await access.EnsureAssignedAsync(User.GetUserId(), facilityId, ct);
+        var normalizedStatus = ReservationStatus.Normalize(status);
+        if (!string.IsNullOrWhiteSpace(status) && normalizedStatus is null)
+            throw AppException.BadRequest("Trạng thái đơn đặt kho không hợp lệ");
+
         var q = db.Reservations.Where(r => r.FacilityId == facilityId);
-        if (!string.IsNullOrEmpty(status)) q = q.Where(r => r.Status == status);
+        if (normalizedStatus is not null) q = q.Where(r => r.Status == normalizedStatus);
         return await Project(q.OrderBy(r => r.ExpectedStartDate)).ToListAsync(ct);
     }
 

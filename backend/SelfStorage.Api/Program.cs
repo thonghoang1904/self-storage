@@ -19,7 +19,8 @@ builder.Services.AddDbContext<SelfStorageDbContext>(o =>
     o.UseSqlServer(builder.Configuration.GetConnectionString("SelfStorageDB")));
 
 // ---- Services ----
-builder.Services.AddSingleton(TimeProvider.System);
+var businessTimeZone = TimeZoneInfo.FindSystemTimeZoneById(BusinessTimeProvider.VietnamTimeZoneId);
+builder.Services.AddSingleton<TimeProvider>(new BusinessTimeProvider(businessTimeZone));
 builder.Services.AddSingleton<DevelopmentDatabaseBootstrapper>();
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<GoogleAuthOptions>(builder.Configuration.GetSection(GoogleAuthOptions.SectionName));

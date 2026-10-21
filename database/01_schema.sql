@@ -66,7 +66,7 @@ CREATE TABLE Users (
     CitizenID VARCHAR(25) NULL CONSTRAINT UQ_Users_CitizenID UNIQUE,
     Address NVARCHAR(255) NULL,
     Status VARCHAR(20) NOT NULL CONSTRAINT DF_Users_Status DEFAULT 'Active',
-    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Users_CreatedAt DEFAULT SYSDATETIME(),
+    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Users_CreatedAt DEFAULT CONVERT(datetime2, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time'),
     UpdatedAt DATETIME2 NULL,
     CONSTRAINT FK_Users_Roles FOREIGN KEY (RoleID) REFERENCES Roles(RoleID),
     CONSTRAINT CK_Users_Status CHECK (Status IN ('Active', 'Inactive', 'Suspended'))
@@ -84,7 +84,7 @@ CREATE TABLE ActivityLogs (
     Action NVARCHAR(100) NOT NULL,
     IPAddress VARCHAR(45) NULL,
     Details NVARCHAR(MAX) NULL,
-    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_ActivityLogs_CreatedAt DEFAULT SYSDATETIME(),
+    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_ActivityLogs_CreatedAt DEFAULT CONVERT(datetime2, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time'),
     CONSTRAINT FK_ActivityLogs_Users FOREIGN KEY (UserID) REFERENCES Users(UserID) ON DELETE SET NULL
 );
 GO
@@ -102,7 +102,7 @@ CREATE TABLE Facilities (
     Hotline VARCHAR(20) NOT NULL,
     OperatingHours NVARCHAR(100) NOT NULL CONSTRAINT DF_Facilities_OperatingHours DEFAULT N'24/7 Access',
     Status VARCHAR(20) NOT NULL CONSTRAINT DF_Facilities_Status DEFAULT 'Active',
-    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Facilities_CreatedAt DEFAULT SYSDATETIME(),
+    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Facilities_CreatedAt DEFAULT CONVERT(datetime2, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time'),
     CONSTRAINT CK_Facilities_Status CHECK (Status IN ('Active', 'Maintenance', 'Closed'))
 );
 GO
@@ -111,7 +111,7 @@ CREATE TABLE FacilityStaffAssignments (
     AssignmentID INT IDENTITY(1,1) CONSTRAINT PK_FacilityStaffAssignments PRIMARY KEY,
     FacilityID INT NOT NULL,
     StaffID INT NOT NULL,
-    AssignedDate DATE NOT NULL CONSTRAINT DF_StaffAssign_Date DEFAULT CAST(SYSDATETIME() AS DATE),
+    AssignedDate DATE NOT NULL CONSTRAINT DF_StaffAssign_Date DEFAULT CONVERT(date, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time'),
     Status VARCHAR(20) NOT NULL CONSTRAINT DF_StaffAssign_Status DEFAULT 'Active',
     CONSTRAINT FK_StaffAssign_Facilities FOREIGN KEY (FacilityID) REFERENCES Facilities(FacilityID),
     CONSTRAINT FK_StaffAssign_Users FOREIGN KEY (StaffID) REFERENCES Users(UserID),
@@ -144,7 +144,7 @@ CREATE TABLE StorageUnits (
     MonthlyPrice DECIMAL(18,2) NOT NULL CONSTRAINT CK_StorageUnits_MonthlyPrice CHECK (MonthlyPrice >= 0),
     SmartLockCode VARCHAR(100) NULL,
     Status VARCHAR(30) NOT NULL CONSTRAINT DF_StorageUnits_Status DEFAULT 'Available',
-    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_StorageUnits_CreatedAt DEFAULT SYSDATETIME(),
+    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_StorageUnits_CreatedAt DEFAULT CONVERT(datetime2, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time'),
     CONSTRAINT FK_StorageUnits_Facilities FOREIGN KEY (FacilityID) REFERENCES Facilities(FacilityID),
     CONSTRAINT FK_StorageUnits_UnitTypes FOREIGN KEY (UnitTypeID) REFERENCES UnitTypes(UnitTypeID),
     CONSTRAINT UQ_Facility_UnitCode UNIQUE (FacilityID, UnitCode),
@@ -216,7 +216,7 @@ CREATE TABLE Reservations (
     EstimatedTotalFee DECIMAL(18,2) NOT NULL,
     Status VARCHAR(25) NOT NULL CONSTRAINT DF_Reservations_Status DEFAULT 'PendingDeposit',
     DepositDeadline DATETIME2 NOT NULL,
-    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Reservations_CreatedAt DEFAULT SYSDATETIME(),
+    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Reservations_CreatedAt DEFAULT CONVERT(datetime2, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time'),
     CONSTRAINT FK_Reservations_Customers FOREIGN KEY (CustomerID) REFERENCES Users(UserID),
     CONSTRAINT FK_Reservations_Facilities FOREIGN KEY (FacilityID) REFERENCES Facilities(FacilityID),
     CONSTRAINT FK_Reservations_UnitTypes FOREIGN KEY (UnitTypeID) REFERENCES UnitTypes(UnitTypeID),
@@ -233,7 +233,7 @@ CREATE TABLE ReservationCancellationRequests (
     CustomerID INT NOT NULL,
     Reason NVARCHAR(1000) NOT NULL,
     Status VARCHAR(20) NOT NULL CONSTRAINT DF_CancellationRequests_Status DEFAULT 'Pending',
-    RequestedAt DATETIME2 NOT NULL CONSTRAINT DF_CancellationRequests_RequestedAt DEFAULT SYSDATETIME(),
+    RequestedAt DATETIME2 NOT NULL CONSTRAINT DF_CancellationRequests_RequestedAt DEFAULT CONVERT(datetime2, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time'),
     ResolvedByStaffID INT NULL,
     ResolvedAt DATETIME2 NULL,
     ResolutionNotes NVARCHAR(1000) NULL,
@@ -261,7 +261,7 @@ CREATE TABLE Contracts (
     MonthlyRentFee DECIMAL(18,2) NOT NULL CONSTRAINT CK_Contracts_MonthlyRent CHECK (MonthlyRentFee >= 0),
     DepositPaid DECIMAL(18,2) NOT NULL CONSTRAINT CK_Contracts_Deposit CHECK (DepositPaid >= 0),
     Status VARCHAR(25) NOT NULL CONSTRAINT DF_Contracts_Status DEFAULT 'Active',
-    SignedDate DATETIME2 NOT NULL CONSTRAINT DF_Contracts_SignedDate DEFAULT SYSDATETIME(),
+    SignedDate DATETIME2 NOT NULL CONSTRAINT DF_Contracts_SignedDate DEFAULT CONVERT(datetime2, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time'),
     TermsConditions NVARCHAR(MAX) NULL,
     CONSTRAINT FK_Contracts_Reservations FOREIGN KEY (ReservationID) REFERENCES Reservations(ReservationID),
     CONSTRAINT FK_Contracts_Customers FOREIGN KEY (CustomerID) REFERENCES Users(UserID),
@@ -280,7 +280,7 @@ CREATE TABLE HandoverRecords (
     ContractID INT NOT NULL,
     StaffID INT NOT NULL,
     HandoverType VARCHAR(20) NOT NULL,
-    HandoverDateTime DATETIME2 NOT NULL CONSTRAINT DF_Handover_Time DEFAULT SYSDATETIME(),
+    HandoverDateTime DATETIME2 NOT NULL CONSTRAINT DF_Handover_Time DEFAULT CONVERT(datetime2, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time'),
     PhysicalKeyCount INT NOT NULL CONSTRAINT DF_Handover_Keys DEFAULT 1,
     AccessCardCode VARCHAR(50) NULL,
     PasscodeActivated VARCHAR(50) NULL,
@@ -302,7 +302,7 @@ CREATE TABLE ContractRenewals (
     ExtensionMonths INT NOT NULL CONSTRAINT CK_Renewals_Months CHECK (ExtensionMonths > 0),
     RenewalFee DECIMAL(18,2) NOT NULL CONSTRAINT CK_Renewals_Fee CHECK (RenewalFee >= 0),
     Status VARCHAR(20) NOT NULL CONSTRAINT DF_Renewals_Status DEFAULT 'Pending',
-    RequestedAt DATETIME2 NOT NULL CONSTRAINT DF_Renewals_ReqAt DEFAULT SYSDATETIME(),
+    RequestedAt DATETIME2 NOT NULL CONSTRAINT DF_Renewals_ReqAt DEFAULT CONVERT(datetime2, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time'),
     ProcessedAt DATETIME2 NULL,
     CONSTRAINT FK_Renewals_Contracts FOREIGN KEY (ContractID) REFERENCES Contracts(ContractID),
     CONSTRAINT FK_Renewals_Staff FOREIGN KEY (ApprovedByStaffID) REFERENCES Users(UserID),
@@ -341,7 +341,7 @@ CREATE TABLE AuthorizedPersons (
     CitizenID VARCHAR(25) NOT NULL,          -- staff checks this ID at the facility
     Relationship NVARCHAR(50) NULL,
     Status VARCHAR(20) NOT NULL CONSTRAINT DF_AuthPersons_Status DEFAULT 'Active',
-    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_AuthPersons_CreatedAt DEFAULT SYSDATETIME(),
+    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_AuthPersons_CreatedAt DEFAULT CONVERT(datetime2, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time'),
     RevokedAt DATETIME2 NULL,
     CONSTRAINT FK_AuthPersons_Contracts FOREIGN KEY (ContractID) REFERENCES Contracts(ContractID),
     CONSTRAINT CK_AuthPersons_Status CHECK (Status IN ('Active', 'Revoked')),
@@ -362,7 +362,7 @@ CREATE TABLE AccessRecords (
     Result VARCHAR(10) NOT NULL,
     DenyReason VARCHAR(30) NULL,
     Purpose NVARCHAR(255) NULL,              -- e.g. store items, take items out, inspect
-    EntryTime DATETIME2 NOT NULL CONSTRAINT DF_AccessRec_Entry DEFAULT SYSDATETIME(),
+    EntryTime DATETIME2 NOT NULL CONSTRAINT DF_AccessRec_Entry DEFAULT CONVERT(datetime2, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time'),
     ExitTime DATETIME2 NULL,                 -- NULL = visitor is still inside
     ExitConfirmedByStaffID INT NULL,
     Notes NVARCHAR(500) NULL,
@@ -401,7 +401,7 @@ CREATE TABLE Invoices (
     BillingPeriodStart DATE NULL,
     BillingPeriodEnd DATE NULL,
     Status VARCHAR(20) NOT NULL CONSTRAINT DF_Invoices_Status DEFAULT 'Unpaid',
-    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Invoices_CreatedAt DEFAULT SYSDATETIME(),
+    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Invoices_CreatedAt DEFAULT CONVERT(datetime2, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time'),
     CONSTRAINT FK_Invoices_Contracts FOREIGN KEY (ContractID) REFERENCES Contracts(ContractID),
     CONSTRAINT FK_Invoices_Customers FOREIGN KEY (CustomerID) REFERENCES Users(UserID),
     CONSTRAINT CK_Invoices_Type CHECK (InvoiceType IN ('DEPOSIT', 'MONTHLY_RENT', 'RENEWAL', 'OVERDUE_FINE', 'EXTRA_CHARGE')),
@@ -434,7 +434,7 @@ CREATE TABLE Payments (
     PaymentMethod VARCHAR(30) NOT NULL,
     TransactionCode VARCHAR(100) NULL,
     AmountPaid DECIMAL(18,2) NOT NULL CONSTRAINT CK_Payments_Amount CHECK (AmountPaid > 0),
-    PaymentDate DATETIME2 NOT NULL CONSTRAINT DF_Payments_Date DEFAULT SYSDATETIME(),
+    PaymentDate DATETIME2 NOT NULL CONSTRAINT DF_Payments_Date DEFAULT CONVERT(datetime2, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time'),
     Status VARCHAR(20) NOT NULL CONSTRAINT DF_Payments_Status DEFAULT 'Success',
     PaymentNotes NVARCHAR(255) NULL,
     GatewayPaymentUrl NVARCHAR(2048) NULL,
@@ -482,7 +482,7 @@ CREATE TABLE SupportRequests (
     Title NVARCHAR(200) NOT NULL,
     Description NVARCHAR(MAX) NOT NULL,
     Status VARCHAR(25) NOT NULL CONSTRAINT DF_Support_Status DEFAULT 'Open',
-    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Support_CreatedAt DEFAULT SYSDATETIME(),
+    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Support_CreatedAt DEFAULT CONVERT(datetime2, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time'),
     ResolvedAt DATETIME2 NULL,
     CONSTRAINT FK_Support_Customers FOREIGN KEY (CustomerID) REFERENCES Users(UserID),
     CONSTRAINT FK_Support_Facilities FOREIGN KEY (FacilityID) REFERENCES Facilities(FacilityID),
@@ -502,7 +502,7 @@ CREATE TABLE SupportUpdates (
     ActionMessage NVARCHAR(MAX) NOT NULL,
     PreviousStatus VARCHAR(25) NULL,
     NewStatus VARCHAR(25) NULL,
-    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_SupportUpdates_Time DEFAULT SYSDATETIME(),
+    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_SupportUpdates_Time DEFAULT CONVERT(datetime2, SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'SE Asia Standard Time'),
     CONSTRAINT FK_SupportUpdates_Requests FOREIGN KEY (RequestID) REFERENCES SupportRequests(RequestID) ON DELETE CASCADE,
     CONSTRAINT FK_SupportUpdates_Users FOREIGN KEY (UpdatedByUserID) REFERENCES Users(UserID)
 );

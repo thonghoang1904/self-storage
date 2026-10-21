@@ -30,6 +30,24 @@ public static class ReservationStatus
     public const string CheckedIn = "CheckedIn";
     public const string Cancelled = "Cancelled";
     public const string Expired = "Expired";
+
+    private static readonly string[] All =
+    [
+        PendingDeposit,
+        Confirmed,
+        CheckedIn,
+        Cancelled,
+        Expired,
+    ];
+
+    public static string? Normalize(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+            return null;
+
+        return All.FirstOrDefault(value =>
+            string.Equals(value, status.Trim(), StringComparison.OrdinalIgnoreCase));
+    }
 }
 
 public static class ContractStatus
