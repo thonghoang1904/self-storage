@@ -26,6 +26,7 @@ import StaffReturn from './pages/StaffReturn'
 import StaffReservations from './pages/StaffReservations'
 import StaffSupport from './pages/StaffSupport'
 import Support from './pages/Support'
+import TermsPage from './pages/Terms'
 import VisitRegistrationPage from './pages/VisitRegistration'
 import { GATE_ROLES, homeFor, Roles } from './types'
 
@@ -50,6 +51,7 @@ export default function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route element={<PortalLayout />}>
             <Route path="/" element={<Home />} />
+            <Route path="/terms" element={<TermsPage />} />
             <Route path="/my-units" element={<RequireRole roles={[Roles.Customer]}><MyUnits /></RequireRole>} />
             <Route path="/my-units/:id" element={<RequireRole roles={[Roles.Customer]}><ContractDetail /></RequireRole>} />
             <Route path="/my-units/:id/visit" element={<RequireRole roles={[Roles.Customer]}><VisitRegistrationPage /></RequireRole>} />

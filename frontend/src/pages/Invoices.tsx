@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { api, fmtDate, fmtMoney } from '../api'
+import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { QrCode } from '../components/qr'
 import { Icon, StatusBadge } from '../components/ui'
 import type { CheckoutResponse, Invoice } from '../types'
@@ -16,6 +16,13 @@ export default function Invoices() {
   const [momo, setMomo] = useState<{ invoiceId: number; checkout: CheckoutResponse } | null>(null)
   const [searchParams] = useSearchParams()
   const returnedFromGateway = searchParams.get('paymentReturn') === '1'
+  // Arrived from the rent page right after agreeing to the terms: put that deposit invoice first.
+  const newReservationId = Number(searchParams.get('reservation')) || null
+  const newCode = searchParams.get('code')
+  const deadline = searchParams.get('deadline')
+  const ordered = newReservationId
+    ? [...invoices.filter((i) => i.reservationId === newReservationId && i.invoiceType === 'DEPOSIT'), ...invoices.filter((i) => !(i.reservationId === newReservationId && i.invoiceType === 'DEPOSIT'))]
+    : invoices
 
   const load = async () => {
     setError('')
@@ -77,6 +84,15 @@ export default function Invoices() {
         <h2 className="section-title">Hóa đơn của tôi</h2>
         <button className="btn outline sm" onClick={() => void load()} disabled={loading}>Làm mới</button>
       </div>
+      {newCode && (
+        <div className="success-panel">
+          <span className="success-icon"><Icon name="check" size={22} /></span>
+          <div className="grow">
+            <h3>Đã đồng ý điều khoản & giữ chỗ · {newCode}</h3>
+            <p>Bước cuối: thanh toán tiền cọc bên dưới{deadline && <> trước <b>{fmtTime(deadline)}</b></>} qua VNPay, MoMo hoặc tại quầy. Sau khi cọc được xác nhận, đặt lịch nhận kho ở mục Thuê Kho.</p>
+          </div>
+        </div>
+      )}
       {returnedFromGateway && (
         <p className="alert ok">
           Đã quay lại từ cổng thanh toán. Trạng thái cuối cùng được cập nhật qua IPN; hãy làm mới nếu hóa đơn vẫn đang chờ.
@@ -86,10 +102,10 @@ export default function Invoices() {
       {loading && <p className="muted">Đang tải hóa đơn…</p>}
       {!loading && invoices.length === 0 && <p className="muted">Bạn chưa có hóa đơn.</p>}
       <div className="stack">
-        {invoices.map((invoice) => {
+        {ordered.map((invoice) => {
           const payable = invoice.status === 'Unpaid' || invoice.status === 'Overdue'
           return (
-            <section className="panel" key={invoice.invoiceId}>
+            <section className={`panel ${newReservationId && invoice.reservationId === newReservationId && invoice.invoiceType === 'DEPOSIT' ? 'highlight' : ''}`} key={invoice.invoiceId}>
               <div className="row between wrap">
                 <div>
                   <h3>{invoice.invoiceNumber} · {invoiceTypeName(invoice.invoiceType)}</h3>

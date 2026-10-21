@@ -1,13 +1,23 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
 import { AppointmentPicker } from '../components/appointment'
 import { Empty, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
+import { TermsList, TERMS_VERSION } from './Terms'
 import { CancellationStatuses, type Availability, type CancellationRequest, type Facility, type Reservation, type UnitType } from '../types'
 
 const DURATIONS = [1, 3, 6, 12]
+const SIGN_KEY = 'ss_signed_contracts'
+interface SignedRecord { at: string; version: string }
+/** Acceptance stays in this browser only: the API has no endpoint to store it. */
+const readSigned = (): Record<string, SignedRecord> => {
+  try { return JSON.parse(localStorage.getItem(SIGN_KEY) ?? '{}') as Record<string, SignedRecord> } catch { return {} }
+}
+const saveSigned = (code: string, rec: SignedRecord) => {
+  try { localStorage.setItem(SIGN_KEY, JSON.stringify({ ...readSigned(), [code]: rec })) } catch { /* private mode */ }
+}
 const todayIso = () => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -26,11 +36,15 @@ export default function Rent() {
   const [months, setMonths] = useState(6)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [created, setCreated] = useState<Reservation | null>(null)
   const [promoCode, setPromoCode] = useState('')
   /** Latest cancellation request of each reservation that can still have one. */
   const [cancellations, setCancellations] = useState<Record<number, CancellationRequest | undefined>>({})
   const [cancelling, setCancelling] = useState<number | null>(null)
+  // Step 3: read the contract terms and agree before the reservation (and its deposit invoice) is created.
+  const [signing, setSigning] = useState(false)
+  const navigate = useNavigate()
+  const [agreed, setAgreed] = useState(false)
+  const signedList = readSigned()
 
   const loadReservations = () => api<Reservation[]>('/api/reservations/my').then((rs) => {
     setReservations(rs)
@@ -64,19 +78,26 @@ export default function Rent() {
   const selectedType = types.find((t) => t.unitTypeId === selectedId)
   const total = selected ? selected.baseMonthlyRate * months : 0
 
+  const signError = !agreed ? 'Vui lòng đọc và đồng ý với điều khoản hợp đồng' : ''
+
+  const openSigning = () => {
+    setError('')
+    setSigning(true)
+    setTimeout(() => document.getElementById('sign-contract')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }
+
   const reserve = async () => {
     if (!facilityId || !selected) return
+    if (signError) { setError(signError); return }
     setError('')
     setBusy(true)
     try {
       const r = await api<Reservation>('/api/reservations', {
         body: { facilityId, unitTypeId: selected.unitTypeId, expectedStartDate: startDate, durationMonths: months, promoCode: promoCode.trim() || null },
       })
-      setCreated(r)
-      setPromoCode('')
-      void loadReservations()
-      setAvailability(await api<Availability[]>(`/api/facilities/${facilityId}/availability`))
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      saveSigned(r.reservationCode, { at: new Date().toISOString(), version: TERMS_VERSION })
+      // Agreed and reserved: go straight to paying the deposit.
+      navigate(`/invoices?reservation=${r.reservationId}&code=${encodeURIComponent(r.reservationCode)}&deadline=${encodeURIComponent(r.depositDeadline)}`)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -86,32 +107,18 @@ export default function Rent() {
 
   return (
     <>
-      <PageHero center eyebrow="Đặt kho nhanh chóng · chỉ trong 3 bước" title="Đặt Kho Lưu Trữ SafeKeep">
-        Chọn cơ sở và kích thước kho, giữ chỗ ngay hôm nay. Đơn được giữ 24 giờ để bạn đến cơ sở đặt cọc.
+      <PageHero center eyebrow="Đặt kho nhanh chóng · chỉ trong 4 bước" title="Đặt Kho Lưu Trữ SafeKeep">
+        Chọn cơ sở và kích thước kho, đồng ý điều khoản hợp đồng rồi thanh toán cọc. Đơn được giữ 24 giờ để bạn đặt cọc.
       </PageHero>
 
       <div className="container page-body">
-        {created && (
-          <div className="success-panel">
-            <span className="success-icon"><Icon name="check" size={22} /></span>
-            <div className="grow">
-              <h3>Đã giữ chỗ thành công · {created.reservationCode}</h3>
-              <p>
-                {splitTypeName(created.unitTypeName).name} tại {created.facilityName}, bắt đầu {fmtDate(created.expectedStartDate)} trong {created.durationMonths} tháng.
-                {created.promoCode && <> Mã <b>{created.promoCode}</b> đã áp dụng, giảm <b>{fmtMoney(created.promotionDiscountAmount ?? 0)}</b> vào tiền thuê tháng đầu.</>}
-                {' '}Vui lòng đặt cọc <b>{fmtMoney(created.depositAmount)}</b> trước <b>{fmtTime(created.depositDeadline)}</b> — thanh toán online ở <Link to="/invoices" className="link">Hóa Đơn</Link> hoặc tại quầy. Sau khi cọc được xác nhận, hãy đặt lịch nhận kho ở bảng bên dưới để nhân viên bàn giao.
-              </p>
-            </div>
-            <button className="icon-btn" aria-label="Đóng" onClick={() => setCreated(null)}><Icon name="x" /></button>
-          </div>
-        )}
-
         <div className="checkout-grid">
           <div className="stack-xl">
             <ol className="stepper">
               <li className="active"><span>1</span><div><small>Bước 1</small><b>Chọn kho</b></div></li>
               <li className={selected ? 'active' : ''}><span>2</span><div><small>Bước 2</small><b>Thời gian thuê</b></div></li>
-              <li className={created ? 'active' : ''}><span>3</span><div><small>Bước 3</small><b>Giữ chỗ & đặt cọc</b></div></li>
+              <li className={signing ? 'active' : ''}><span>3</span><div><small>Bước 3</small><b>Điều khoản</b></div></li>
+              <li><span>4</span><div><small>Bước 4</small><b>Thanh toán cọc</b></div></li>
             </ol>
 
             <section className="stack">
@@ -215,11 +222,55 @@ export default function Rent() {
             </label>
             <div className="summary-total"><span>Tạm Tính</span><b>{fmtMoney(total)}</b></div>
             {promoCode.trim() && <p className="fine-print">Mã chỉ dành cho lần thuê đầu tiên; mức giảm được trừ vào tiền thuê tháng đầu và hiện sau khi giữ chỗ.</p>}
-            {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
-            <button className="btn primary block lg" disabled={!selected || busy} onClick={reserve}>{busy ? 'Đang giữ chỗ…' : 'Giữ Chỗ Ngay'}</button>
+            {error && !signing && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+            <button className="btn primary block lg" disabled={!selected || busy || signing} onClick={openSigning}>
+              {signing ? 'Xem điều khoản bên dưới ↓' : 'Tiếp Tục: Điều Khoản Hợp Đồng'}
+            </button>
             <p className="fine-print">Đơn được giữ 24 giờ. Muốn đổi ý, bạn gửi yêu cầu hủy ở bảng đơn đặt kho; cọc được hoàn sau khi trừ phí hủy theo chính sách.</p>
           </aside>
         </div>
+
+        {signing && selected && (
+          <section className="panel sign-panel" id="sign-contract">
+            <div className="panel-head wrap">
+              <div>
+                <h2 className="section-title">Bước 3: Điều Khoản Hợp Đồng Thuê Kho</h2>
+                <p className="muted">Đọc điều khoản và tick đồng ý. Sau đó đơn được giữ chỗ và bạn chuyển sang thanh toán cọc.</p>
+              </div>
+              <button type="button" className="icon-btn" aria-label="Đóng" onClick={() => { setSigning(false); setError('') }}><Icon name="x" /></button>
+            </div>
+            <div className="sign-grid">
+              <div className="stack">
+                <dl className="kv-grid contract-summary">
+                  <div><dt>Bên thuê</dt><dd>{user?.fullName}</dd></div>
+                  <div><dt>Tài khoản</dt><dd>{user?.username}</dd></div>
+                  <div><dt>Cơ sở</dt><dd>{facility?.facilityName}</dd></div>
+                  <div><dt>Loại kho</dt><dd>{splitTypeName(selected.typeName).name}</dd></div>
+                  <div><dt>Bắt đầu</dt><dd>{fmtDate(startDate)}</dd></div>
+                  <div><dt>Thời hạn</dt><dd>{months} tháng</dd></div>
+                  <div><dt>Giá thuê</dt><dd>{fmtMoney(selected.baseMonthlyRate)}/tháng</dd></div>
+                  <div><dt>Tiền cọc dự kiến</dt><dd>{fmtMoney(selected.baseMonthlyRate)}</dd></div>
+                  {promoCode.trim() && <div><dt>Mã khuyến mãi</dt><dd>{promoCode.trim()}</dd></div>}
+                </dl>
+                <div className="terms-box" tabIndex={0} aria-label="Điều khoản hợp đồng">
+                  <TermsList compact />
+                </div>
+                <Link to="/terms" target="_blank" className="link">Mở trang điều khoản đầy đủ <Icon name="arrowRight" size={14} /></Link>
+              </div>
+              <div className="stack sign-side">
+                <label className="check-row">
+                  <input type="checkbox" checked={agreed} onChange={(e) => { setAgreed(e.target.checked); setError('') }} />
+                  <span>Tôi đã đọc, hiểu và đồng ý với <b>Điều khoản & Chính sách Hợp đồng</b> (phiên bản {TERMS_VERSION}), gồm quy định đặt cọc, hủy đơn, trả kho và phí quá hạn.</span>
+                </label>
+                <small className="muted">Hợp đồng chính thức được lập khi nhân viên bàn giao kho, theo đúng các điều khoản bạn đã đồng ý.</small>
+                {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+                <button className="btn primary block lg" disabled={busy} onClick={reserve}>
+                  {busy ? 'Đang giữ chỗ…' : 'Đồng Ý & Giữ Chỗ'}
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
 
         <section className="stack" id="my-reservations">
           <div className="row between">
@@ -236,7 +287,7 @@ export default function Rent() {
                   return (
                   <Fragment key={r.reservationId}>
                   <tr>
-                    <td className="code">{r.reservationCode}</td>
+                    <td className="code">{r.reservationCode}{signedList[r.reservationCode] && <><br /><small className="ok-text">Đã đồng ý ĐK {fmtDate(signedList[r.reservationCode].at)}</small></>}</td>
                     <td>{r.facilityName}<br /><small className="muted">{splitTypeName(r.unitTypeName).name}{r.assignedUnitCode && ` · kho ${r.assignedUnitCode}`}</small></td>
                     <td>{fmtDate(r.expectedStartDate)}<br /><small className="muted">{r.durationMonths} tháng</small></td>
                     <td className="money">{fmtMoney(r.depositAmount)}{r.promoCode && <><br /><small className="ok-text">Mã {r.promoCode} · −{fmtMoney(r.promotionDiscountAmount ?? 0)}</small></>}</td>

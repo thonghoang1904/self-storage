@@ -211,6 +211,7 @@ export default function ContractDetail() {
                 <li>Gửi yêu cầu gia hạn trong {noticeDays} ngày trước ngày hết hạn, từ {fmtDate(c.renewalAvailableFrom)}.</li>
                 <li>Trả kho trước 20:00 ngày {fmtDate(c.endDate)}. Quá 24 giờ, kho bị khóa và tính phí lưu kho mỗi ngày bằng phí tháng / 30, cấn trừ vào tiền cọc.</li>
                 <li>Ra vào kho bằng CCCD của chủ hợp đồng hoặc người được ủy quyền, nhân viên cổng đối chiếu mỗi lượt.</li>
+                <li><Link to="/terms" className="link">Xem toàn bộ điều khoản & chính sách hợp đồng</Link></li>
               </ul>
             )}
           </section>

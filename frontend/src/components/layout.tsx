@@ -98,6 +98,7 @@ export function Footer() {
           <Link to="/my-units">Kho của tôi</Link>
           <Link to="/support">Hỗ trợ</Link>
           <Link to="/register">Đăng ký tài khoản</Link>
+          <Link to="/terms">Điều khoản hợp đồng</Link>
         </div>
         <div>
           <h4>Ra vào kho</h4>
