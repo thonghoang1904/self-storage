@@ -319,14 +319,14 @@ export function AdminLayout() {
 export function OpsLayout() {
   return (
     <ConsoleLayout
-      titles={{ '/ops/facilities': 'Quản Lý Cơ Sở', '/ops/policies': 'Chính Sách & Giá' }}
+      titles={{ '/ops/facilities': 'Quản Lý Cơ Sở', '/ops/policies': 'Chính Sách & Giá', '/ops/revenue': 'Doanh Thu' }}
       nav={[
         { icon: 'grid', label: 'Tổng Quan' },
         { icon: 'package', label: 'Vận Hành Kho' },
         { icon: 'users', label: 'Khách Hàng' },
         { icon: 'phone', label: 'Hỗ Trợ' },
         { icon: 'building', label: 'Cơ Sở', to: '/ops/facilities' },
-        { icon: 'chart', label: 'Doanh Thu' },
+        { icon: 'chart', label: 'Doanh Thu', to: '/ops/revenue' },
         { icon: 'file', label: 'Chính Sách', to: '/ops/policies' },
         { icon: 'settings', label: 'Cài Đặt' },
       ]}

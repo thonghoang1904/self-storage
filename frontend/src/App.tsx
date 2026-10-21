@@ -6,6 +6,7 @@ import { AdminLayout, OpsLayout, PortalLayout, StaffLayout } from './components/
 import AdminUsers from './pages/AdminUsers'
 import OpsFacilities from './pages/OpsFacilities'
 import OpsPolicies from './pages/OpsPolicies'
+import OpsRevenue from './pages/OpsRevenue'
 import FacilityContracts from './pages/FacilityContracts'
 import FacilityOverview from './pages/FacilityOverview'
 import FacilityStaffPage from './pages/FacilityStaffPage'
@@ -76,6 +77,7 @@ export default function App() {
           <Route element={<RequireRole roles={[Roles.OpsManager]}><OpsLayout /></RequireRole>}>
             <Route path="/ops/facilities" element={<OpsFacilities />} />
             <Route path="/ops/policies" element={<OpsPolicies />} />
+            <Route path="/ops/revenue" element={<OpsRevenue />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
