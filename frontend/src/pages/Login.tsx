@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, IS_DEMO } from '../api'
 import { useAuth } from '../auth'
@@ -65,8 +65,74 @@ export function PasswordInput({ value, onChange, placeholder, autoComplete }: { 
   )
 }
 
+/** Google OAuth client ID, same value as Google:ClientId in the backend appsettings. Empty: the button is hidden. */
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? ''
+
+interface GoogleIdApi {
+  initialize: (o: { client_id: string; callback: (r: { credential: string }) => void }) => void
+  renderButton: (el: HTMLElement, o: Record<string, unknown>) => void
+}
+declare global { interface Window { google?: { accounts: { id: GoogleIdApi } } } }
+
+let gisScript: Promise<void> | null = null
+const loadGoogleScript = () => (gisScript ??= new Promise<void>((resolve, reject) => {
+  const s = document.createElement('script')
+  s.src = 'https://accounts.google.com/gsi/client'
+  s.async = true
+  s.onload = () => resolve()
+  s.onerror = () => { gisScript = null; reject(new Error('Không tải được Google Sign-In, kiểm tra kết nối mạng.')) }
+  document.head.appendChild(s)
+}))
+
+/**
+ * "Đăng nhập với Google" (POST /api/auth/google with the ID token from Google Identity Services).
+ * The backend only signs in an existing active account whose email matches the Google account; it does not create one.
+ * Demo mode has no Google: the button signs in customer1 with a stand-in token.
+ */
+function GoogleSignIn({ busy, onToken }: { busy: boolean; onToken: (idToken: string) => void }) {
+  const box = useRef<HTMLDivElement>(null)
+  const [error, setError] = useState('')
+  const handler = useRef(onToken)
+  handler.current = onToken
+
+  useEffect(() => {
+    if (IS_DEMO || !GOOGLE_CLIENT_ID) return
+    let cancelled = false
+    loadGoogleScript().then(() => {
+      if (cancelled || !box.current || !window.google) return
+      window.google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: (r) => handler.current(r.credential) })
+      window.google.accounts.id.renderButton(box.current, { theme: 'outline', size: 'large', text: 'signin_with', shape: 'rectangular', width: 360, locale: 'vi' })
+    }).catch((e) => setError((e as Error).message))
+    return () => { cancelled = true }
+  }, [])
+
+  if (!IS_DEMO && !GOOGLE_CLIENT_ID) return null
+  return (
+    <div className="stack-sm">
+      <div className="divider"><span>hoặc</span></div>
+      {IS_DEMO ? (
+        <button type="button" className="btn outline block lg google-btn" disabled={busy}
+          onClick={() => onToken(`demo-google|customer1@example.com|${'x'.repeat(120)}`)}>
+          <GoogleMark /> Đăng nhập với Google
+        </button>
+      ) : <div ref={box} className="google-btn-box" />}
+      {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+      <small className="muted center">Dùng Gmail đã đăng ký tài khoản SafeKeep.{IS_DEMO && ' Bản demo đăng nhập vào customer1.'}</small>
+    </div>
+  )
+}
+
+const GoogleMark = () => (
+  <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+    <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z" />
+    <path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" />
+    <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z" />
+    <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z" />
+  </svg>
+)
+
 export function Login() {
-  const { login } = useAuth()
+  const { login, loginWithGoogle } = useAuth()
   const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -91,6 +157,19 @@ export function Login() {
     void signIn(username, password)
   }
 
+  const signInWithGoogle = async (idToken: string) => {
+    setError('')
+    setBusy(true)
+    try {
+      const user = await loginWithGoogle(idToken)
+      navigate(homeFor(user.role))
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <AuthShell title="Đăng Nhập" subtitle="Chào mừng bạn trở lại!">
       <form className="stack-lg" onSubmit={submit}>
@@ -104,6 +183,8 @@ export function Login() {
         {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
         <button className="btn primary block lg" type="submit" disabled={busy}>{busy ? 'Đang đăng nhập…' : 'Đăng Nhập'}</button>
       </form>
+
+      <GoogleSignIn busy={busy} onToken={(t) => void signInWithGoogle(t)} />
 
       {IS_DEMO && (
         <div className="demo-accounts">

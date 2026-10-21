@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
 import { AppointmentPicker } from '../components/appointment'
 import { Empty, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
-import type { Availability, Facility, Reservation, UnitType } from '../types'
+import { CancellationStatuses, type Availability, type CancellationRequest, type Facility, type Reservation, type UnitType } from '../types'
 
 const DURATIONS = [1, 3, 6, 12]
 const todayIso = () => {
@@ -27,8 +27,19 @@ export default function Rent() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [created, setCreated] = useState<Reservation | null>(null)
+  const [promoCode, setPromoCode] = useState('')
+  /** Latest cancellation request of each reservation that can still have one. */
+  const [cancellations, setCancellations] = useState<Record<number, CancellationRequest | undefined>>({})
+  const [cancelling, setCancelling] = useState<number | null>(null)
 
-  const loadReservations = () => api<Reservation[]>('/api/reservations/my').then(setReservations).catch(() => {})
+  const loadReservations = () => api<Reservation[]>('/api/reservations/my').then((rs) => {
+    setReservations(rs)
+    rs.filter((r) => ['PendingDeposit', 'Confirmed', 'Cancelled'].includes(r.status)).forEach((r) => {
+      api<CancellationRequest[]>(`/api/reservations/${r.reservationId}/cancellation-requests/my`)
+        .then((list) => setCancellations((m) => ({ ...m, [r.reservationId]: list[0] })))
+        .catch(() => {})
+    })
+  }).catch(() => {})
 
   useEffect(() => {
     api<UnitType[]>('/api/unit-types').then(setTypes).catch(() => {})
@@ -59,9 +70,10 @@ export default function Rent() {
     setBusy(true)
     try {
       const r = await api<Reservation>('/api/reservations', {
-        body: { facilityId, unitTypeId: selected.unitTypeId, expectedStartDate: startDate, durationMonths: months },
+        body: { facilityId, unitTypeId: selected.unitTypeId, expectedStartDate: startDate, durationMonths: months, promoCode: promoCode.trim() || null },
       })
       setCreated(r)
+      setPromoCode('')
       void loadReservations()
       setAvailability(await api<Availability[]>(`/api/facilities/${facilityId}/availability`))
       window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -86,7 +98,8 @@ export default function Rent() {
               <h3>Đã giữ chỗ thành công · {created.reservationCode}</h3>
               <p>
                 {splitTypeName(created.unitTypeName).name} tại {created.facilityName}, bắt đầu {fmtDate(created.expectedStartDate)} trong {created.durationMonths} tháng.
-                Vui lòng đặt cọc <b>{fmtMoney(created.depositAmount)}</b> trước <b>{fmtTime(created.depositDeadline)}</b> — thanh toán online ở <Link to="/invoices" className="link">Hóa Đơn</Link> hoặc tại quầy. Sau khi cọc được xác nhận, hãy đặt lịch nhận kho ở bảng bên dưới để nhân viên bàn giao.
+                {created.promoCode && <> Mã <b>{created.promoCode}</b> đã áp dụng, giảm <b>{fmtMoney(created.promotionDiscountAmount ?? 0)}</b> vào tiền thuê tháng đầu.</>}
+                {' '}Vui lòng đặt cọc <b>{fmtMoney(created.depositAmount)}</b> trước <b>{fmtTime(created.depositDeadline)}</b> — thanh toán online ở <Link to="/invoices" className="link">Hóa Đơn</Link> hoặc tại quầy. Sau khi cọc được xác nhận, hãy đặt lịch nhận kho ở bảng bên dưới để nhân viên bàn giao.
               </p>
             </div>
             <button className="icon-btn" aria-label="Đóng" onClick={() => setCreated(null)}><Icon name="x" /></button>
@@ -196,10 +209,15 @@ export default function Rent() {
               <div><dt>Bắt đầu từ</dt><dd>{fmtDate(startDate)}</dd></div>
               <div><dt>Tiền cọc (1 tháng)</dt><dd>{selected ? fmtMoney(selected.baseMonthlyRate) : '—'}</dd></div>
             </dl>
+            <label className="field compact promo-field">
+              <span>Mã khuyến mãi (nếu có)</span>
+              <input value={promoCode} onChange={(e) => setPromoCode(e.target.value.toUpperCase())} placeholder="vd: WELCOME10" maxLength={30} />
+            </label>
             <div className="summary-total"><span>Tạm Tính</span><b>{fmtMoney(total)}</b></div>
+            {promoCode.trim() && <p className="fine-print">Mã chỉ dành cho lần thuê đầu tiên; mức giảm được trừ vào tiền thuê tháng đầu và hiện sau khi giữ chỗ.</p>}
             {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
             <button className="btn primary block lg" disabled={!selected || busy} onClick={reserve}>{busy ? 'Đang giữ chỗ…' : 'Giữ Chỗ Ngay'}</button>
-            <p className="fine-print">Đơn được giữ 24 giờ. Thanh toán trực tuyến và khuyến mãi theo kỳ hạn chưa áp dụng ở phiên bản này.</p>
+            <p className="fine-print">Đơn được giữ 24 giờ. Muốn đổi ý, bạn gửi yêu cầu hủy ở bảng đơn đặt kho; cọc được hoàn sau khi trừ phí hủy theo chính sách.</p>
           </aside>
         </div>
 
@@ -210,20 +228,43 @@ export default function Rent() {
           </div>
           <div className="table-card">
             <table>
-              <thead><tr><th>Mã đơn</th><th>Cơ sở · loại kho</th><th>Bắt đầu</th><th>Tiền cọc</th><th>Hạn cọc</th><th>Lịch nhận kho</th><th>Trạng thái</th></tr></thead>
+              <thead><tr><th>Mã đơn</th><th>Cơ sở · loại kho</th><th>Bắt đầu</th><th>Tiền cọc</th><th>Hạn cọc</th><th>Lịch nhận kho</th><th>Trạng thái</th><th /></tr></thead>
               <tbody>
-                {reservations.map((r) => (
-                  <tr key={r.reservationId}>
+                {reservations.map((r) => {
+                  const cr = cancellations[r.reservationId]
+                  const canCancel = (r.status === 'PendingDeposit' || r.status === 'Confirmed') && cr?.status !== 'Pending'
+                  return (
+                  <Fragment key={r.reservationId}>
+                  <tr>
                     <td className="code">{r.reservationCode}</td>
                     <td>{r.facilityName}<br /><small className="muted">{splitTypeName(r.unitTypeName).name}{r.assignedUnitCode && ` · kho ${r.assignedUnitCode}`}</small></td>
                     <td>{fmtDate(r.expectedStartDate)}<br /><small className="muted">{r.durationMonths} tháng</small></td>
-                    <td className="money">{fmtMoney(r.depositAmount)}</td>
+                    <td className="money">{fmtMoney(r.depositAmount)}{r.promoCode && <><br /><small className="ok-text">Mã {r.promoCode} · −{fmtMoney(r.promotionDiscountAmount ?? 0)}</small></>}</td>
                     <td>{r.status === 'PendingDeposit' ? fmtTime(r.depositDeadline) : '—'}</td>
                     <td><AppointmentPicker reservation={r} operatingHours={facilities.find((f) => f.facilityName === r.facilityName)?.operatingHours}
                       onSaved={(u) => setReservations((rs) => rs.map((x) => (x.reservationId === u.reservationId ? u : x)))} /></td>
-                    <td><StatusBadge status={r.status} /></td>
+                    <td>
+                      <StatusBadge status={r.status} />
+                      {cr && <><br /><span className={`badge ${CancellationStatuses[cr.status]?.tone ?? 'muted'}`}>{CancellationStatuses[cr.status]?.label ?? cr.status}</span></>}
+                    </td>
+                    <td>
+                      {canCancel && cancelling !== r.reservationId && (
+                        <button type="button" className="link-btn danger-text" onClick={() => setCancelling(r.reservationId)}>Yêu cầu hủy</button>
+                      )}
+                    </td>
                   </tr>
-                ))}
+                  {(cancelling === r.reservationId || (cr && cr.status !== 'Pending')) && (
+                    <tr className="sub-row">
+                      <td colSpan={8}>
+                        {cancelling === r.reservationId
+                          ? <CancelForm reservation={r} onDone={(c) => { setCancelling(null); if (c) setCancellations((m) => ({ ...m, [r.reservationId]: c })) }} />
+                          : cr && <CancellationResult request={cr} />}
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
+                  )
+                })}
               </tbody>
             </table>
             {reservations.length === 0 && <Empty icon="clipboard">Chưa có đơn đặt kho nào.</Empty>}
@@ -231,5 +272,53 @@ export default function Rent() {
         </section>
       </div>
     </>
+  )
+}
+
+/** Reason form for POST /api/reservations/{id}/cancellation-requests. */
+function CancelForm({ reservation: r, onDone }: { reservation: Reservation; onDone: (c: CancellationRequest | null) => void }) {
+  const [reason, setReason] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const send = async () => {
+    if (!reason.trim()) { setError('Vui lòng nhập lý do hủy'); return }
+    setError('')
+    setBusy(true)
+    try {
+      onDone(await api<CancellationRequest>(`/api/reservations/${r.reservationId}/cancellation-requests`, { body: { reason: reason.trim() } }))
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="cancel-form">
+      <div className="stack-sm grow">
+        <b>Yêu cầu hủy đơn {r.reservationCode}</b>
+        <small className="muted">
+          {r.status === 'Confirmed'
+            ? 'Bạn đã đặt cọc: khi nhân viên duyệt, cọc được hoàn lại sau khi trừ phí hủy theo chính sách thuê của cơ sở.'
+            : 'Đơn chưa đặt cọc: khi nhân viên duyệt, đơn được hủy và không phát sinh phí.'}
+        </small>
+        <textarea rows={2} maxLength={1000} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Lý do hủy, vd: đổi kế hoạch chuyển nhà" autoFocus />
+        {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+      </div>
+      <div className="row">
+        <button type="button" className="btn ghost sm" onClick={() => onDone(null)}>Đóng</button>
+        <button type="button" className="btn danger sm" disabled={busy} onClick={send}>{busy ? 'Đang gửi…' : 'Gửi yêu cầu hủy'}</button>
+      </div>
+    </div>
+  )
+}
+
+function CancellationResult({ request: c }: { request: CancellationRequest }) {
+  return (
+    <p className="muted cancel-result">
+      <Icon name={c.status === 'Approved' ? 'check' : 'alert'} size={14} /> Yêu cầu hủy {c.status === 'Approved' ? 'đã được duyệt' : 'bị từ chối'}
+      {c.resolvedAt && ` lúc ${fmtTime(c.resolvedAt)}`}
+      {c.status === 'Approved' && c.approvedRefundAmount != null && <> · hoàn cọc <b>{fmtMoney(c.approvedRefundAmount)}</b></>}
+      {c.resolutionNotes && <> · ghi chú: {c.resolutionNotes}</>}
+    </p>
   )
 }
