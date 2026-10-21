@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api, fmtDate, fmtTime, IS_DEMO } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
@@ -157,7 +157,7 @@ export default function Gate() {
         <VisitCard key={`${c.contractId}-${searched}`} facilityId={facilityId!} visit={c} query={searched} regs={regs} onRecorded={onRecorded} />
       ))}
 
-      <RegistrationsPanel regs={regs} onReview={review} />
+      <RegistrationsPanel facilityId={facilityId} regs={regs} onReview={review} />
 
       <section className="panel">
         <div className="panel-head">
@@ -221,10 +221,11 @@ function StatCard({ icon, tone, label, value, note }: { icon: string; tone: stri
 }
 
 /** Customers' visit registrations at this facility: pending ones to approve or reject, then today's approved ones. */
-function RegistrationsPanel({ regs, onReview }: { regs: VisitRegistration[]; onReview: (r: VisitRegistration, approve: boolean, notes?: string) => void }) {
+function RegistrationsPanel({ facilityId, regs, onReview }: { facilityId: number | null; regs: VisitRegistration[]; onReview: (r: VisitRegistration, approve: boolean, notes?: string) => void }) {
   const [tab, setTab] = useState<'Pending' | 'Approved'>('Pending')
   const [rejecting, setRejecting] = useState<number | null>(null)
   const [notes, setNotes] = useState('')
+  const [openId, setOpenId] = useState<number | null>(null)
   const now = Date.now()
   const pending = regs.filter((r) => r.status === 'Pending')
   const approved = regs.filter((r) => r.status === 'Approved' && new Date(r.scheduledExitAt).getTime() >= now)
@@ -244,13 +245,18 @@ function RegistrationsPanel({ regs, onReview }: { regs: VisitRegistration[]; onR
       <div>
         {shown.map((r) => {
           const live = new Date(r.scheduledEntryAt).getTime() <= now && new Date(r.scheduledExitAt).getTime() >= now
+          const open = openId === r.visitRegistrationId
           return (
-            <div key={r.visitRegistrationId} className="reg-row">
+            <Fragment key={r.visitRegistrationId}>
+            <div className={`reg-row ${open ? 'open' : ''}`}>
               <div className="reg-time"><b>{hhmm(r.scheduledEntryAt)} – {hhmm(r.scheduledExitAt)}</b><small className="muted">{dmy(r.scheduledEntryAt)}</small></div>
               <span className="unit-code">{r.unitCode}</span>
               <div className="grow">
                 <b>{r.visitorName}</b> {r.authorizedPersonId != null && <span className="pill muted">Ủy quyền</span>}
                 <small className="muted block">HĐ {r.contractNumber} · {r.purpose}</small>
+                <button type="button" className="link-btn" aria-expanded={open} onClick={() => setOpenId(open ? null : r.visitRegistrationId)}>
+                  <Icon name={open ? 'x' : 'eye'} size={13} /> {open ? 'Ẩn thông tin' : 'Xem thông tin người đăng ký'}
+                </button>
               </div>
               {tab === 'Approved' ? (
                 <span className={`badge ${live ? 'ok' : 'info'}`}>{live ? 'Đang trong giờ' : 'Sắp tới'}</span>
@@ -267,11 +273,79 @@ function RegistrationsPanel({ regs, onReview }: { regs: VisitRegistration[]; onR
                 </span>
               )}
             </div>
+            {open && facilityId && <RegistrationDetail facilityId={facilityId} reg={r} />}
+            </Fragment>
           )
         })}
         {shown.length === 0 && <Empty icon="calendar">{tab === 'Pending' ? 'Không có lịch nào chờ duyệt.' : 'Chưa có lịch đã duyệt sắp tới.'}</Empty>}
       </div>
     </section>
+  )
+}
+
+/**
+ * Who asked to come in: the registration only carries the visitor's name, so the contract is looked up at the gate
+ * (GET /api/gate/facilities/{id}/lookup?q=<contract number>) for the visitor's CCCD and phone, the contract holder,
+ * the contract and unit state, and anything that would block entry.
+ */
+function RegistrationDetail({ facilityId, reg }: { facilityId: number; reg: VisitRegistration }) {
+  const [visit, setVisit] = useState<VisitCandidate | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    api<VisitCandidate[]>(`/api/gate/facilities/${facilityId}/lookup?q=${encodeURIComponent(reg.contractNumber)}`)
+      .then((list) => {
+        const v = list.find((x) => x.contractId === reg.contractId)
+        if (v) setVisit(v)
+        else setError('Không tìm thấy hợp đồng tại cơ sở này')
+      })
+      .catch((e) => setError((e as Error).message))
+  }, [facilityId, reg.contractId, reg.contractNumber])
+
+  if (error) return <p className="alert bad reg-detail"><Icon name="alert" size={16} />{error}</p>
+  if (!visit) return <p className="muted reg-detail">Đang tải thông tin…</p>
+  const visitor = reg.authorizedPersonId == null
+    ? visit.customer
+    : visit.authorizedPersons.find((p) => p.authorizedPersonId === reg.authorizedPersonId)
+  const holder = visit.customer
+  return (
+    <div className="reg-detail">
+      <div className="reg-detail-grid">
+        <div>
+          <span className="label">Người đăng ký vào kho</span>
+          {visitor ? (
+            <dl className="kv">
+              <div><dt>Họ tên</dt><dd>{visitor.fullName}</dd></div>
+              <div><dt>Vai trò</dt><dd>{reg.authorizedPersonId == null ? 'Chủ hợp đồng' : `Người được ủy quyền${visitor.relationship ? ` · ${visitor.relationship}` : ''}`}</dd></div>
+              <div><dt>Số CCCD</dt><dd className="code">{visitor.citizenId ?? '—'}</dd></div>
+              <div><dt>Số điện thoại</dt><dd>{visitor.phoneNumber ? <a href={`tel:${visitor.phoneNumber}`} className="link">{visitor.phoneNumber}</a> : '—'}</dd></div>
+            </dl>
+          ) : <p className="alert warn"><Icon name="alert" size={15} />{reg.visitorName} không còn trong danh sách ủy quyền của hợp đồng.</p>}
+        </div>
+        {reg.authorizedPersonId != null && (
+          <div>
+            <span className="label">Chủ hợp đồng</span>
+            <dl className="kv">
+              <div><dt>Họ tên</dt><dd>{holder.fullName}</dd></div>
+              <div><dt>Số CCCD</dt><dd className="code">{holder.citizenId ?? '—'}</dd></div>
+              <div><dt>Số điện thoại</dt><dd>{holder.phoneNumber ? <a href={`tel:${holder.phoneNumber}`} className="link">{holder.phoneNumber}</a> : '—'}</dd></div>
+            </dl>
+          </div>
+        )}
+        <div>
+          <span className="label">Hợp đồng & kho</span>
+          <dl className="kv">
+            <div><dt>Hợp đồng</dt><dd>{visit.contractNumber} <StatusBadge status={visit.contractStatus} /></dd></div>
+            <div><dt>Thời hạn</dt><dd>{fmtDate(visit.startDate)} – {fmtDate(visit.endDate)}</dd></div>
+            <div><dt>Kho</dt><dd>{visit.unitCode} <StatusBadge status={visit.unitStatus} /></dd></div>
+            <div><dt>Gửi đăng ký</dt><dd>{fmtTime(reg.requestedAt)}</dd></div>
+          </dl>
+        </div>
+      </div>
+      {visit.issues.length > 0 && (
+        <p className="alert warn"><Icon name="alert" size={15} />{visit.issues.map((i) => i.message).join(' · ')}: dù duyệt lịch, cổng vẫn chặn cho đến khi xử lý xong.</p>
+      )}
+      {visit.peopleInside.length > 0 && <small className="muted">Đang trong kho: {visit.peopleInside.join(', ')}</small>}
+    </div>
   )
 }
 

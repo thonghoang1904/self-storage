@@ -822,3 +822,14 @@ small.center { text-align: center; }
 .check-row input { width: 18px; height: 18px; margin-top: 2px; flex-shrink: 0; accent-color: var(--cyan-600); }
 @media (max-width: 900px) { .sign-grid { grid-template-columns: 1fr; } }
 .panel.highlight { border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-50), var(--shadow); }
+
+/* ---------- gate: who registered to come in ---------- */
+.reg-row .link-btn { margin-top: 4px; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+.reg-row.open { border-bottom: 0; }
+.reg-detail { margin: 0 0 12px; padding: 16px 18px; border-radius: 12px; background: var(--bg-tint); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px; }
+.reg-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; }
+.reg-detail .kv { margin: 6px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.reg-detail .kv > div { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; }
+.reg-detail .kv dt { color: var(--muted); }
+.reg-detail .kv dd { margin: 0; font-weight: 700; color: var(--text-strong); text-align: right; }
+.reg-detail .kv dd .badge { margin-left: 6px; }
