@@ -8,7 +8,11 @@ using SelfStorage.Api.Infrastructure;
 
 namespace SelfStorage.Api.Services;
 
-public sealed class BillingService(SelfStorageDbContext db, AccessService access, TimeProvider clock)
+public sealed class BillingService(
+    SelfStorageDbContext db,
+    AccessService access,
+    EmailOutboxService emailOutbox,
+    TimeProvider clock)
 {
     public Invoice CreateInvoice(
         int customerId,
@@ -128,6 +132,8 @@ public sealed class BillingService(SelfStorageDbContext db, AccessService access
         };
         db.Payments.Add(payment);
         await db.SaveChangesAsync(ct);
+        await emailOutbox.QueuePaymentReceivedAsync(payment.PaymentId, ct);
+        await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return payment;
     }
@@ -212,6 +218,8 @@ public sealed class BillingService(SelfStorageDbContext db, AccessService access
         payment.PaymentNotes = string.IsNullOrWhiteSpace(providerTransactionId)
             ? "Thanh toán trực tuyến đã được xác nhận."
             : $"Thanh toán trực tuyến đã được xác nhận. Mã giao dịch cổng: {providerTransactionId}";
+        await db.SaveChangesAsync(ct);
+        await emailOutbox.QueuePaymentReceivedAsync(payment.PaymentId, ct);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return true;

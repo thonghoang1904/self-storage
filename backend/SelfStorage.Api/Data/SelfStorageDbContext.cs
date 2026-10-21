@@ -25,6 +25,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
     public DbSet<AccessRecord> AccessRecords => Set<AccessRecord>();
     public DbSet<VisitRegistration> VisitRegistrations => Set<VisitRegistration>();
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
+    public DbSet<EmailOutboxMessage> EmailOutboxMessages => Set<EmailOutboxMessage>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<InvoiceDetail> InvoiceDetails => Set<InvoiceDetail>();
     public DbSet<Payment> Payments => Set<Payment>();
@@ -187,6 +188,20 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId);
         });
 
+        b.Entity<EmailOutboxMessage>(e =>
+        {
+            e.ToTable("EmailOutboxMessages");
+            e.HasKey(x => x.EmailOutboxMessageId);
+            e.Property(x => x.EventKey).HasMaxLength(150).IsUnicode(false);
+            e.Property(x => x.RecipientEmail).HasMaxLength(254).IsUnicode(false);
+            e.Property(x => x.RecipientName).HasMaxLength(200);
+            e.Property(x => x.Subject).HasMaxLength(200);
+            e.Property(x => x.Status).HasMaxLength(20).IsUnicode(false);
+            e.Property(x => x.LastError).HasMaxLength(2000);
+            e.HasIndex(x => x.EventKey).IsUnique();
+            e.HasIndex(x => new { x.Status, x.NextAttemptAt, x.EmailOutboxMessageId });
+        });
+
         b.Entity<Invoice>(e =>
         {
             e.ToTable("Invoices");
@@ -200,7 +215,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
                 .HasFilter("[InvoiceType] = 'MONTHLY_RENT' AND [ContractID] IS NOT NULL AND [BillingPeriodStart] IS NOT NULL");
             e.HasOne<Contract>().WithMany().HasForeignKey(x => x.ContractId);
             e.HasOne<Reservation>().WithMany().HasForeignKey(x => x.ReservationId);
-            e.HasOne<User>().WithMany().HasForeignKey(x => x.CustomerId);
+            e.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId);
         });
 
         b.Entity<InvoiceDetail>(e =>

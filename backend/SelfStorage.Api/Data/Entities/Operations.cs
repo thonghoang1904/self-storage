@@ -10,6 +10,24 @@ public class ActivityLog
     public DateTime CreatedAt { get; set; }
 }
 
+public class EmailOutboxMessage
+{
+    public long EmailOutboxMessageId { get; set; }
+    public string EventKey { get; set; } = null!;
+    public string RecipientEmail { get; set; } = null!;
+    public string RecipientName { get; set; } = null!;
+    public string Subject { get; set; } = null!;
+    public string HtmlBody { get; set; } = null!;
+    public string TextBody { get; set; } = null!;
+    public string Status { get; set; } = "Pending";
+    public int AttemptCount { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime NextAttemptAt { get; set; }
+    public DateTime? LockedUntil { get; set; }
+    public DateTime? SentAt { get; set; }
+    public string? LastError { get; set; }
+}
+
 public class Invoice
 {
     public int InvoiceId { get; set; }
@@ -29,6 +47,7 @@ public class Invoice
 
     public ICollection<InvoiceDetail> Details { get; set; } = new List<InvoiceDetail>();
     public ICollection<Payment> Payments { get; set; } = new List<Payment>();
+    public User Customer { get; set; } = null!;
 }
 
 public class InvoiceDetail

@@ -21,6 +21,7 @@ public sealed class DevelopmentDatabaseBootstrapper(
         "10_momo_checkout_links.sql",
         "11_unit_type_pricing.sql",
         "12_visit_registrations.sql",
+        "13_email_outbox.sql",
     ];
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)

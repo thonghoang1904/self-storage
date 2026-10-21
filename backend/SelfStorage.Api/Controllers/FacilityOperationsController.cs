@@ -173,7 +173,7 @@ public sealed class FacilityOperationsController(
     }
 
     [HttpGet("dashboard")]
-    [Authorize(Roles = AppRoles.Manager + "," + AppRoles.OpsManager)]
+    [Authorize(Roles = AppRoles.Manager + "," + AppRoles.OpsManager + "," + AppRoles.Admin)]
     public async Task<FacilityDashboardDto> Dashboard(
         int facilityId,
         [FromQuery] DateOnly? fromDate,

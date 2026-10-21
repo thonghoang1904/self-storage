@@ -90,6 +90,44 @@ public sealed class SystemAdminController(
         return ToAdminUser(user);
     }
 
+    [HttpPut("users/{userId:int}/profile")]
+    public async Task<AdminUserDto> UpdateUserProfile(
+        int userId, UpdateAdminUserProfileRequest req, CancellationToken ct)
+    {
+        var fullName = req.FullName.Trim();
+        var email = req.Email.Trim();
+        var phoneNumber = req.PhoneNumber.Trim();
+        var citizenId = Normalize(req.CitizenId);
+        if (fullName.Length == 0 || phoneNumber.Length == 0)
+            throw AppException.BadRequest("Họ tên và số điện thoại không được để trống");
+
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var user = await db.Users.Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.UserId == userId, ct)
+            ?? throw AppException.NotFound("Không tìm thấy tài khoản");
+        await ValidateAccountAsync(user.Username, email, citizenId, userId, ct);
+
+        var changedFields = new List<string>();
+        if (user.FullName != fullName) changedFields.Add(nameof(user.FullName));
+        if (user.Email != email) changedFields.Add(nameof(user.Email));
+        if (user.PhoneNumber != phoneNumber) changedFields.Add(nameof(user.PhoneNumber));
+        if (user.CitizenId != citizenId) changedFields.Add(nameof(user.CitizenId));
+        if (changedFields.Count > 0)
+        {
+            user.FullName = fullName;
+            user.Email = email;
+            user.PhoneNumber = phoneNumber;
+            user.CitizenId = citizenId;
+            user.UpdatedAt = clock.GetLocalNow().DateTime;
+            AddLog(User.GetUserId(), "AdminUserProfileUpdated",
+                $"Updated profile fields for user {userId}: {string.Join(", ", changedFields)}");
+            await db.SaveChangesAsync(ct);
+        }
+
+        await transaction.CommitAsync(ct);
+        return ToAdminUser(user);
+    }
+
     [HttpPut("users/{userId:int}/role")]
     public async Task<AdminUserDto> ChangeRole(int userId, ChangeUserRoleRequest req, CancellationToken ct)
     {

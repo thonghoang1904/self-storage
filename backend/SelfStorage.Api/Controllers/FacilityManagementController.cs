@@ -17,6 +17,7 @@ public sealed class FacilityManagementController(
     SelfStorageDbContext db,
     AccessService access,
     BillingService billing,
+    EmailOutboxService emailOutbox,
     TimeProvider clock) : ControllerBase
 {
     [HttpGet("units")]
@@ -278,6 +279,8 @@ public sealed class FacilityManagementController(
             Details = $"Created {fee.FeeCode} charge invoice for contract {contract.ContractNumber}",
             CreatedAt = clock.GetLocalNow().DateTime,
         });
+        await db.SaveChangesAsync(ct);
+        await emailOutbox.QueueInvoiceIssuedAsync(invoice.InvoiceId, ct);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return new ExtraChargeInvoiceDto(invoice.InvoiceId, invoice.InvoiceNumber, invoice.InvoiceType,
