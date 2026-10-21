@@ -54,6 +54,8 @@ Quy tắc chính:
 | Callback thanh toán | `GET /api/payments/vnpay/ipn`, `GET /api/payments/vnpay/return`, `POST /api/payments/momo/ipn`, `GET /api/payments/momo/return` | VNPay/MoMo |
 | Hỗ trợ | `POST /api/support-requests`, `GET /api/support-requests/my`, `GET /api/support-requests/{requestId}/updates`, `GET /api/support-requests/{requestId}/checklist`, `PUT /api/support-requests/{requestId}/checklist/{itemId}`, `GET /api/support-requests/facilities/{facilityId}`, `PUT /api/support-requests/{requestId}` | Khách; nhân viên, quản lý cơ sở |
 | Cổng | `GET /api/gate/my-facilities`, `GET /api/gate/facilities/{id}/lookup?q=`, `GET /api/gate/facilities/{id}/visit-registrations?status=Pending`, `POST /api/gate/facilities/{id}/visit-registrations/{registrationId}/review`, `POST /api/gate/facilities/{id}/entries`, `POST /api/gate/facilities/{id}/denials`, `GET /api/gate/facilities/{id}/inside`, `GET /api/gate/facilities/{id}/today`, `POST /api/gate/access-records/{id}/exit` | Nhân viên, quản lý cơ sở |
+| Quản trị tài khoản | `GET/POST /api/admin/users`, `PUT /api/admin/users/{id}/profile`, `PUT /api/admin/users/{id}/role`, `PUT /api/admin/users/{id}/status`, `GET /api/admin/users/{id}/activity` | Admin |
+| Báo cáo | `GET /api/operations/reports/facilities`, `GET /api/operations/reports/details`, `GET /api/operations/reports/details.csv` | Quản lý vận hành, Admin |
 
 Lịch ra/vào cần thời gian ISO-8601 kèm offset và CCCD của người sẽ đến. Ví dụ body cho khách thuê tự đăng ký: `{"citizenId":"079300000456","authorizedPersonId":null,"scheduledEntryAt":"2026-10-21T09:00:00+07:00","scheduledExitAt":"2026-10-21T11:00:00+07:00","purpose":"Đưa đồ vào kho"}`. Staff duyệt với `{"approve":true,"notes":"Đã kiểm tra lịch"}`. Khi khách đến, staff dùng `POST /api/gate/facilities/{facilityId}/entries` với `contractId`, `visitRegistrationId`, `authorizedPersonId` tương ứng và CCCD đọc từ thẻ; hệ thống kiểm tra lại lịch, CCCD, hợp đồng và trạng thái kho trước khi ghi nhận vào.
 
@@ -79,7 +81,7 @@ Hóa đơn cọc được tạo cùng lúc đặt kho; hóa đơn gia hạn đư
 
 Cần: .NET SDK 10, Node.js 20+, SQL Server (Express/Developer đều được).
 
-**Development local:** chỉ cần khởi động backend bằng `dotnet run`. Backend tự tạo database `SelfStorageDB` nếu chưa tồn tại, sau đó tự áp dụng schema/migration `02`–`11` theo thứ tự. Nếu database đã có dữ liệu, backend chỉ chạy các migration có thể chạy lặp lại; không chạy lại `01_schema.sql` và không xóa dữ liệu. Frontend chỉ gọi API, không kết nối hay tự cập nhật database.
+**Development local:** chỉ cần khởi động backend bằng `dotnet run`. Backend tự tạo database `SelfStorageDB` nếu chưa tồn tại, sau đó tự áp dụng schema/migration `02`–`13` theo thứ tự. Nếu database đã có dữ liệu, backend chỉ chạy các migration có thể chạy lặp lại; không chạy lại `01_schema.sql` và không xóa dữ liệu. Frontend chỉ gọi API, không kết nối hay tự cập nhật database.
 
 **Tạo database thủ công hoặc khôi phục môi trường mới:** có thể chạy một lệnh từ thư mục gốc repo:
 
@@ -95,7 +97,7 @@ sqlcmd -S .\SQLEXPRESS -U sa -C -I -f 65001 -b -i database/setup_fresh.sql
 sqlcmd -S .\SQLEXPRESS -U sa -C -I -f 65001 -b -d SelfStorageDB -i database/upgrade_existing.sql
 ```
 
-`upgrade_existing.sql` chạy các migration `02`–`12` theo đúng thứ tự; có thể chạy lại nếu cần. Nếu chạy bằng SSMS, bật **SQLCMD Mode** rồi mở script tổng tương ứng. Giữ các file migration riêng để kiểm tra thay đổi và dùng trong quy trình deploy có kiểm soát. Tự động cập nhật database hiện chỉ bật cho môi trường Development; trước khi deploy môi trường thật, cần có quy trình backup và migrate phù hợp, không reset database.
+`upgrade_existing.sql` chạy các migration `02`–`13` theo đúng thứ tự; có thể chạy lại nếu cần. Nếu chạy bằng SSMS, bật **SQLCMD Mode** rồi mở script tổng tương ứng. Giữ các file migration riêng để kiểm tra thay đổi và dùng trong quy trình deploy có kiểm soát. Tự động cập nhật database hiện chỉ bật cho môi trường Development; trước khi deploy môi trường thật, cần có quy trình backup và migrate phù hợp, không reset database.
 
 **Backend.** Chuỗi kết nối mặc định trong `appsettings.json` dùng Windows Authentication. Để dùng SQL Authentication cho môi trường Development, lưu chuỗi kết nối bằng User Secrets (không ghi mật khẩu vào file trong repo):
 
@@ -105,7 +107,7 @@ dotnet user-secrets set "ConnectionStrings:SelfStorageDB" "Server=.\SQLEXPRESS;D
 
 Thay `<mat-khau-sa>` bằng mật khẩu của tài khoản `sa`. User Secrets đã được khởi tạo cho project; cấu hình này chỉ áp dụng trên máy hiện tại khi chạy Development.
 
-**Cấu hình Gmail SMTP để gửi email reset password (Windows/PowerShell):**
+**Cấu hình Gmail SMTP để gửi email giao dịch (Windows/PowerShell):**
 
 1. Bật **2-Step Verification** cho tài khoản Gmail gửi thư.
 2. Trong Google Account → Security, tạo **App Password**. App Password này khác mật khẩu đăng nhập Google. Không dán mật khẩu vào chat hoặc lưu trong file repo.
@@ -117,6 +119,8 @@ Thay `<mat-khau-sa>` bằng mật khẩu của tài khoản `sa`. User Secrets �
 
 Backend gửi qua `smtp.gmail.com:587` với TLS. Chức năng này không cần OAuth Playground hay cấu hình OAuth consent screen; đăng nhập Google nếu sử dụng vẫn là luồng riêng. User Secrets chỉ áp dụng local Development. Khi deploy, lưu App Password trong secret manager của môi trường host, không commit hoặc gửi qua chat. Nếu Google không hiển thị mục App Passwords, kiểm tra 2-Step Verification và chính sách bảo mật của tài khoản.
 
+Email SMTP dùng cho reset mật khẩu, thông báo phát hành hóa đơn (đặt cọc, tiền thuê tháng, gia hạn, phụ phí, phí quá hạn) và biên nhận sau khi thanh toán được xác nhận. Email hóa đơn/biên nhận được ghi vào SQL outbox cùng transaction nghiệp vụ; worker tự gửi và retry tối đa 8 lần, không cần duyệt thủ công. Worker billing phát hành hóa đơn thuê tháng trong tối đa 7 ngày trước hạn và tự xếp email nhắc thanh toán. Admin chỉ cần xem trạng thái hoặc retry nếu thư đã thất bại hết các lần tự động. Ticket được trao đổi và xử lý trong ứng dụng, không gửi email.
+
 Các API frontend cho vận hành:
 
 - Nhân viên/quản lý: `GET /api/facilities/{facilityId}/daily-operations`, `GET /api/facilities/{facilityId}/contracts`, `GET /api/gate/my-facilities`.
@@ -127,7 +131,8 @@ Các API frontend cho vận hành:
 - Báo cáo: `GET /api/facilities/{facilityId}/dashboard` cho quản lý cơ sở; `GET /api/operations/reports/facilities` cho quản lý vận hành toàn hệ thống.
 - Quản lý vận hành: `GET/POST/PUT /api/operations/facilities`, `/rental-policies`, `/fees`, `/promotions`.
 - Giá thuê quản lý theo loại kho: `GET /api/operations/unit-types` và `PUT /api/operations/unit-types/{unitTypeId}/pricing`. Đây là giá chuẩn dùng cho tiền cọc, hợp đồng và hóa đơn; các unit cùng loại không có giá riêng.
-- Quản trị hệ thống: `GET /api/admin/roles`, quản lý tài khoản tại `/api/admin/users`, cập nhật vai trò/trạng thái bằng `/users/{userId}/role` và `/users/{userId}/status`, xem lịch sử tại `/users/{userId}/activity`.
+- Quản trị hệ thống: `GET /api/admin/roles`, quản lý tài khoản tại `/api/admin/users`, cập nhật vai trò/trạng thái bằng `/users/{userId}/role` và `/users/{userId}/status`, xem lịch sử tại `/users/{userId}/activity`. Admin xem/tìm hợp đồng toàn hệ thống bằng `GET /api/admin/contracts` và `GET /api/admin/contracts/{contractId}`, sửa ngày kết thúc/điều khoản bằng `PUT /api/admin/contracts/{contractId}`; ngày bắt đầu, giá thuê và dữ liệu thanh toán không sửa trực tiếp. Tạo hợp đồng chỉ qua reservation đã cọc và check-in tại `POST /api/admin/contracts/from-reservations/{reservationId}/check-in`; kết thúc/handover trả kho tại `POST /api/admin/contracts/{contractId}/return` theo đúng quy tắc thanh toán, thời gian và xác nhận dọn kho. Đây là kết thúc có lưu lịch sử, không xóa vật lý.
+- Dashboard: Admin và Ops Manager xem báo cáo toàn hệ thống tại `GET /api/operations/reports/facilities`; Admin cũng xem dashboard từng cơ sở tại `GET /api/facilities/{facilityId}/dashboard`.
 - Tiền thuê: API tạo hóa đơn tháng đầu khi bàn giao; worker tạo hóa đơn kỳ tiếp theo trước hạn 7 ngày và đánh dấu hóa đơn chưa trả là quá hạn.
 
 4. Khởi động lại API (`dotnet run --project backend\SelfStorage.Api\SelfStorage.Api.csproj`). Mở http://localhost:5080/swagger, gọi `POST /api/auth/forgot-password` với email thật đã đăng ký trong `Users`, ví dụ:

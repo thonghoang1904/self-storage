@@ -39,8 +39,24 @@ public record CreateUserByAdminRequest(
     [MinLength(1)] IReadOnlyList<int>? FacilityIds = null);
 public record ChangeUserRoleRequest([Required] int RoleId);
 public record ChangeUserStatusRequest([Required] string Status);
+public record UpdateAdminUserProfileRequest(
+    [Required, StringLength(100)] string FullName,
+    [Required, EmailAddress, StringLength(100)] string Email,
+    [Required, StringLength(20)] string PhoneNumber,
+    [StringLength(25)] string? CitizenId);
 public record RoleDto(int RoleId, string RoleName, string? Description);
 public record ActivityLogDto(long LogId, string Action, string? Details, string? IpAddress, DateTime CreatedAt);
+public record EmailOutboxDto(
+    long EmailOutboxMessageId,
+    string EventKey,
+    string RecipientEmail,
+    string Subject,
+    string Status,
+    int AttemptCount,
+    DateTime CreatedAt,
+    DateTime NextAttemptAt,
+    DateTime? SentAt,
+    string? LastError);
 
 // ---- Catalog ----
 
@@ -183,6 +199,29 @@ public record ContractDetailDto(
     decimal OutstandingLateFee,
     DateTime RenewalAvailableFrom);
 
+public record AdminContractDto(
+    int ContractId,
+    string ContractNumber,
+    int CustomerId,
+    string CustomerName,
+    string CustomerEmail,
+    string CustomerPhoneNumber,
+    int FacilityId,
+    string FacilityName,
+    int UnitId,
+    string UnitCode,
+    DateOnly StartDate,
+    DateOnly EndDate,
+    string Status,
+    decimal MonthlyRentFee,
+    decimal DepositPaid,
+    DateTime SignedDate,
+    string? TermsConditions);
+
+public record UpdateAdminContractRequest(
+    [Required] DateOnly EndDate,
+    [StringLength(4000)] string? TermsConditions);
+
 public record RequestRenewalRequest([Range(1, 60)] int ExtensionMonths);
 public record RenewalDto(int RenewalId, int ContractId, DateOnly OldEndDate, DateOnly NewEndDate,
     int ExtensionMonths, decimal RenewalFee, string Status, DateTime RequestedAt, int? InvoiceId);
@@ -205,6 +244,26 @@ public record OperationsDashboardDto(DateOnly FromDate, DateOnly ToDate, int Fac
     int TotalUnits, int AvailableUnits, int RentedUnits, int MaintenanceUnits, int OverdueLockedUnits,
     int ActiveContracts, int OverdueContracts, int OpenSupportRequests, decimal NetRevenue,
     IReadOnlyList<FacilityDashboardDto> Facilities);
+public record OperationsReportRowDto(
+    DateOnly FromDate,
+    DateOnly ToDate,
+    int FacilityId,
+    string FacilityName,
+    int UnitTypeId,
+    string UnitTypeName,
+    int TotalUnits,
+    int AvailableUnits,
+    int ReservedUnits,
+    int RentedUnits,
+    int MaintenanceUnits,
+    int OverdueLockedUnits,
+    decimal OccupancyRatePercent,
+    int ActiveContracts,
+    int OverdueContracts,
+    int TerminatedContracts,
+    int RenewedContracts,
+    int LiquidatedContracts,
+    decimal NetRevenue);
 
 public record CreateSupportRequest(
     [Required] int ContractId,

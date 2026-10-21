@@ -240,7 +240,7 @@ Thực hiện theo các bước ở mục 5–7:
 
 - Worker `MonthlyRentInvoiceService` chạy mỗi 6 giờ. Với hợp đồng Active, worker tạo các hóa đơn kỳ thuê sắp đến hạn trong tối đa 7 ngày tiếp theo; hóa đơn đầu tiên được tạo ngay khi staff check-in. Khách xem hóa đơn, kỳ billing và trạng thái thanh toán tại `GET /api/invoices/my`.
 - Khách trả invoice bằng `POST /api/invoices/{invoiceId}/checkout/momo` hoặc `/checkout/vnpay`; xác nhận chính thức vẫn là IPN đã xác minh. Staff có thể ghi nhận tiền mặt/chuyển khoản đã nhận tại `POST /api/invoices/{invoiceId}/payments`, với số tiền chính xác bằng invoice; chuyển khoản phải có mã giao dịch.
-- **Lưu ý email:** hiện tại worker chỉ tạo invoice và cập nhật trạng thái quá hạn, chưa gửi email billing. SMTP hiện được dùng cho email đặt lại mật khẩu; cấu hình SMTP không tự gửi hóa đơn tháng. Vì vậy có thể test billing qua Swagger/API, nhưng chưa thể xác nhận việc gửi email hóa đơn theo tháng trong hệ thống hiện tại.
+- Khi SMTP đã cấu hình, hệ thống tự xếp email thông báo mỗi hóa đơn vào outbox cùng transaction phát hành, gồm cọc, tiền thuê, gia hạn, phụ phí và phí quá hạn; worker tự gửi và retry lỗi. Sau khi MoMo/VNPay IPN hợp lệ hoặc nhân viên ghi nhận khoản thu thực tế, hệ thống tự gửi email xác nhận thanh toán. Các hóa đơn thuê tháng tiếp theo được worker phát hành và gửi nhắc thanh toán tối đa 7 ngày trước hạn. Không cần duyệt thủ công; chỉ Admin retry nếu email đã thất bại hết các lần tự động. Ticket được xem và xử lý trong ứng dụng, không gửi email.
 
 ### 9.5 Gia hạn trong tuần trước ngày hết hạn
 
@@ -306,4 +306,45 @@ Người clone repo khác chạy script trên máy của họ với Gmail/App Pa
 
 Có thể dùng SMTP provider khác bằng cách lưu các khóa `Smtp:Host`, `Smtp:Port`, `Smtp:Username`, `Smtp:Password`, `Smtp:FromAddress`, `Smtp:FromName` và `Smtp:EnableSsl` vào User Secrets hoặc environment variables theo cấu hình của provider đó.
 
-**Phạm vi email hiện tại:** SMTP đang được gọi cho luồng `POST /api/auth/forgot-password` để gửi mã reset mật khẩu. Worker billing chưa gửi invoice qua email; cấu hình SMTP ở trên không bật email hóa đơn tháng. Hóa đơn tháng hiện xem và thanh toán qua `GET /api/invoices/my` cùng các API checkout/record payment ở mục 9.4.
+**Phạm vi email:** SMTP dùng cho reset mật khẩu, thông báo phát hành mọi loại hóa đơn và xác nhận thanh toán thành công. Email hóa đơn và biên nhận được lưu vào outbox; worker tự gửi/retry tối đa 8 lần, không cần duyệt. Hóa đơn tháng được phát hành và email nhắc tự động tối đa 7 ngày trước hạn. Admin theo dõi `GET /api/admin/email-outbox?status=Failed` và chỉ gửi lại nếu email thất bại hết các lần tự động. Ticket được trao đổi trong ứng dụng, không gửi email. Nếu chưa cấu hình SMTP, email không thể được chuyển tới hộp thư; áp dụng migration `13_email_outbox.sql` trước khi chạy worker.
+
+## 11. API quản trị hợp đồng và dashboard
+
+Đăng nhập bằng tài khoản có role `SystemAdministrator` rồi bấm **Authorize** trong Swagger. Các API dưới đây cho Admin xem dữ liệu toàn hệ thống, không yêu cầu phân công cơ sở:
+
+- `GET /api/admin/contracts`: danh sách có lọc theo `facilityId`, `customerId`, `status`, `search`, `page`, `pageSize`.
+- `GET /api/admin/contracts/{contractId}`: chi tiết hợp đồng, khách thuê, cơ sở, unit, tiền thuê/cọc và điều khoản.
+- `PUT /api/admin/contracts/{contractId}`: chỉ chỉnh `endDate` và `termsConditions`. Không thể sửa ngày bắt đầu, giá thuê hoặc dữ liệu thanh toán; ngày kết thúc phải hợp lệ và không làm xung đột hóa đơn tiền thuê/gia hạn. Mọi cập nhật được ghi activity log.
+
+Ví dụ cập nhật điều khoản/ngày kết thúc:
+
+```json
+{
+  "endDate": "2027-10-20",
+  "termsConditions": "Điều khoản cập nhật được phê duyệt bởi quản trị viên."
+}
+```
+
+Tạo hợp đồng vẫn phải theo nghiệp vụ: reservation cọc đã thanh toán, lịch nhận hợp lệ và unit phù hợp. Admin thực hiện bàn giao qua `POST /api/admin/contracts/from-reservations/{reservationId}/check-in` với body `unitId` và `unitConditionNotes` như mục 4. Hệ thống ghi staff tạo hợp đồng là tài khoản Admin đang thao tác và lưu audit log.
+
+Không xóa cứng hợp đồng để bảo toàn hóa đơn, thanh toán, lịch sử ra/vào và biên bản. Khi khách trả kho, Admin có thể dùng `POST /api/admin/contracts/{contractId}/return` với body `unitConditionNotes`, `allItemsRemoved: true`, `staffNotes`; endpoint vẫn kiểm tra mốc 20:00, khách đã ra khỏi facility và xác nhận dọn sạch. Hợp đồng kết thúc ở trạng thái `Terminated`, unit được trả về Available và lịch sử được giữ lại.
+
+Dashboard cho Admin:
+
+- `GET /api/operations/reports/facilities?fromDate=2026-10-01&toDate=2026-10-31`: báo cáo toàn hệ thống theo khoảng ngày.
+- `GET /api/operations/reports/details?fromDate=2026-10-01&toDate=2026-10-31&facilityId=1&unitTypeId=1&contractStatus=Active`: báo cáo chi tiết theo cơ sở và loại kho, gồm tồn kho, tỷ lệ sử dụng, số hợp đồng theo trạng thái và doanh thu ròng. Các bộ lọc ID/trạng thái là tùy chọn.
+- `GET /api/operations/reports/details.csv?fromDate=2026-10-01&toDate=2026-10-31`: tải báo cáo chi tiết CSV; có thể dùng chung các bộ lọc như endpoint JSON.
+- `GET /api/facilities/{facilityId}/dashboard?fromDate=2026-10-01&toDate=2026-10-31`: dashboard từng cơ sở.
+
+Admin cập nhật hồ sơ tài khoản bằng `PUT /api/admin/users/{userId}/profile`:
+
+```json
+{
+  "fullName": "Nguyen Van A",
+  "email": "user@example.com",
+  "phoneNumber": "0901234567",
+  "citizenId": "079300000456"
+}
+```
+
+Username không đổi qua API hồ sơ; role và trạng thái tài khoản tiếp tục được quản lý bằng các endpoint riêng. Tài khoản không xóa cứng để giữ lịch sử nghiệp vụ.

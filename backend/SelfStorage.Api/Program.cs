@@ -31,9 +31,11 @@ builder.Services.AddSingleton<TokenService>();
 builder.Services.AddScoped<AccessService>();
 builder.Services.AddScoped<BillingService>();
 builder.Services.AddScoped<RentalPolicyService>();
+builder.Services.AddScoped<EmailOutboxService>();
 builder.Services.AddHttpClient<PaymentGatewayService>(client => client.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHostedService<OverdueService>();
 builder.Services.AddHostedService<MonthlyRentInvoiceService>();
+builder.Services.AddHostedService<EmailOutboxWorker>();
 
 // ---- Auth (JWT) ----
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()!;

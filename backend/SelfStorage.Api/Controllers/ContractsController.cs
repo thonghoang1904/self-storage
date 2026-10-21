@@ -20,6 +20,7 @@ public class ContractsController(
     AccessService access,
     BillingService billing,
     RentalPolicyService rentalPolicies,
+    EmailOutboxService emailOutbox,
     TimeProvider clock) : ControllerBase
 {
     public static readonly Expression<Func<Contract, ContractDto>> ToDto = c => new ContractDto(
@@ -84,6 +85,8 @@ public class ContractsController(
         db.Invoices.Add(invoice);
         await db.SaveChangesAsync(ct);
         renewal.InvoiceId = invoice.InvoiceId;
+        await db.SaveChangesAsync(ct);
+        await emailOutbox.QueueInvoiceIssuedAsync(invoice.InvoiceId, ct);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return ToRenewalDto(renewal);
@@ -170,14 +173,16 @@ public class ContractsController(
     }
 
     [HttpPost("{id:int}/return")]
-    [Authorize(Roles = AppRoles.GateRoles)]
+    [HttpPost("/api/admin/contracts/{id:int}/return")]
+    [Authorize(Roles = AppRoles.GateRoles + "," + AppRoles.Admin)]
     public async Task<ReturnUnitDto> ReturnUnit(int id, ReturnUnitRequest req, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var contract = await db.Contracts.Include(c => c.Unit)
             .FirstOrDefaultAsync(c => c.ContractId == id, ct) ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
         var staffId = User.GetUserId();
-        await access.EnsureAssignedAsync(staffId, contract.Unit.FacilityId, ct);
+        if (!User.IsInRole(AppRoles.Admin))
+            await access.EnsureAssignedAsync(staffId, contract.Unit.FacilityId, ct);
         var now = clock.GetLocalNow().DateTime;
         var returnAppointment = contract.EndDate.ToDateTime(new TimeOnly(20, 0));
         if (now < returnAppointment)
@@ -218,10 +223,24 @@ public class ContractsController(
         }
         if (stillOwed > 0)
         {
-            db.Invoices.Add(billing.CreateInvoice(contract.CustomerId, "OVERDUE_FINE",
+            var overdueInvoice = billing.CreateInvoice(contract.CustomerId, "OVERDUE_FINE",
                 DateOnly.FromDateTime(now),
                 $"Phí lưu kho quá hạn {overdue?.DaysOverdue ?? 0} ngày cho hợp đồng {contract.ContractNumber}",
-                stillOwed, contractId: id));
+                stillOwed, contractId: id);
+            db.Invoices.Add(overdueInvoice);
+            await db.SaveChangesAsync(ct);
+            await emailOutbox.QueueInvoiceIssuedAsync(overdueInvoice.InvoiceId, ct);
+        }
+        if (User.IsInRole(AppRoles.Admin))
+        {
+            db.ActivityLogs.Add(new ActivityLog
+            {
+                UserId = staffId,
+                Action = "AdminContractReturned",
+                IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+                Details = $"Contract {contract.ContractNumber}; deposit refund due {refund:N0}; outstanding overdue fee {stillOwed:N0}",
+                CreatedAt = now,
+            });
         }
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
@@ -367,7 +386,7 @@ public class ContractsController(
         {
             if (contract.CustomerId != User.GetUserId()) throw AppException.NotFound("Không tìm thấy hợp đồng");
         }
-        else
+        else if (!User.IsInRole(AppRoles.Admin))
         {
             await access.EnsureAssignedAsync(User.GetUserId(), contract.Unit.FacilityId, ct);
         }

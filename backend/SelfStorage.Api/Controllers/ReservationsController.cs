@@ -19,6 +19,7 @@ public class ReservationsController(
     AccessService access,
     BillingService billing,
     RentalPolicyService rentalPolicies,
+    EmailOutboxService emailOutbox,
     TimeProvider clock) : ControllerBase
 {
     private DateTime Now => clock.GetLocalNow().DateTime;
@@ -88,13 +89,16 @@ public class ReservationsController(
         };
         db.Reservations.Add(reservation);
         await db.SaveChangesAsync(ct);
-        db.Invoices.Add(billing.CreateInvoice(
+        var depositInvoice = billing.CreateInvoice(
             reservation.CustomerId,
             "DEPOSIT",
             DateOnly.FromDateTime(reservation.DepositDeadline),
             $"Tiền cọc 1 tháng cho đơn {reservation.ReservationCode}",
             reservation.DepositAmount,
-            reservationId: reservation.ReservationId));
+            reservationId: reservation.ReservationId);
+        db.Invoices.Add(depositInvoice);
+        await db.SaveChangesAsync(ct);
+        await emailOutbox.QueueInvoiceIssuedAsync(depositInvoice.InvoiceId, ct);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return await Project(db.Reservations.Where(r => r.ReservationId == reservation.ReservationId)).SingleAsync(ct);
@@ -273,13 +277,15 @@ public class ReservationsController(
 
     /// <summary>Staff: customer arrived; assign a unit and create the rental contract.</summary>
     [HttpPost("reservations/{id:int}/check-in")]
-    [Authorize(Roles = AppRoles.GateRoles)]
+    [HttpPost("admin/contracts/from-reservations/{id:int}/check-in")]
+    [Authorize(Roles = AppRoles.GateRoles + "," + AppRoles.Admin)]
     public async Task<ContractDto> CheckIn(int id, CheckInRequest req, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var staffId = User.GetUserId();
         var r = await db.Reservations.FindAsync([id], ct) ?? throw AppException.NotFound("Không tìm thấy đơn đặt kho");
-        await access.EnsureAssignedAsync(staffId, r.FacilityId, ct);
+        if (!User.IsInRole(AppRoles.Admin))
+            await access.EnsureAssignedAsync(staffId, r.FacilityId, ct);
         if (r.Status != ReservationStatus.Confirmed)
             throw AppException.Conflict("Đơn chưa được xác nhận đặt cọc");
         if (clock.GetLocalNow().DateTime >= r.ExpectedStartDate.ToDateTime(new TimeOnly(20, 0)))
@@ -331,6 +337,17 @@ public class ReservationsController(
             UnitConditionNotes = req.UnitConditionNotes,
             CustomerSignatureConfirmed = true,
         });
+        if (User.IsInRole(AppRoles.Admin))
+        {
+            db.ActivityLogs.Add(new ActivityLog
+            {
+                UserId = staffId,
+                Action = "AdminContractCreatedFromReservation",
+                IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+                Details = $"Reservation {r.ReservationCode}; contract created for unit {unit.UnitCode}",
+                CreatedAt = Now,
+            });
+        }
         await db.SaveChangesAsync(ct);
         var firstRentalPeriodEnd = start.AddMonths(1) < contract.EndDate
             ? start.AddMonths(1)
@@ -348,6 +365,8 @@ public class ReservationsController(
         if (firstRentInvoice.DiscountAmount == firstRentInvoice.SubTotal)
             firstRentInvoice.Status = "Paid";
         db.Invoices.Add(firstRentInvoice);
+        await db.SaveChangesAsync(ct);
+        await emailOutbox.QueueInvoiceIssuedAsync(firstRentInvoice.InvoiceId, ct);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
 

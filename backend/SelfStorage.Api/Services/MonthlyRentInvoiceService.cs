@@ -25,6 +25,7 @@ public sealed class MonthlyRentInvoiceService(
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<SelfStorageDbContext>();
         var billing = scope.ServiceProvider.GetRequiredService<BillingService>();
+        var emailOutbox = scope.ServiceProvider.GetRequiredService<EmailOutboxService>();
         var today = DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
         var generationThrough = today.AddDays(7);
         await db.Invoices
@@ -75,6 +76,8 @@ public sealed class MonthlyRentInvoiceService(
                 db.Invoices.Add(invoice);
                 try
                 {
+                    await db.SaveChangesAsync(ct);
+                    await emailOutbox.QueueInvoiceIssuedAsync(invoice.InvoiceId, ct);
                     await db.SaveChangesAsync(ct);
                     await transaction.CommitAsync(ct);
                     logger.LogInformation("Created monthly rent invoice for contract {ContractId}, period {PeriodStart}",
