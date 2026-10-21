@@ -6,6 +6,10 @@ import { AdminLayout, OpsLayout, PortalLayout, StaffLayout } from './components/
 import AdminUsers from './pages/AdminUsers'
 import OpsFacilities from './pages/OpsFacilities'
 import OpsPolicies from './pages/OpsPolicies'
+import FacilityContracts from './pages/FacilityContracts'
+import FacilityOverview from './pages/FacilityOverview'
+import FacilityStaffPage from './pages/FacilityStaffPage'
+import FacilityUnits from './pages/FacilityUnits'
 import ForgotPassword from './pages/ForgotPassword'
 import Gate from './pages/Gate'
 import ContractDetail from './pages/ContractDetail'
@@ -15,6 +19,7 @@ import { Login, Register } from './pages/Login'
 import MyUnits from './pages/MyUnits'
 import Rent from './pages/Rent'
 import StaffBilling from './pages/StaffBilling'
+import StaffCancellations from './pages/StaffCancellations'
 import StaffContracts from './pages/StaffContracts'
 import StaffReturn from './pages/StaffReturn'
 import StaffReservations from './pages/StaffReservations'
@@ -59,6 +64,11 @@ export default function App() {
             <Route path="/staff-contracts" element={<StaffContracts />} />
             <Route path="/staff-return" element={<StaffReturn />} />
             <Route path="/staff-support" element={<StaffSupport />} />
+            <Route path="/staff-cancellations" element={<StaffCancellations />} />
+            <Route path="/facility-contracts" element={<FacilityContracts />} />
+            <Route path="/facility" element={<RequireRole roles={[Roles.Manager]}><FacilityOverview /></RequireRole>} />
+            <Route path="/facility-units" element={<RequireRole roles={[Roles.Manager]}><FacilityUnits /></RequireRole>} />
+            <Route path="/facility-staff" element={<RequireRole roles={[Roles.Manager]}><FacilityStaffPage /></RequireRole>} />
           </Route>
           <Route element={<RequireRole roles={[Roles.Admin]}><AdminLayout /></RequireRole>}>
             <Route path="/admin/users" element={<AdminUsers />} />

@@ -59,7 +59,7 @@ export function PortalHeader() {
               <a href="#facilities" onClick={(e) => { e.preventDefault(); navigate('/'); setTimeout(() => document.getElementById('facilities')?.scrollIntoView({ behavior: 'smooth' }), 50) }}>Cơ Sở</a>
             </>
           )}
-          {isStaff && <NavLink to="/gate">Màn hình nhân viên</NavLink>}
+          {isStaff && <NavLink to={user.role === Roles.Manager ? '/facility' : '/gate'}>{user.role === Roles.Manager ? 'Màn hình quản lý' : 'Màn hình nhân viên'}</NavLink>}
           {user?.role === Roles.Admin && <NavLink to="/admin/users">Màn hình quản trị</NavLink>}
           {user?.role === Roles.OpsManager && <NavLink to="/ops/facilities">Màn hình vận hành</NavLink>}
           <div className="portal-nav-actions">
@@ -179,7 +179,13 @@ export function StaffLayout() {
       .catch((e) => setError((e as Error).message))
   }, [])
 
-  const title = pathname.startsWith('/reservations') ? 'Đặt Kho & Nhận Kho'
+  const isManager = user?.role === Roles.Manager
+  const title = pathname === '/facility' ? 'Tổng Quan Cơ Sở'
+    : pathname.startsWith('/facility-units') ? 'Kho Lưu Trữ'
+    : pathname.startsWith('/facility-staff') ? 'Nhân Viên Cơ Sở'
+    : pathname.startsWith('/facility-contracts') ? 'Hợp Đồng & Phụ Thu'
+    : pathname.startsWith('/staff-cancellations') ? 'Yêu Cầu Hủy Đặt Kho'
+    : pathname.startsWith('/reservations') ? 'Đặt Kho & Nhận Kho'
     : pathname.startsWith('/staff-billing') ? 'Hóa Đơn & Thu Tiền'
     : pathname.startsWith('/staff-contracts') ? 'Gia Hạn & Quá Hạn'
     : pathname.startsWith('/staff-return') ? 'Trả Kho & Hoàn Cọc'
@@ -191,12 +197,23 @@ export function StaffLayout() {
         <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
           <div className="sidebar-brand"><Logo admin light /></div>
           <nav className="sidebar-nav">
+            {isManager && (
+              <>
+                <small className="sidebar-group">Quản lý cơ sở</small>
+                <NavLink to="/facility" end><Icon name="grid" /> Tổng Quan</NavLink>
+                <NavLink to="/facility-units"><Icon name="package" /> Kho Lưu Trữ</NavLink>
+                <NavLink to="/facility-staff"><Icon name="users" /> Nhân Viên</NavLink>
+                <small className="sidebar-group">Vận hành hằng ngày</small>
+              </>
+            )}
             <NavLink to="/gate"><Icon name="door" /> Cổng Ra Vào</NavLink>
             <NavLink to="/reservations"><Icon name="clipboard" /> Đặt Kho & Nhận Kho</NavLink>
             <NavLink to="/staff-billing"><Icon name="wallet" /> Hóa Đơn & Thu Tiền</NavLink>
             <NavLink to="/staff-contracts"><Icon name="refresh" /> Gia Hạn & Quá Hạn</NavLink>
             <NavLink to="/staff-return"><Icon name="key" /> Trả Kho & Hoàn Cọc</NavLink>
             <NavLink to="/staff-support"><Icon name="phone" /> Hỗ Trợ Khách Hàng</NavLink>
+            <NavLink to="/staff-cancellations"><Icon name="x" /> Yêu Cầu Hủy Đặt Kho</NavLink>
+            <NavLink to="/facility-contracts"><Icon name="file" /> Hợp Đồng & Phụ Thu</NavLink>
             <Link to="/"><Icon name="grid" /> Trang khách hàng</Link>
           </nav>
           {user && (

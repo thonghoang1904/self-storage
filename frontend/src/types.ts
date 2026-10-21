@@ -12,7 +12,7 @@ export const Roles = {
 export const GATE_ROLES: string[] = [Roles.Staff, Roles.Manager]
 
 export const homeFor = (role: string) =>
-  GATE_ROLES.includes(role) ? '/gate' : role === Roles.Customer ? '/my-units' : role === Roles.Admin ? '/admin/users' : role === Roles.OpsManager ? '/ops/facilities' : '/'
+  role === Roles.Manager ? '/facility' : GATE_ROLES.includes(role) ? '/gate' : role === Roles.Customer ? '/my-units' : role === Roles.Admin ? '/admin/users' : role === Roles.OpsManager ? '/ops/facilities' : '/'
 
 export const RoleLabels: Record<string, string> = {
   [Roles.Customer]: 'Khách hàng',
@@ -155,7 +155,96 @@ export interface Reservation {
   status: string
   depositDeadline: string
   customerName: string
+  /** Promotion code applied when booking, and the discount it gave (taken off the first month). */
+  promoCode?: string | null
+  promotionDiscountAmount?: number
+  depositInvoiceId?: number | null
 }
+
+/** Customer asks to cancel a reservation not yet handed over; staff approve (refund deposit minus the cancellation fee) or reject. */
+export interface CancellationRequest {
+  cancellationRequestId: number
+  reservationId: number
+  reservationCode: string
+  customerName: string
+  reason: string
+  /** Pending | Approved | Rejected */
+  status: string
+  requestedAt: string
+  resolvedAt: string | null
+  resolutionNotes: string | null
+  approvedRefundAmount: number | null
+}
+
+export interface CancellationRefund {
+  reservationId: number
+  refundedAmount: number
+  remainingRefund: number
+  paymentMethod: string
+  transactionCode: string | null
+  refundedAt: string
+}
+
+export const CancellationStatuses: Record<string, { label: string; tone: 'ok' | 'warn' | 'bad' | 'info' | 'muted' }> = {
+  Pending: { label: 'Chờ duyệt hủy', tone: 'warn' },
+  Approved: { label: 'Đã duyệt hủy', tone: 'ok' },
+  Rejected: { label: 'Từ chối hủy', tone: 'muted' },
+}
+
+// ---- facility manager (FacilityOperationsController, FacilityManagementController)
+
+/** Work for one day at a facility (GET /api/facilities/{id}/daily-operations). */
+export interface FacilityWorkQueue {
+  date: string
+  checkIns: Reservation[]
+  returns: FacilityTaskContract[]
+  supportRequests: SupportRequest[]
+}
+
+export interface FacilityTaskContract {
+  contractId: number
+  contractNumber: string
+  customerName: string
+  unitCode: string
+  endDate: string
+  status: string
+  depositPaid: number
+  accumulatedLateFee: number
+}
+
+/** Facility KPIs over a date range (GET /api/facilities/{id}/dashboard), manager only. */
+export type FacilityDashboard = FacilityReport
+
+export interface FacilityStaff {
+  userId: number
+  username: string
+  fullName: string
+  email: string
+  status: string
+  assignedDate: string
+}
+
+export interface ExtraChargeInvoice {
+  invoiceId: number
+  invoiceNumber: string
+  invoiceType: string
+  totalAmount: number
+  dueDate: string
+  status: string
+  contractId: number
+}
+
+/**
+ * Fee types a facility can bill as an extra charge. Staff cannot read the fee table (operations manager only),
+ * so these are the rows 01_schema.sql inserts, in insert order (FeeTypeID 1..5).
+ */
+export const ExtraChargeFees = [
+  { feeTypeId: 1, feeCode: 'LATE_FEE_DAILY', feeName: 'Phí phạt quá hạn mỗi ngày', defaultAmount: 100000, perDay: true },
+  { feeTypeId: 2, feeCode: 'LOST_KEY_FEE', feeName: 'Phí cấp lại chìa khóa cơ', defaultAmount: 150000, perDay: false },
+  { feeTypeId: 3, feeCode: 'LOST_CARD_FEE', feeName: 'Phí cấp lại thẻ từ truy cập', defaultAmount: 100000, perDay: false },
+  { feeTypeId: 4, feeCode: 'CLEANING_FEE', feeName: 'Phí vệ sinh sau trả kho', defaultAmount: 200000, perDay: false },
+  { feeTypeId: 5, feeCode: 'LOCK_REPLACE_FEE', feeName: 'Phí thay mới ổ khóa thông minh', defaultAmount: 500000, perDay: false },
+]
 
 export interface Invoice {
   invoiceId: number
@@ -191,6 +280,10 @@ export interface CheckoutResponse {
   transactionReference: string
   amount: number
   paymentUrl: string
+  /** MoMo only: text to show as a QR code for the MoMo app to scan, and links that open the app. */
+  qrCodeUrl?: string | null
+  deeplink?: string | null
+  deeplinkWebInApp?: string | null
 }
 
 export interface Contract {

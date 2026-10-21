@@ -5,19 +5,19 @@
  * Data lives in localStorage of this browser only; "Đặt lại dữ liệu demo" wipes it.
  */
 import type {
-  AccessIssue, ActivityLog, AdminUser, FacilityReport, OperationsReport, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
+  AccessIssue, ActivityLog, AdminUser, CancellationRequest, CancellationRefund, ExtraChargeInvoice, FacilityStaff, FacilityWorkQueue, FacilityTaskContract, FacilityReport, OperationsReport, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
   OverdueSummary, Person, Renewal, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate, VisitRegistration, RentalPolicy, FeeConfiguration, Promotion,
 } from '../types'
 import { Roles } from '../types'
 
 export const DEMO_PASSWORD = 'Demo@12345'
-const DB_KEY = 'ss_mock_db_v10'
+const DB_KEY = 'ss_mock_db_v11'
 
 // ------------------------------------------------------------------ data model
 
 interface User { userId: number; username: string; password: string; fullName: string; email: string; phoneNumber: string; citizenId: string | null; role: string; status?: string }
 interface Unit { unitId: number; facilityId: number; unitTypeId: number; unitCode: string; floorNumber: number; zoneArea: string; monthlyPrice: number; status: string }
-interface Rsv { reservationId: number; reservationCode: string; customerId: number; facilityId: number; unitTypeId: number; assignedUnitId: number | null; expectedStartDate: string; checkInAppointmentAt?: string | null; durationMonths: number; depositAmount: number; estimatedTotalFee: number; status: string; depositDeadline: string; createdAt: string }
+interface Rsv { reservationId: number; reservationCode: string; customerId: number; facilityId: number; unitTypeId: number; assignedUnitId: number | null; expectedStartDate: string; checkInAppointmentAt?: string | null; durationMonths: number; depositAmount: number; estimatedTotalFee: number; status: string; depositDeadline: string; createdAt: string; promoCode?: string | null; promotionDiscountAmount?: number; depositWasPaid?: boolean }
 interface Ctr { contractId: number; contractNumber: string; customerId: number; unitId: number; startDate: string; endDate: string; monthlyRentFee: number; depositPaid: number; status: string }
 interface Rnw { renewalId: number; contractId: number; oldEndDate: string; newEndDate: string; extensionMonths: number; renewalFee: number; status: string; requestedAt: string }
 interface Sup { requestId: number; requestCode: string; customerId: number; facilityId: number; contractId: number; unitId: number; assignedStaffId: number | null; category: string; priority: string; title: string; description: string; status: string; createdAt: string; resolvedAt: string | null; checklist?: Chk[] }
@@ -32,7 +32,7 @@ interface Db {
   seq: number
   users: User[]
   facilities: Facility[]
-  assignments: { facilityId: number; staffId: number }[]
+  assignments: { facilityId: number; staffId: number; assignedDate?: string }[]
   unitTypes: UnitType[]
   units: Unit[]
   reservations: Rsv[]
@@ -52,7 +52,13 @@ interface Db {
   supportUpdates: SupUpd[]
   refunds?: { contractId: number; amount: number; at: string }[]
   logs?: (ActivityLog & { userId: number })[]
+  /** ReservationCancellationRequests; refunds of an approved one are kept with it. */
+  cancellations?: Cnl[]
+  /** Extra-charge invoices a facility billed on a contract (FacilityManagementController.CreateExtraCharge). */
+  extraCharges?: Xtra[]
 }
+interface Cnl { cancellationRequestId: number; reservationId: number; customerId: number; reason: string; status: string; requestedAt: string; resolvedAt: string | null; resolvedByStaffId: number | null; resolutionNotes: string | null; approvedRefundAmount: number | null; refunds: { amount: number; method: string; code: string | null; at: string; staffId: number }[] }
+interface Xtra { id: number; contractId: number; feeCode: string; feeName: string; unitPrice: number; quantity: number; notes: string | null; dueDate: string; createdAt: string; paid?: Paid }
 
 // ------------------------------------------------------------------ time helpers (server local time, like SYSDATETIME)
 
@@ -94,6 +100,7 @@ function seed(): Db {
     { userId: 1, username: 'admin', password: DEMO_PASSWORD, fullName: 'Quản trị hệ thống', email: 'admin@example.com', phoneNumber: '0900000000', citizenId: '079000000001', role: Roles.Admin },
     { userId: 2, username: 'manager1', password: DEMO_PASSWORD, fullName: 'Trần Quản Lý', email: 'manager1@example.com', phoneNumber: '0900000000', citizenId: '079000000002', role: Roles.Manager },
     { userId: 3, username: 'staff1', password: DEMO_PASSWORD, fullName: 'Lê Nhân Viên', email: 'staff1@example.com', phoneNumber: '0900000000', citizenId: '079000000003', role: Roles.Staff },
+    { userId: 9, username: 'staff2', password: DEMO_PASSWORD, fullName: 'Đỗ Thị Trực Cổng', email: 'staff2@example.com', phoneNumber: '0900000009', citizenId: '079000000009', role: Roles.Staff },
     { userId: 8, username: 'ops1', password: DEMO_PASSWORD, fullName: 'Ngô Vận Hành', email: 'ops1@example.com', phoneNumber: '0900000000', citizenId: '079000000008', role: Roles.OpsManager },
     { userId: 4, username: 'customer1', password: DEMO_PASSWORD, fullName: 'Nguyễn Văn Khách', email: 'customer1@example.com', phoneNumber: '0900000000', citizenId: '079200000123', role: Roles.Customer },
     // Extra demo customers so the gate screen has something to show.
@@ -154,6 +161,8 @@ function seed(): Db {
       { visitRegistrationId: 4, contractId: 3, customerId: 5, authorizedPersonId: null, scheduledEntryAt: tz(addDays(atToday(14, 0), 1)), scheduledExitAt: tz(addDays(atToday(15, 0), 1)), purpose: 'Kiểm tra kho', status: 'Pending', requestedAt: localIso(now), reviewedAt: null, reviewNotes: null },
     ],
     renewals: [],
+    // customer2 changed plans before paying the deposit: waiting for staff at Quận 7.
+    cancellations: [{ cancellationRequestId: 1, reservationId: 1, customerId: 5, reason: 'Đổi kế hoạch chuyển nhà, chưa cần kho nữa', status: 'Pending', requestedAt: localIso(addDays(now, -0.1)), resolvedAt: null, resolvedByStaffId: null, resolutionNotes: null, approvedRefundAmount: null, refunds: [] }],
     supports: [
       { requestId: 1, requestCode: 'SUP-DEMO-000101', customerId: 4, facilityId: 1, contractId: 1, unitId: unit(1, 'B-01').unitId, assignedStaffId: 3, category: 'LockIssue', priority: 'High', title: 'Ổ khóa kho B-01 bị kẹt', description: 'Sáng nay tôi mở khóa rất khó, chìa vặn không hết vòng.', status: 'InProgress', createdAt: localIso(addDays(atToday(8, 30), -1)), resolvedAt: null },
       { requestId: 2, requestCode: 'SUP-DEMO-000102', customerId: 5, facilityId: 1, contractId: 3, unitId: unit(1, 'C-01').unitId, assignedStaffId: null, category: 'DamagedUnit', priority: 'Urgent', title: 'Trần kho C-01 bị dột nước', description: 'Sau cơn mưa tối qua có nước nhỏ giọt xuống thùng hàng ở góc trái.', status: 'Open', createdAt: localIso(atToday(7, 20)), resolvedAt: null },
@@ -297,6 +306,9 @@ function reservationDto(r: Rsv): Reservation {
     status: r.status,
     depositDeadline: r.depositDeadline,
     customerName: userById(r.customerId).fullName,
+    promoCode: r.promoCode ?? null,
+    promotionDiscountAmount: r.promotionDiscountAmount ?? 0,
+    depositInvoiceId: 10000 + r.reservationId,
   }
 }
 
@@ -403,10 +415,12 @@ function allInvoices(): { customerId: number; facilityId: number; invoice: Invoi
   const now = localIso(new Date())
   const fromRsv = db.reservations.map((r) => {
     const p = (r as Rsv & { paid?: Paid }).paid
-    const status = r.status === 'PendingDeposit' ? (r.depositDeadline <= now ? 'Overdue' : 'Unpaid') : r.status === 'Confirmed' || r.status === 'CheckedIn' ? 'Paid' : 'Cancelled'
+    const status = r.status === 'PendingDeposit' ? (r.depositDeadline <= now ? 'Overdue' : 'Unpaid') : r.status === 'Confirmed' || r.status === 'CheckedIn' || r.depositWasPaid ? 'Paid' : 'Cancelled'
+    const refunds = (db.cancellations ?? []).filter((c) => c.reservationId === r.reservationId).flatMap((c) => c.refunds)
     const invoice: Invoice = { invoiceId: 10000 + r.reservationId, invoiceNumber: `INV-DEP-${r.reservationId}`, contractId: null, reservationId: r.reservationId, invoiceType: 'DEPOSIT', subTotal: r.depositAmount, discountAmount: 0, totalAmount: r.depositAmount, dueDate: r.depositDeadline.slice(0, 10), status, createdAt: r.createdAt,
       details: [{ detailId: 1, description: `Tiền cọc 1 tháng cho đơn ${r.reservationCode}`, quantity: 1, unitPrice: r.depositAmount, lineTotal: r.depositAmount }],
-      payments: status === 'Paid' ? payments(1, r.depositAmount, p, r.createdAt, 'Nhân viên xác nhận đã nhận tiền cọc') : [] }
+      payments: status === 'Paid' ? [...payments(1, r.depositAmount, p, r.createdAt, 'Nhân viên xác nhận đã nhận tiền cọc'),
+        ...refunds.map((x, i) => ({ paymentId: 2 + i, paymentMethod: x.method, transactionCode: x.code, amountPaid: x.amount, paymentDate: x.at, status: 'Refunded', paymentNotes: 'Hoàn cọc do hủy đơn đặt kho', receivedByStaff: userById(x.staffId).fullName }))] : [] }
     return { customerId: r.customerId, facilityId: r.facilityId, invoice }
   })
   const fromRenewals = db.renewals.map((r) => {
@@ -440,7 +454,15 @@ function allInvoices(): { customerId: number; facilityId: number; invoice: Invoi
     }
     return out
   })
-  return [...fromRsv, ...fromRenewals, ...fromRent].sort((a, b) => b.invoice.createdAt.localeCompare(a.invoice.createdAt))
+  const fromExtra = (db.extraCharges ?? []).map((x) => {
+    const c = db.contracts.find((k) => k.contractId === x.contractId)!
+    const total = x.unitPrice * x.quantity
+    const invoice: Invoice = { invoiceId: 40000 + x.id, invoiceNumber: `INV-EXT-${x.id}`, contractId: c.contractId, reservationId: null, invoiceType: 'EXTRA_CHARGE', subTotal: total, discountAmount: 0, totalAmount: total, dueDate: x.dueDate, status: x.paid ? 'Paid' : x.dueDate < today() ? 'Overdue' : 'Unpaid', createdAt: x.createdAt,
+      details: [{ detailId: 1, description: x.notes ? `${x.feeName}: ${x.notes}` : x.feeName, quantity: x.quantity, unitPrice: x.unitPrice, lineTotal: total }],
+      payments: x.paid ? payments(1, total, x.paid, x.createdAt, 'Thu phụ phí') : [] }
+    return { customerId: c.customerId, facilityId: unitById(c.unitId).facilityId, invoice }
+  })
+  return [...fromRsv, ...fromRenewals, ...fromRent, ...fromExtra].sort((a, b) => b.invoice.createdAt.localeCompare(a.invoice.createdAt))
 }
 
 
@@ -529,6 +551,71 @@ function checkPromotion(b: Body, selfId: number | null): Omit<Promotion, 'promot
   return { promoCode: code, title, discountPercent: pct, maxDiscountAmount: max, minRentalMonths: months, startDate: start, endDate: end, isActive: b.isActive === true }
 }
 
+// ------------------------------------------------------------------ facility manager (FacilityOperationsController, FacilityManagementController)
+
+/** KPIs of one facility for payments made between from and to (FacilityDashboardDto). */
+function facilityKpis(facilityId: number, from: string, to: string): FacilityReport {
+  const f = facilityById(facilityId)!
+  const units = db.units.filter((u) => u.facilityId === facilityId)
+  const count = (status: string) => units.filter((u) => u.status === status).length
+  const contracts = db.contracts.filter((c) => unitById(c.unitId).facilityId === facilityId)
+  const pays = allInvoices().filter((x) => x.facilityId === facilityId).flatMap((x) => x.invoice.payments)
+    .filter((p) => p.paymentDate.slice(0, 10) >= from && p.paymentDate.slice(0, 10) <= to)
+  const sumOf = (status: string) => pays.filter((p) => p.status === status).reduce((n, p) => n + p.amountPaid, 0)
+  return {
+    facilityId, facilityName: f.facilityName, fromDate: from, toDate: to, totalUnits: units.length,
+    availableUnits: count('Available'), rentedUnits: count('Rented'), maintenanceUnits: count('UnderMaintenance'), overdueLockedUnits: count('OverdueLocked'),
+    activeContracts: contracts.filter((c) => c.status === 'Active').length, overdueContracts: contracts.filter((c) => c.status === 'Overdue').length,
+    openSupportRequests: db.supports.filter((r) => r.facilityId === facilityId && (r.status === 'Open' || r.status === 'InProgress')).length,
+    netRevenue: sumOf('Success') - sumOf('Refunded'),
+  }
+}
+/** fromDate/toDate query, last 30 days by default (same as the controllers). */
+function dateRange(query: URLSearchParams) {
+  const to = query.get('toDate') || today()
+  const from = query.get('fromDate') || dateOnly(addDays(new Date(`${to}T00:00:00`), -29))
+  if (from > to) throw bad('Ngày bắt đầu phải nhỏ hơn hoặc bằng ngày kết thúc')
+  return { from, to }
+}
+/** Staff or manager assigned at the facility (AccessService.EnsureAssignedAsync). */
+function facilityStaff(token: string | null, facilityId: number, roles = STAFF) {
+  const me = currentUser(token)
+  requireRole(me, roles)
+  ensureAssigned(me.userId, facilityId)
+  if (!facilityById(facilityId)) throw notFound('Không tìm thấy cơ sở')
+  return me
+}
+const cancellationsOf = () => (db.cancellations ??= [])
+const cancellationDto = (c: Cnl): CancellationRequest => ({
+  cancellationRequestId: c.cancellationRequestId, reservationId: c.reservationId,
+  reservationCode: db.reservations.find((r) => r.reservationId === c.reservationId)!.reservationCode,
+  customerName: userById(c.customerId).fullName, reason: c.reason, status: c.status, requestedAt: c.requestedAt,
+  resolvedAt: c.resolvedAt, resolutionNotes: c.resolutionNotes, approvedRefundAmount: c.approvedRefundAmount,
+})
+const unitDto = (u: Unit): StorageUnit => ({ unitId: u.unitId, unitCode: u.unitCode, floorNumber: u.floorNumber, zoneArea: u.zoneArea || null, monthlyPrice: typeById(u.unitTypeId).baseMonthlyRate, status: u.status, unitTypeId: u.unitTypeId, unitTypeName: typeById(u.unitTypeId).typeName })
+/** Units of a type still free once open reservations hold theirs (used before taking a unit out of the free pool). */
+const spareUnits = (facilityId: number, unitTypeId: number) => {
+  const now = localIso(new Date())
+  const free = db.units.filter((u) => u.facilityId === facilityId && u.unitTypeId === unitTypeId && u.status === 'Available').length
+  const held = db.reservations.filter((r) => r.facilityId === facilityId && r.unitTypeId === unitTypeId
+    && (r.status === 'Confirmed' || (r.status === 'PendingDeposit' && r.depositDeadline > now))).length
+  return free - held
+}
+function unitFields(body: Body) {
+  const type = db.unitTypes.find((t) => t.unitTypeId === Number(body.unitTypeId))
+  if (!type) throw notFound('Không tìm thấy loại kho')
+  if (Number(body.monthlyPrice) !== type.baseMonthlyRate) throw bad('Giá thuê kho phải bằng giá niêm yết của loại kho')
+  const code = String(body.unitCode ?? '').trim()
+  if (!code || code.length > 30) throw bad('Mã kho bắt buộc, tối đa 30 ký tự')
+  const floor = Number(body.floorNumber)
+  if (!(Number.isInteger(floor) && floor >= 1 && floor <= 100)) throw bad('Tầng phải từ 1 đến 100')
+  const zone = String(body.zoneArea ?? '').trim()
+  if (zone.length > 30) throw bad('Khu vực tối đa 30 ký tự')
+  return { type, code, floor, zone }
+}
+/** Same fee rows and IDs as 01_schema.sql (the order they are inserted). */
+const SQL_FEE_CODES = ['LATE_FEE_DAILY', 'LOST_KEY_FEE', 'LOST_CARD_FEE', 'CLEANING_FEE', 'LOCK_REPLACE_FEE']
+
 // ------------------------------------------------------------------ routes
 
 type Body = Record<string, unknown>
@@ -616,7 +703,21 @@ const routes: [string, RegExp, Handler][] = [
       .find((a) => a.unitTypeId === unitTypeId)!
     if (avail.availableUnits <= 0) throw conflict('Loại kho này đã hết chỗ trống tại cơ sở')
     const now = new Date()
+    // Same promotion rules as ReservationsController.Create: active, in its date range, minimum months, first rental only.
+    let promo: Promotion | undefined
+    let discount = 0
+    const code = String(body.promoCode ?? '').trim().toUpperCase()
+    if (code) {
+      promo = promotionsOf().find((p) => p.promoCode === code && p.isActive && p.startDate <= today() && p.endDate >= today())
+      if (!promo) throw bad('Mã khuyến mãi không hợp lệ hoặc đã hết hạn')
+      if (months < promo.minRentalMonths) throw bad(`Mã khuyến mãi yêu cầu thuê tối thiểu ${promo.minRentalMonths} tháng`)
+      if (db.contracts.some((c) => c.customerId === me.userId)) throw conflict('Mã khuyến mãi chỉ dành cho lần đầu tiên thuê kho')
+      discount = Math.round(type.baseMonthlyRate * promo.discountPercent) / 100
+      if (promo.maxDiscountAmount != null) discount = Math.min(discount, promo.maxDiscountAmount)
+    }
     const r: Rsv = {
+      promoCode: promo?.promoCode ?? null,
+      promotionDiscountAmount: discount,
       reservationId: nextId(),
       reservationCode: `RSV-${dateOnly(now).replaceAll('-', '')}-${Math.floor(100000 + Math.random() * 900000)}`,
       customerId: me.userId, facilityId, unitTypeId, assignedUnitId: null,
@@ -899,6 +1000,8 @@ const routes: [string, RegExp, Handler][] = [
       ;(r as Rsv & { paid?: typeof paid }).paid = paid
     } else if (inv.invoiceType === 'MONTHLY_RENT') {
       db.rentPaid = { ...db.rentPaid, [`${inv.contractId}:${inv.billingPeriodStart}`]: paid }
+    } else if (inv.invoiceType === 'EXTRA_CHARGE') {
+      db.extraCharges!.find((x) => 40000 + x.id === inv.invoiceId)!.paid = paid
     } else {
       const rn = db.renewals.find((x) => 20000 + x.renewalId === inv.invoiceId)!
       const c = db.contracts.find((x) => x.contractId === rn.contractId)!
@@ -910,8 +1013,17 @@ const routes: [string, RegExp, Handler][] = [
     }
     return { paymentId: nextId(), paymentMethod: method, transactionCode: code || null, amountPaid: inv.totalAmount, paymentDate: now, status: 'Success', paymentNotes: (body.paymentNotes as string) || null, receivedByStaff: me.fullName }
   }],
-  ['POST', /^\/api\/invoices\/(\d+)\/checkout\/(vnpay|momo)$/, () => {
-    throw bad('Bản demo không kết nối cổng thanh toán VNPay/MoMo thật. Khi chạy với backend, nút này chuyển sang trang thanh toán.')
+  ['POST', /^\/api\/invoices\/(\d+)\/checkout\/(vnpay|momo)$/, (m, { token }) => {
+    const me = currentUser(token)
+    requireRole(me, [Roles.Customer])
+    const found = allInvoices().find((x) => x.invoice.invoiceId === Number(m[1]) && x.customerId === me.userId)
+    if (!found) throw notFound('Không tìm thấy hóa đơn')
+    if (found.invoice.status !== 'Unpaid' && found.invoice.status !== 'Overdue') throw conflict('Hóa đơn không còn ở trạng thái chờ thanh toán')
+    if (m[2] === 'vnpay') throw bad('Bản demo không kết nối cổng VNPay thật. Khi chạy với backend, nút này chuyển sang trang thanh toán VNPay.')
+    // A stand-in for MoMo's answer: the QR content is not a real MoMo payment, scanning it only shows the text.
+    const ref = `DEMO${found.invoice.invoiceId}${Date.now() % 100000}`
+    return { provider: 'MoMo', paymentId: nextId(), transactionReference: ref, amount: found.invoice.totalAmount,
+      paymentUrl: '', qrCodeUrl: `SafeKeep demo MoMo ${found.invoice.invoiceNumber} ${found.invoice.totalAmount} VND ${ref}`, deeplink: null, deeplinkWebInApp: null }
   }],
 
   // ---- support requests (same rules as SupportController)
@@ -1317,25 +1429,231 @@ const routes: [string, RegExp, Handler][] = [
     if (!p) throw notFound('Không tìm thấy khuyến mãi')
     return Object.assign(p, checkPromotion(body, p.promotionId))
   }],
-  ['GET', /^\/api\/operations\/reports\/facilities$/, (_m, { token }) => {
+
+  // ---- Google sign-in: the demo has no Google, the stand-in token is "demo-google|<email>|..."
+  ['POST', /^\/api\/auth\/google$/, (_m, { body }) => {
+    const idToken = String(body.idToken ?? '')
+    if (idToken.length < 100) throw bad('IdToken không hợp lệ')
+    const [kind, email] = idToken.split('|')
+    if (kind !== 'demo-google') throw new MockHttpError(401, 'Google ID token không hợp lệ hoặc đã hết hạn.')
+    const u = db.users.find((x) => x.email.toLowerCase() === String(email).toLowerCase() && (x.status ?? 'Active') === 'Active')
+    if (!u) throw new MockHttpError(401, 'Tài khoản Google không thể đăng nhập.')
+    addLog(u.userId, 'GoogleLogin', 'Authenticated using a verified Google account')
+    const res: LoginResponse = { token: `mock.${u.userId}`, expiresAt: localIso(addDays(new Date(), 1)), user: toUserDto(u) }
+    return res
+  }],
+
+  // ---- reservation cancellation (ReservationsController)
+  ['POST', /^\/api\/reservations\/(\d+)\/cancellation-requests$/, (m, { token, body }) => {
+    const me = currentUser(token)
+    requireRole(me, [Roles.Customer])
+    const r = db.reservations.find((x) => x.reservationId === Number(m[1]) && x.customerId === me.userId)
+    if (!r) throw notFound('Không tìm thấy đơn đặt kho')
+    if (r.status !== 'PendingDeposit' && r.status !== 'Confirmed') throw conflict('Chỉ có thể yêu cầu hủy đơn chưa nhận kho')
+    if (r.status === 'Confirmed' && localIso(new Date()) >= `${r.expectedStartDate}T20:00:00`) throw conflict('Đơn đã qua thời hạn nhận kho; vui lòng liên hệ nhân viên cơ sở')
+    if (cancellationsOf().some((c) => c.reservationId === r.reservationId && c.status === 'Pending')) throw conflict('Đơn này đang có yêu cầu hủy chờ xử lý')
+    const reason = String(body.reason ?? '').trim()
+    if (!reason) throw bad('Vui lòng nhập lý do hủy')
+    if (reason.length > 1000) throw bad('Lý do tối đa 1000 ký tự')
+    const c: Cnl = { cancellationRequestId: nextId(), reservationId: r.reservationId, customerId: me.userId, reason, status: 'Pending', requestedAt: localIso(new Date()), resolvedAt: null, resolvedByStaffId: null, resolutionNotes: null, approvedRefundAmount: null, refunds: [] }
+    cancellationsOf().push(c)
+    return cancellationDto(c)
+  }],
+  ['GET', /^\/api\/reservations\/(\d+)\/cancellation-requests\/my$/, (m, { token }) => {
+    const me = currentUser(token)
+    requireRole(me, [Roles.Customer])
+    if (!db.reservations.some((x) => x.reservationId === Number(m[1]) && x.customerId === me.userId)) throw notFound('Không tìm thấy đơn đặt kho')
+    return cancellationsOf().filter((c) => c.reservationId === Number(m[1])).sort((a, b) => b.requestedAt.localeCompare(a.requestedAt) || b.cancellationRequestId - a.cancellationRequestId).map(cancellationDto)
+  }],
+  ['POST', /^\/api\/reservations\/(\d+)\/cancellation-refunds$/, (m, { token, body }) => {
+    const me = currentUser(token)
+    requireRole(me, STAFF)
+    const method = String(body.paymentMethod ?? '')
+    if (method !== 'Cash' && method !== 'BankTransfer') throw bad('Phương thức hoàn cọc chỉ hỗ trợ tiền mặt hoặc chuyển khoản')
+    const code = String(body.transactionCode ?? '').trim() || null
+    if (method === 'BankTransfer' && !code) throw bad('Hoàn cọc qua chuyển khoản phải có mã giao dịch')
+    const r = db.reservations.find((x) => x.reservationId === Number(m[1]))
+    if (!r) throw notFound('Không tìm thấy đơn đặt kho')
+    ensureAssigned(me.userId, r.facilityId)
+    const c = cancellationsOf().filter((x) => x.reservationId === r.reservationId && x.status === 'Approved').sort((a, b) => String(b.resolvedAt).localeCompare(String(a.resolvedAt)))[0]
+    if (!c) throw conflict('Yêu cầu hủy chưa được duyệt')
+    if (!r.depositWasPaid) throw conflict('Khoản cọc chưa được ghi nhận thanh toán')
+    if (code && cancellationsOf().some((x) => x.refunds.some((f) => f.code === code))) throw conflict('Mã giao dịch đã được ghi nhận')
+    const remaining = (c.approvedRefundAmount ?? 0) - c.refunds.reduce((n, f) => n + f.amount, 0)
+    const amount = Number(body.amount)
+    if (!(amount > 0) || amount > remaining) throw bad(`Số tiền hoàn còn được duyệt là ${Math.max(0, remaining).toLocaleString('vi-VN')}đ`)
+    const at = localIso(new Date())
+    c.refunds.push({ amount, method, code, at, staffId: me.userId })
+    const res: CancellationRefund = { reservationId: r.reservationId, refundedAmount: amount, remainingRefund: remaining - amount, paymentMethod: method, transactionCode: code, refundedAt: at }
+    return res
+  }],
+
+  // ---- facility operations (FacilityOperationsController)
+  ['GET', /^\/api\/facilities\/(\d+)\/daily-operations$/, (m, { token, query }) => {
+    const fid = Number(m[1])
+    facilityStaff(token, fid)
+    const date = query.get('date') || today()
+    const checkIns = db.reservations.filter((r) => r.facilityId === fid && r.status === 'Confirmed'
+      && (r.checkInAppointmentAt ? r.checkInAppointmentAt.slice(0, 10) === date : r.expectedStartDate === date))
+      .sort((a, b) => String(a.checkInAppointmentAt ?? '').localeCompare(String(b.checkInAppointmentAt ?? ''))).map(reservationDto)
+    const returns = db.contracts.filter((c) => unitById(c.unitId).facilityId === fid && c.endDate === date && (c.status === 'Active' || c.status === 'Overdue'))
+      .sort((a, b) => a.contractNumber.localeCompare(b.contractNumber))
+      .map<FacilityTaskContract>((c) => ({ contractId: c.contractId, contractNumber: c.contractNumber, customerName: userById(c.customerId).fullName, unitCode: unitById(c.unitId).unitCode, endDate: c.endDate, status: c.status, depositPaid: c.depositPaid, accumulatedLateFee: openOverdue(c.contractId)?.accumulatedLateFee ?? 0 }))
+    const rank = (p: string) => (p === 'Urgent' ? 0 : p === 'High' ? 1 : 2)
+    const supportRequests = db.supports.filter((r) => r.facilityId === fid && (r.status === 'Open' || r.status === 'InProgress'))
+      .sort((a, b) => rank(a.priority) - rank(b.priority) || a.createdAt.localeCompare(b.createdAt)).map(supportDto)
+    const res: FacilityWorkQueue = { date, checkIns, returns, supportRequests }
+    return res
+  }],
+  ['GET', /^\/api\/facilities\/(\d+)\/contracts$/, (m, { token, query }) => {
+    const fid = Number(m[1])
+    facilityStaff(token, fid)
+    const status = query.get('status')
+    if (status && !['Active', 'Overdue', 'Terminated', 'Renewed', 'Liquidated'].includes(status)) throw bad('Trạng thái hợp đồng không hợp lệ')
+    return db.contracts.filter((c) => unitById(c.unitId).facilityId === fid && (!status || c.status === status))
+      .sort((a, b) => b.startDate.localeCompare(a.startDate)).slice(0, 500).map(contractDto)
+  }],
+  ['GET', /^\/api\/facilities\/(\d+)\/cancellation-requests$/, (m, { token, query }) => {
+    const fid = Number(m[1])
+    facilityStaff(token, fid)
+    const status = query.get('status')
+    return cancellationsOf().filter((c) => db.reservations.find((r) => r.reservationId === c.reservationId)!.facilityId === fid && (!status || c.status === status))
+      .sort((a, b) => a.requestedAt.localeCompare(b.requestedAt)).map(cancellationDto)
+  }],
+  ['POST', /^\/api\/facilities\/(\d+)\/cancellation-requests\/(\d+)\/resolve$/, (m, { token, body }) => {
+    const fid = Number(m[1])
+    const me = facilityStaff(token, fid)
+    const c = cancellationsOf().find((x) => x.cancellationRequestId === Number(m[2]) && db.reservations.find((r) => r.reservationId === x.reservationId)!.facilityId === fid)
+    if (!c) throw notFound('Không tìm thấy yêu cầu hủy')
+    if (c.status !== 'Pending') throw conflict('Yêu cầu hủy đã được xử lý')
+    const r = db.reservations.find((x) => x.reservationId === c.reservationId)!
+    const approve = body.approve === true
+    if (approve && r.status !== 'PendingDeposit' && r.status !== 'Confirmed') throw conflict('Đơn đặt kho không còn ở trạng thái có thể hủy')
+    if (approve) {
+      const paid = r.status === 'Confirmed' ? r.depositAmount : 0
+      const policy = policiesOf().find((p) => p.isActive && (p.facilityId === fid || p.facilityId == null))
+      const fee = Math.round(paid * (policy?.cancellationFeePercent ?? 0)) / 100
+      c.approvedRefundAmount = Math.max(0, paid - fee)
+      r.depositWasPaid = paid > 0
+      r.status = 'Cancelled'
+    }
+    c.status = approve ? 'Approved' : 'Rejected'
+    c.resolvedByStaffId = me.userId
+    c.resolvedAt = localIso(new Date())
+    c.resolutionNotes = String(body.notes ?? '').trim() || null
+    addLog(me.userId, approve ? 'ReservationCancellationApproved' : 'ReservationCancellationRejected', `Reservation ${r.reservationCode}; approved refund ${(c.approvedRefundAmount ?? 0).toLocaleString('vi-VN')}`)
+    return cancellationDto(c)
+  }],
+  ['GET', /^\/api\/facilities\/(\d+)\/dashboard$/, (m, { token, query }) => {
+    const fid = Number(m[1])
+    const me = currentUser(token)
+    requireRole(me, [Roles.Manager, Roles.OpsManager])
+    if (me.role === Roles.Manager) ensureAssigned(me.userId, fid)
+    if (!facilityById(fid)) throw notFound('Không tìm thấy cơ sở')
+    const { from, to } = dateRange(query)
+    return facilityKpis(fid, from, to)
+  }],
+
+  // ---- facility management (FacilityManagementController)
+  ['GET', /^\/api\/facility-management\/facilities\/(\d+)\/units$/, (m, { token }) => {
+    const fid = Number(m[1])
+    facilityStaff(token, fid, [Roles.Manager])
+    return db.units.filter((u) => u.facilityId === fid).sort((a, b) => a.floorNumber - b.floorNumber || a.unitCode.localeCompare(b.unitCode)).map(unitDto)
+  }],
+  ['POST', /^\/api\/facility-management\/facilities\/(\d+)\/units$/, (m, { token, body }) => {
+    const fid = Number(m[1])
+    facilityStaff(token, fid, [Roles.Manager])
+    if (facilityById(fid)!.status !== 'Active') throw conflict('Chỉ được tạo kho tại cơ sở đang hoạt động')
+    const { type, code, floor, zone } = unitFields(body)
+    if (db.units.some((u) => u.facilityId === fid && u.unitCode === code)) throw conflict('Mã kho này đã tồn tại tại cơ sở')
+    const u: Unit = { unitId: nextId(), facilityId: fid, unitTypeId: type.unitTypeId, unitCode: code, floorNumber: floor, zoneArea: zone, monthlyPrice: type.baseMonthlyRate, status: 'Available' }
+    db.units.push(u)
+    return unitDto(u)
+  }],
+  ['PUT', /^\/api\/facility-management\/facilities\/(\d+)\/units\/(\d+)$/, (m, { token, body }) => {
+    const fid = Number(m[1])
+    facilityStaff(token, fid, [Roles.Manager])
+    const u = db.units.find((x) => x.unitId === Number(m[2]) && x.facilityId === fid)
+    if (!u) throw notFound('Không tìm thấy kho tại cơ sở')
+    if (['Rented', 'OverdueLocked', 'Reserved'].includes(u.status)) throw conflict('Không thể sửa thông tin loại/vị trí kho khi kho đang được thuê hoặc giữ chỗ')
+    if (db.contracts.some((c) => c.unitId === u.unitId && (c.status === 'Active' || c.status === 'Overdue'))) throw conflict('Không thể sửa kho đang có hợp đồng hiệu lực')
+    const { type, code, floor, zone } = unitFields(body)
+    if (u.status === 'Available' && u.unitTypeId !== type.unitTypeId && spareUnits(fid, u.unitTypeId) - 1 < 0)
+      throw conflict('Không thể đổi loại kho vì sẽ làm thiếu chỗ cho các đơn đã đặt')
+    if (db.units.some((x) => x.facilityId === fid && x.unitId !== u.unitId && x.unitCode === code)) throw conflict('Mã kho này đã tồn tại tại cơ sở')
+    Object.assign(u, { unitTypeId: type.unitTypeId, unitCode: code, floorNumber: floor, zoneArea: zone, monthlyPrice: type.baseMonthlyRate })
+    return unitDto(u)
+  }],
+  ['PUT', /^\/api\/facility-management\/facilities\/(\d+)\/units\/(\d+)\/status$/, (m, { token, body }) => {
+    const fid = Number(m[1])
+    const me = facilityStaff(token, fid)
+    const status = String(body.status ?? '')
+    if (status !== 'Available' && status !== 'UnderMaintenance') throw bad('Trạng thái kho chỉ có thể chuyển thủ công giữa Available và UnderMaintenance')
+    const u = db.units.find((x) => x.unitId === Number(m[2]) && x.facilityId === fid)
+    if (!u) throw notFound('Không tìm thấy kho tại cơ sở')
+    if (db.contracts.some((c) => c.unitId === u.unitId && (c.status === 'Active' || c.status === 'Overdue'))) throw conflict('Không thể đổi trạng thái kho đang có hợp đồng hiệu lực')
+    if (status === 'UnderMaintenance' && u.status === 'Available' && spareUnits(fid, u.unitTypeId) - 1 < 0)
+      throw conflict('Không thể đưa kho vào bảo trì vì sẽ làm thiếu chỗ cho các đơn đã đặt')
+    addLog(me.userId, 'StorageUnitStatusChanged', `Unit ${u.unitCode}: ${u.status} -> ${status}`)
+    u.status = status
+    return unitDto(u)
+  }],
+  ['GET', /^\/api\/facility-management\/facilities\/(\d+)\/staff$/, (m, { token }) => {
+    const fid = Number(m[1])
+    facilityStaff(token, fid, [Roles.Manager])
+    return db.assignments.filter((a) => a.facilityId === fid).map((a) => ({ a, u: userById(a.staffId) }))
+      .filter(({ u }) => u.role === Roles.Staff).sort((x, y) => x.u.fullName.localeCompare(y.u.fullName))
+      .map<FacilityStaff>(({ a, u }) => ({ userId: u.userId, username: u.username, fullName: u.fullName, email: u.email, status: u.status ?? 'Active', assignedDate: a.assignedDate ?? '2026-01-05' }))
+  }],
+  ['POST', /^\/api\/facility-management\/facilities\/(\d+)\/staff$/, (m, { token, body }) => {
+    const fid = Number(m[1])
+    const me = facilityStaff(token, fid, [Roles.Manager])
+    const u = db.users.find((x) => x.userId === Number(body.staffUserId))
+    if (!u) throw notFound('Không tìm thấy tài khoản nhân viên')
+    if (u.role !== Roles.Staff || (u.status ?? 'Active') !== 'Active') throw bad('Chỉ có thể phân công tài khoản Facility Staff đang hoạt động')
+    if (db.assignments.some((a) => a.facilityId === fid && a.staffId === u.userId)) throw conflict('Nhân viên đã được phân công tại cơ sở này')
+    const a = { facilityId: fid, staffId: u.userId, assignedDate: today() }
+    db.assignments.push(a)
+    addLog(me.userId, 'FacilityStaffAssigned', `Assigned staff user ${u.userId} to facility ${fid}`)
+    const res: FacilityStaff = { userId: u.userId, username: u.username, fullName: u.fullName, email: u.email, status: u.status ?? 'Active', assignedDate: a.assignedDate }
+    return res
+  }],
+  ['DELETE', /^\/api\/facility-management\/facilities\/(\d+)\/staff\/(\d+)$/, (m, { token }) => {
+    const fid = Number(m[1])
+    const me = facilityStaff(token, fid, [Roles.Manager])
+    const i = db.assignments.findIndex((a) => a.facilityId === fid && a.staffId === Number(m[2]) && userById(a.staffId).role === Roles.Staff)
+    if (i < 0) throw notFound('Không tìm thấy phân công đang hoạt động')
+    db.assignments.splice(i, 1)
+    addLog(me.userId, 'FacilityStaffRemoved', `Removed staff user ${m[2]} from facility ${fid}`)
+    return undefined
+  }],
+  ['POST', /^\/api\/facility-management\/facilities\/(\d+)\/contracts\/(\d+)\/extra-charges$/, (m, { token, body }) => {
+    const fid = Number(m[1])
+    const me = facilityStaff(token, fid)
+    const c = db.contracts.find((x) => x.contractId === Number(m[2]) && unitById(x.unitId).facilityId === fid)
+    if (!c) throw notFound('Không tìm thấy hợp đồng tại cơ sở')
+    if (c.status !== 'Active' && c.status !== 'Overdue') throw conflict('Chỉ được lập phụ thu cho hợp đồng đang hoạt động')
+    const feeCode = SQL_FEE_CODES[Number(body.feeTypeId) - 1]
+    const fee = feesOf().find((f) => f.feeCode === feeCode)
+    if (!fee) throw notFound('Không tìm thấy loại phí')
+    const unitPrice = fee.calculationMethod === 'Percentage' ? Math.round(c.monthlyRentFee * fee.defaultAmount) / 100 : fee.defaultAmount
+    if (!(unitPrice > 0)) throw conflict('Loại phí chưa có đơn giá lớn hơn 0')
+    const quantity = Number(body.quantity)
+    if (!(Number.isInteger(quantity) && quantity >= 1 && quantity <= 365)) throw bad('Số lượng từ 1 đến 365')
+    const dueDate = String(body.dueDate || today())
+    if (dueDate < today()) throw bad('Ngày đến hạn phụ thu không được ở quá khứ')
+    const notes = String(body.notes ?? '').trim() || null
+    const x: Xtra = { id: nextId(), contractId: c.contractId, feeCode: fee.feeCode, feeName: fee.feeName, unitPrice, quantity, notes, dueDate, createdAt: localIso(new Date()) }
+    ;(db.extraCharges ??= []).push(x)
+    addLog(me.userId, 'ExtraChargeInvoiceCreated', `Created ${fee.feeCode} charge invoice for contract ${c.contractNumber}`)
+    const res: ExtraChargeInvoice = { invoiceId: 40000 + x.id, invoiceNumber: `INV-EXT-${x.id}`, invoiceType: 'EXTRA_CHARGE', totalAmount: unitPrice * quantity, dueDate, status: 'Unpaid', contractId: c.contractId }
+    return res
+  }],
+  ['GET', /^\/api\/operations\/reports\/facilities$/, (_m, { token, query }) => {
     requireRole(currentUser(token), [Roles.OpsManager])
-    const to = today()
-    const from = dateOnly(addDays(new Date(), -29))
-    const paid = allInvoices().flatMap(({ facilityId, invoice }) => invoice.payments.map((p) => ({ facilityId, p })))
-      .filter(({ p }) => p.status === 'Success' && p.paymentDate.slice(0, 10) >= from && p.paymentDate.slice(0, 10) <= to)
-    const reports = [...db.facilities].sort((a, b) => a.facilityName.localeCompare(b.facilityName)).map<FacilityReport>((f) => {
-      const units = db.units.filter((u) => u.facilityId === f.facilityId)
-      const count = (status: string) => units.filter((u) => u.status === status).length
-      const contracts = db.contracts.filter((c) => unitById(c.unitId).facilityId === f.facilityId)
-      return {
-        facilityId: f.facilityId, facilityName: f.facilityName, fromDate: from, toDate: to, totalUnits: units.length,
-        availableUnits: count('Available'), rentedUnits: count('Rented'), maintenanceUnits: count('UnderMaintenance'), overdueLockedUnits: count('OverdueLocked'),
-        activeContracts: contracts.filter((c) => c.status === 'Active').length, overdueContracts: contracts.filter((c) => c.status === 'Overdue').length,
-        openSupportRequests: db.supports.filter((r) => r.facilityId === f.facilityId && (r.status === 'Open' || r.status === 'InProgress')).length,
-        netRevenue: paid.filter((x) => x.facilityId === f.facilityId).reduce((sum, x) => sum + x.p.amountPaid, 0),
-      }
-    })
-    const sum = (k: keyof FacilityReport) => reports.reduce((s, r) => s + (r[k] as number), 0)
+    const { from, to } = dateRange(query)
+    const reports = [...db.facilities].sort((a, b) => a.facilityName.localeCompare(b.facilityName)).map((f) => facilityKpis(f.facilityId, from, to))
+    const sum = (k: keyof FacilityReport) => reports.reduce((n, r) => n + (r[k] as number), 0)
     const result: OperationsReport = {
       fromDate: from, toDate: to, facilityCount: reports.length, totalUnits: sum('totalUnits'), availableUnits: sum('availableUnits'),
       rentedUnits: sum('rentedUnits'), maintenanceUnits: sum('maintenanceUnits'), overdueLockedUnits: sum('overdueLockedUnits'),
