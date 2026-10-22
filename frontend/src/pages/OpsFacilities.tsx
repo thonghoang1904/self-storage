@@ -152,7 +152,7 @@ export default function OpsFacilities() {
             const badge = badgeOf(f, r)
             return (
               <div key={f.facilityId} className="stack">
-                <div className="facility-card">
+                <div className="ops-facility-card">
                   <span className="facility-mark">{markOf(f)}</span>
                   <div className="facility-id">
                     <b>{f.facilityName}</b>

@@ -56,6 +56,7 @@ export function PortalHeader() {
           ) : (
             <>
               <a href="#units" onClick={(e) => { e.preventDefault(); navigate('/'); setTimeout(() => document.getElementById('units')?.scrollIntoView({ behavior: 'smooth' }), 50) }}>Kho Lưu Trữ</a>
+              <NavLink to="/pricing">Bảng Giá</NavLink>
               <a href="#facilities" onClick={(e) => { e.preventDefault(); navigate('/'); setTimeout(() => document.getElementById('facilities')?.scrollIntoView({ behavior: 'smooth' }), 50) }}>Cơ Sở</a>
             </>
           )}
@@ -95,6 +96,7 @@ export function Footer() {
         <div>
           <h4>Kho Lưu Trữ</h4>
           <Link to="/rent">Đặt kho</Link>
+          <Link to="/pricing">Bảng giá</Link>
           <Link to="/my-units">Kho của tôi</Link>
           <Link to="/support">Hỗ trợ</Link>
           <Link to="/register">Đăng ký tài khoản</Link>
