@@ -851,3 +851,5 @@ small.center { text-align: center; }
 .faq-item.open .faq-q .icon { transform: rotate(45deg); }
 .faq-a { padding: 0 20px 18px; color: var(--muted); font-size: 14px; }
 @media (max-width: 640px) { .pricing-grid { grid-template-columns: 1fr; } }
+.demo-emails span { display: inline; }
+.demo-emails .link-btn { margin-right: 10px; font-weight: 700; }
