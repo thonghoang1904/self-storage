@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './auth'
 import { AdminLayout, OpsLayout, PortalLayout, StaffLayout } from './components/layout'
 import AdminUsers from './pages/AdminUsers'
 import OpsFacilities from './pages/OpsFacilities'
+import Pricing from './pages/Pricing'
 import OpsPolicies from './pages/OpsPolicies'
 import OpsRevenue from './pages/OpsRevenue'
 import FacilityContracts from './pages/FacilityContracts'
@@ -51,6 +52,7 @@ export default function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route element={<PortalLayout />}>
             <Route path="/" element={<Home />} />
+            <Route path="/pricing" element={<Pricing />} />
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/my-units" element={<RequireRole roles={[Roles.Customer]}><MyUnits /></RequireRole>} />
             <Route path="/my-units/:id" element={<RequireRole roles={[Roles.Customer]}><ContractDetail /></RequireRole>} />
