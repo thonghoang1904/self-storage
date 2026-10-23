@@ -199,6 +199,11 @@ public record ContractDetailDto(
     decimal OutstandingLateFee,
     DateTime RenewalAvailableFrom);
 
+/// <summary>One contract as staff see it in the facility contract list.</summary>
+public record StaffContractDto(int ContractId, string ContractNumber, string CustomerName, string CustomerPhone,
+    int UnitId, string UnitCode, string UnitStatus, DateOnly StartDate, DateOnly EndDate, decimal MonthlyRentFee,
+    decimal DepositPaid, string Status, bool HasPendingRenewal, DateTime ReturnAppointment);
+
 public record AdminContractDto(
     int ContractId,
     string ContractNumber,
