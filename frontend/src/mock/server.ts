@@ -5,20 +5,20 @@
  * Data lives in localStorage of this browser only; "Đặt lại dữ liệu demo" wipes it.
  */
 import type {
-  AccessIssue, ActivityLog, AdminUser, CancellationRequest, CancellationRefund, ExtraChargeInvoice, FacilityStaff, FacilityWorkQueue, FacilityTaskContract, FacilityReport, OperationsReport, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
+  AccessIssue, ActivityLog, AdminUser, AdminContract, EmailOutboxMessage, OperationsReportRow, CancellationRequest, CancellationRefund, ExtraChargeInvoice, FacilityStaff, FacilityWorkQueue, FacilityTaskContract, FacilityReport, OperationsReport, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
   OverdueSummary, Person, Renewal, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate, VisitRegistration, RentalPolicy, FeeConfiguration, Promotion,
 } from '../types'
 import { Roles } from '../types'
 
 export const DEMO_PASSWORD = 'Demo@12345'
-const DB_KEY = 'ss_mock_db_v11'
+const DB_KEY = 'ss_mock_db_v12'
 
 // ------------------------------------------------------------------ data model
 
 interface User { userId: number; username: string; password: string; fullName: string; email: string; phoneNumber: string; citizenId: string | null; role: string; status?: string }
 interface Unit { unitId: number; facilityId: number; unitTypeId: number; unitCode: string; floorNumber: number; zoneArea: string; monthlyPrice: number; status: string }
 interface Rsv { reservationId: number; reservationCode: string; customerId: number; facilityId: number; unitTypeId: number; assignedUnitId: number | null; expectedStartDate: string; checkInAppointmentAt?: string | null; durationMonths: number; depositAmount: number; estimatedTotalFee: number; status: string; depositDeadline: string; createdAt: string; promoCode?: string | null; promotionDiscountAmount?: number; depositWasPaid?: boolean }
-interface Ctr { contractId: number; contractNumber: string; customerId: number; unitId: number; startDate: string; endDate: string; monthlyRentFee: number; depositPaid: number; status: string }
+interface Ctr { contractId: number; contractNumber: string; customerId: number; unitId: number; startDate: string; endDate: string; monthlyRentFee: number; depositPaid: number; status: string; signedDate?: string; termsConditions?: string | null }
 interface Rnw { renewalId: number; contractId: number; oldEndDate: string; newEndDate: string; extensionMonths: number; renewalFee: number; status: string; requestedAt: string }
 interface Sup { requestId: number; requestCode: string; customerId: number; facilityId: number; contractId: number; unitId: number; assignedStaffId: number | null; category: string; priority: string; title: string; description: string; status: string; createdAt: string; resolvedAt: string | null; checklist?: Chk[] }
 interface Chk { checklistItemId: number; sortOrder: number; description: string; isCompleted: boolean; completedAt: string | null; completedByStaffId: number | null; notes: string | null }
@@ -56,6 +56,8 @@ interface Db {
   cancellations?: Cnl[]
   /** Extra-charge invoices a facility billed on a contract (FacilityManagementController.CreateExtraCharge). */
   extraCharges?: Xtra[]
+  /** EmailOutboxMessages: invoice and receipt emails (sent by a worker in the real backend). */
+  emails?: (EmailOutboxMessage & { emailOutboxMessageId: number })[]
 }
 interface Cnl { cancellationRequestId: number; reservationId: number; customerId: number; reason: string; status: string; requestedAt: string; resolvedAt: string | null; resolvedByStaffId: number | null; resolutionNotes: string | null; approvedRefundAmount: number | null; refunds: { amount: number; method: string; code: string | null; at: string; staffId: number }[] }
 interface Xtra { id: number; contractId: number; feeCode: string; feeName: string; unitPrice: number; quantity: number; notes: string | null; dueDate: string; createdAt: string; paid?: Paid }
@@ -616,6 +618,60 @@ function unitFields(body: Body) {
 /** Same fee rows and IDs as 01_schema.sql (the order they are inserted). */
 const SQL_FEE_CODES = ['LATE_FEE_DAILY', 'LOST_KEY_FEE', 'LOST_CARD_FEE', 'CLEANING_FEE', 'LOCK_REPLACE_FEE']
 
+// ------------------------------------------------------------------ admin contracts, email outbox, report details
+
+const adminContractDto = (c: Ctr): AdminContract => {
+  const u = unitById(c.unitId), cust = userById(c.customerId)
+  return { contractId: c.contractId, contractNumber: c.contractNumber, customerId: c.customerId, customerName: cust.fullName,
+    customerEmail: cust.email, customerPhoneNumber: cust.phoneNumber, facilityId: u.facilityId, facilityName: facilityById(u.facilityId)!.facilityName,
+    unitId: c.unitId, unitCode: u.unitCode, startDate: c.startDate, endDate: c.endDate, status: c.status, monthlyRentFee: c.monthlyRentFee,
+    depositPaid: c.depositPaid, signedDate: c.signedDate ?? `${c.startDate}T09:00:00`, termsConditions: c.termsConditions ?? null }
+}
+const paging = (query: URLSearchParams) => {
+  const page = Number(query.get('page') ?? 1), size = Number(query.get('pageSize') ?? 50)
+  if (!(page >= 1) || !(size >= 1 && size <= 100)) throw bad('page phải từ 1 và pageSize phải từ 1 đến 100')
+  return { skip: (page - 1) * size, size }
+}
+const emailsOf = () => (db.emails ??= (() => {
+  const t = (d: number, h: number) => localIso(addDays(atToday(h, 0), d))
+  return [
+    { emailOutboxMessageId: 1, eventKey: 'invoice-issued:10001', recipientEmail: 'customer2@example.com', subject: 'Hóa đơn tiền cọc INV-DEP-1', status: 'Sent', attemptCount: 1, createdAt: t(-1, 9), nextAttemptAt: t(-1, 9), sentAt: t(-1, 9), lastError: null },
+    { emailOutboxMessageId: 2, eventKey: 'payment-received:10003', recipientEmail: 'customer1@example.com', subject: 'Biên nhận thanh toán INV-DEP-3', status: 'Sent', attemptCount: 1, createdAt: t(-7, 10), nextAttemptAt: t(-7, 10), sentAt: t(-7, 10), lastError: null },
+    { emailOutboxMessageId: 3, eventKey: 'invoice-issued:30101', recipientEmail: 'customer4@example.com', subject: 'Hóa đơn tiền thuê tháng HD-DEMO-0005', status: 'Failed', attemptCount: 8, createdAt: t(-2, 8), nextAttemptAt: t(-1, 8), sentAt: null, lastError: '5.7.8 Username and Password not accepted (smtp.gmail.com)' },
+    { emailOutboxMessageId: 4, eventKey: 'invoice-issued:10004', recipientEmail: 'customer1@example.com', subject: 'Hóa đơn tiền cọc INV-DEP-4', status: 'Pending', attemptCount: 2, createdAt: t(0, 7), nextAttemptAt: t(0, 23), sentAt: null, lastError: 'Mailbox temporarily unavailable' },
+  ]
+})())
+/** Facility × unit type rows (OperationsReportsController.GetReportRowsAsync). */
+function reportRows(query: URLSearchParams): OperationsReportRow[] {
+  const { from, to } = dateRange(query)
+  const fid = Number(query.get('facilityId')) || null, tid = Number(query.get('unitTypeId')) || null
+  const cs = query.get('contractStatus') || null
+  const rows: OperationsReportRow[] = []
+  for (const f of [...db.facilities].sort((a, b) => a.facilityName.localeCompare(b.facilityName))) {
+    if (fid && f.facilityId !== fid) continue
+    for (const t of db.unitTypes) {
+      if (tid && t.unitTypeId !== tid) continue
+      const units = db.units.filter((u) => u.facilityId === f.facilityId && u.unitTypeId === t.unitTypeId)
+      if (!units.length) continue
+      const ids = new Set(units.map((u) => u.unitId))
+      const cts = db.contracts.filter((c) => ids.has(c.unitId) && (!cs || c.status === cs))
+      const n = (s: string) => units.filter((u) => u.status === s).length
+      const k = (s: string) => cts.filter((c) => c.status === s).length
+      const ctIds = new Set(cts.map((c) => c.contractId))
+      const pays = allInvoices().filter((x) => x.invoice.contractId != null && ctIds.has(x.invoice.contractId)).flatMap((x) => x.invoice.payments)
+        .filter((p) => p.paymentDate.slice(0, 10) >= from && p.paymentDate.slice(0, 10) <= to)
+      const occupied = n('Rented') + n('OverdueLocked') + n('Reserved')
+      rows.push({ fromDate: from, toDate: to, facilityId: f.facilityId, facilityName: f.facilityName, unitTypeId: t.unitTypeId, unitTypeName: t.typeName,
+        totalUnits: units.length, availableUnits: n('Available'), reservedUnits: n('Reserved'), rentedUnits: n('Rented'), maintenanceUnits: n('UnderMaintenance'),
+        overdueLockedUnits: n('OverdueLocked'), occupancyRatePercent: Math.round(occupied / units.length * 1000) / 10,
+        activeContracts: k('Active'), overdueContracts: k('Overdue'), terminatedContracts: k('Terminated'), renewedContracts: k('Renewed'), liquidatedContracts: k('Liquidated'),
+        netRevenue: pays.filter((p) => p.status === 'Success').reduce((s, p) => s + p.amountPaid, 0) - pays.filter((p) => p.status === 'Refunded').reduce((s, p) => s + p.amountPaid, 0) })
+    }
+  }
+  return rows
+}
+const adminOnly = (token: string | null) => { const me = currentUser(token); requireRole(me, [Roles.Admin]); return me }
+
 // ------------------------------------------------------------------ routes
 
 type Body = Record<string, unknown>
@@ -764,12 +820,12 @@ const routes: [string, RegExp, Handler][] = [
     r.checkInAppointmentAt = at
     return reservationDto(r)
   }],
-  ['POST', /^\/api\/reservations\/(\d+)\/check-in$/, (m, { token, body }) => {
+  ['POST', /^\/api\/(?:reservations|admin\/contracts\/from-reservations)\/(\d+)\/check-in$/, (m, { token, body }) => {
     const me = currentUser(token)
-    requireRole(me, STAFF)
+    requireRole(me, [...STAFF, Roles.Admin])
     const r = db.reservations.find((x) => x.reservationId === Number(m[1]))
     if (!r) throw notFound('Không tìm thấy đơn đặt kho')
-    ensureAssigned(me.userId, r.facilityId)
+    if (me.role !== Roles.Admin) ensureAssigned(me.userId, r.facilityId)
     if (r.status !== 'Confirmed') throw conflict('Đơn chưa được xác nhận cọc')
     if (!r.checkInAppointmentAt) throw conflict('Khách hàng chưa đặt lịch nhận kho')
     if (new Date() < new Date(r.checkInAppointmentAt)) throw conflict('Chưa đến thời gian hẹn nhận kho')
@@ -879,13 +935,13 @@ const routes: [string, RegExp, Handler][] = [
     r.status = 'Rejected'
     return undefined
   }],
-  ['POST', /^\/api\/contracts\/(\d+)\/return$/, (m, { token, body }) => {
+  ['POST', /^\/api\/(?:admin\/)?contracts\/(\d+)\/return$/, (m, { token, body }) => {
     const me = currentUser(token)
-    requireRole(me, STAFF)
+    requireRole(me, [...STAFF, Roles.Admin])
     const c = db.contracts.find((x) => x.contractId === Number(m[1]))
     if (!c) throw notFound('Không tìm thấy hợp đồng')
     const unit = unitById(c.unitId)
-    ensureAssigned(me.userId, unit.facilityId)
+    if (me.role !== Roles.Admin) ensureAssigned(me.userId, unit.facilityId)
     const now = localIso(new Date())
     if (now < returnAppointment(c)) throw conflict(`Lịch trả kho là 20:00 ngày ${c.endDate.split('-').reverse().join('/')}`)
     if (!body.allItemsRemoved) throw bad('Nhân viên cần xác nhận kho đã được dọn sạch trước khi hoàn tất trả kho')
@@ -1649,8 +1705,83 @@ const routes: [string, RegExp, Handler][] = [
     const res: ExtraChargeInvoice = { invoiceId: 40000 + x.id, invoiceNumber: `INV-EXT-${x.id}`, invoiceType: 'EXTRA_CHARGE', totalAmount: unitPrice * quantity, dueDate, status: 'Unpaid', contractId: c.contractId }
     return res
   }],
+
+  // ---- system administrator: contracts (AdminContractsController)
+  ['GET', /^\/api\/admin\/contracts$/, (_m, { token, query }) => {
+    adminOnly(token)
+    const { skip, size } = paging(query)
+    const status = query.get('status'), fid = Number(query.get('facilityId')) || null, term = (query.get('search') ?? '').trim().toLowerCase()
+    if (status && !['Active', 'Overdue', 'Renewed', 'Terminated', 'Liquidated'].includes(status)) throw bad('Trạng thái hợp đồng không hợp lệ')
+    return db.contracts.map(adminContractDto)
+      .filter((c) => (!status || c.status === status) && (!fid || c.facilityId === fid)
+        && (!term || [c.contractNumber, c.customerName, c.customerEmail, c.unitCode].some((v) => v.toLowerCase().includes(term))))
+      .sort((a, b) => b.signedDate.localeCompare(a.signedDate) || b.contractId - a.contractId).slice(skip, skip + size)
+  }],
+  ['GET', /^\/api\/admin\/contracts\/(\d+)$/, (m, { token }) => {
+    adminOnly(token)
+    const c = db.contracts.find((x) => x.contractId === Number(m[1]))
+    if (!c) throw notFound('Không tìm thấy hợp đồng')
+    return adminContractDto(c)
+  }],
+  ['PUT', /^\/api\/admin\/contracts\/(\d+)$/, (m, { token, body }) => {
+    const me = adminOnly(token)
+    const c = db.contracts.find((x) => x.contractId === Number(m[1]))
+    if (!c) throw notFound('Không tìm thấy hợp đồng')
+    if (c.status !== 'Active') throw conflict('Chỉ được chỉnh sửa hợp đồng đang hoạt động; hợp đồng quá hạn cần xử lý theo luồng quá hạn')
+    const end = String(body.endDate ?? '')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(end) || end <= c.startDate || end < today()) throw bad('Ngày kết thúc mới phải sau ngày bắt đầu và không ở quá khứ')
+    if (end !== c.endDate && db.renewals.some((r) => r.contractId === c.contractId && (r.status === 'Pending' || r.status === 'Paid')))
+      throw conflict('Không thể sửa ngày kết thúc khi hợp đồng có yêu cầu gia hạn đang chờ hoặc đã thanh toán')
+    const terms = String(body.termsConditions ?? '').trim()
+    if (terms.length > 4000) throw bad('Điều khoản tối đa 4000 ký tự')
+    addLog(me.userId, 'AdminContractUpdated', `Contract ${c.contractNumber}; EndDate ${c.endDate} -> ${end}`)
+    c.endDate = end
+    c.termsConditions = terms || null
+    return adminContractDto(c)
+  }],
+  ['PUT', /^\/api\/admin\/users\/(\d+)\/profile$/, (m, { token, body }) => {
+    const { me, u } = adminTarget(token, Number(m[1]))
+    const fullName = String(body.fullName ?? '').trim(), email = String(body.email ?? '').trim(), phone = String(body.phoneNumber ?? '').trim()
+    const cccd = String(body.citizenId ?? '').trim() || null
+    if (!fullName || !phone) throw bad('Họ tên và số điện thoại không được để trống')
+    if (!/^\S+@\S+\.\S+$/.test(email)) throw bad('Email không hợp lệ')
+    if (db.users.some((x) => x.userId !== u.userId && (x.email.toLowerCase() === email.toLowerCase() || (cccd && x.citizenId === cccd))))
+      throw conflict('Email hoặc CCCD đã được sử dụng')
+    Object.assign(u, { fullName, email, phoneNumber: phone, citizenId: cccd })
+    addLog(me.userId, 'AdminUserProfileUpdated', `Updated profile fields for user ${u.userId}`)
+    return adminUserDto(u)
+  }],
+  // ---- system administrator: invoice/receipt email outbox
+  ['GET', /^\/api\/admin\/email-outbox$/, (_m, { token, query }) => {
+    adminOnly(token)
+    const { skip, size } = paging(query)
+    const status = query.get('status')
+    if (status && !['Pending', 'Processing', 'Sent', 'Failed'].includes(status)) throw bad('Trạng thái email không hợp lệ')
+    return emailsOf().filter((e) => !status || e.status === status).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(skip, skip + size)
+  }],
+  ['POST', /^\/api\/admin\/email-outbox\/(\d+)\/retry$/, (m, { token }) => {
+    adminOnly(token)
+    const e = emailsOf().find((x) => x.emailOutboxMessageId === Number(m[1]))
+    if (!e) throw notFound('Không tìm thấy email trong hàng đợi')
+    if (e.status !== 'Failed') throw conflict('Chỉ có thể gửi lại email ở trạng thái Failed')
+    Object.assign(e, { status: 'Pending', attemptCount: 0, nextAttemptAt: localIso(new Date()), lastError: null })
+    return e
+  }],
+  // ---- report details (OperationsReportsController)
+  ['GET', /^\/api\/operations\/reports\/details$/, (_m, { token, query }) => {
+    requireRole(currentUser(token), [Roles.OpsManager, Roles.Admin])
+    return reportRows(query)
+  }],
+  ['GET', /^\/api\/operations\/reports\/details\.csv$/, (_m, { token, query }) => {
+    requireRole(currentUser(token), [Roles.OpsManager, Roles.Admin])
+    const head = 'FacilityId,FacilityName,UnitTypeId,UnitTypeName,FromDate,ToDate,TotalUnits,AvailableUnits,ReservedUnits,RentedUnits,MaintenanceUnits,OverdueLockedUnits,OccupancyRatePercent,ActiveContracts,OverdueContracts,TerminatedContracts,RenewedContracts,LiquidatedContracts,NetRevenueVND'
+    const q = (v: string) => `"${v.replaceAll('"', '""')}"`
+    return '﻿' + [head, ...reportRows(query).map((r) => [r.facilityId, q(r.facilityName), r.unitTypeId, q(r.unitTypeName), r.fromDate, r.toDate, r.totalUnits, r.availableUnits,
+      r.reservedUnits, r.rentedUnits, r.maintenanceUnits, r.overdueLockedUnits, r.occupancyRatePercent, r.activeContracts, r.overdueContracts, r.terminatedContracts,
+      r.renewedContracts, r.liquidatedContracts, r.netRevenue].join(','))].join('\r\n')
+  }],
   ['GET', /^\/api\/operations\/reports\/facilities$/, (_m, { token, query }) => {
-    requireRole(currentUser(token), [Roles.OpsManager])
+    requireRole(currentUser(token), [Roles.OpsManager, Roles.Admin])
     const { from, to } = dateRange(query)
     const reports = [...db.facilities].sort((a, b) => a.facilityName.localeCompare(b.facilityName)).map((f) => facilityKpis(f.facilityId, from, to))
     const sum = (k: keyof FacilityReport) => reports.reduce((n, r) => n + (r[k] as number), 0)

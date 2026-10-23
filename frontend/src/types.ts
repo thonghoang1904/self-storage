@@ -576,3 +576,71 @@ export interface Promotion {
 }
 
 export const FeeMethods: Record<string, string> = { Fixed: 'Cố định', DailyRate: 'Theo ngày', Percentage: 'Theo %' }
+
+// ---- system administrator: contracts, email outbox (AdminContractsController, AdminEmailOutboxController)
+
+export interface AdminContract {
+  contractId: number
+  contractNumber: string
+  customerId: number
+  customerName: string
+  customerEmail: string
+  customerPhoneNumber: string
+  facilityId: number
+  facilityName: string
+  unitId: number
+  unitCode: string
+  startDate: string
+  endDate: string
+  status: string
+  monthlyRentFee: number
+  depositPaid: number
+  signedDate: string
+  termsConditions: string | null
+}
+
+/** Invoice and receipt emails queued with the business transaction and sent by a background worker. */
+export interface EmailOutboxMessage {
+  emailOutboxMessageId: number
+  /** invoice-issued:<id> or payment-received:<id> */
+  eventKey: string
+  recipientEmail: string
+  subject: string
+  /** Pending | Processing | Sent | Failed */
+  status: string
+  attemptCount: number
+  createdAt: string
+  nextAttemptAt: string
+  sentAt: string | null
+  lastError: string | null
+}
+
+export const EmailStatuses: Record<string, { label: string; tone: 'ok' | 'warn' | 'bad' | 'info' | 'muted' }> = {
+  Pending: { label: 'Chờ gửi', tone: 'warn' },
+  Processing: { label: 'Đang gửi', tone: 'info' },
+  Sent: { label: 'Đã gửi', tone: 'ok' },
+  Failed: { label: 'Gửi lỗi', tone: 'bad' },
+}
+
+/** One facility × unit type row of GET /api/operations/reports/details. */
+export interface OperationsReportRow {
+  fromDate: string
+  toDate: string
+  facilityId: number
+  facilityName: string
+  unitTypeId: number
+  unitTypeName: string
+  totalUnits: number
+  availableUnits: number
+  reservedUnits: number
+  rentedUnits: number
+  maintenanceUnits: number
+  overdueLockedUnits: number
+  occupancyRatePercent: number
+  activeContracts: number
+  overdueContracts: number
+  terminatedContracts: number
+  renewedContracts: number
+  liquidatedContracts: number
+  netRevenue: number
+}

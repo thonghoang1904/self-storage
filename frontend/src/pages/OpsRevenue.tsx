@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, fmtDate, fmtMoney } from '../api'
+import { api, downloadFile, fmtDate, fmtMoney } from '../api'
 import { Empty, Icon } from '../components/ui'
-import type { OperationsReport } from '../types'
+import type { OperationsReport, OperationsReportRow, UnitType } from '../types'
 import { Metric } from './FacilityOverview'
 
 /**
  * Operations manager: revenue across facilities (Figma "revenue-analytics") from
  * GET /api/operations/reports/facilities?fromDate&toDate. Net revenue = payments received minus refunds in the range.
+ * Detail by facility × unit type: GET /api/operations/reports/details, exported by .../details.csv.
+ * Used by the operations manager (/ops/revenue) and the system administrator (/admin/revenue).
  */
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -128,6 +130,100 @@ export default function OpsRevenue() {
           </table>
         </div>
       </section>
+
+      <ReportDetails from={from} to={to} facilities={rows.map((r) => ({ id: r.facilityId, name: r.facilityName }))} />
     </div>
+  )
+}
+
+const CONTRACT_STATUSES = [
+  { v: '', label: 'Mọi trạng thái HĐ' },
+  { v: 'Active', label: 'Đang hiệu lực' },
+  { v: 'Overdue', label: 'Quá hạn' },
+  { v: 'Renewed', label: 'Đã gia hạn' },
+  { v: 'Terminated', label: 'Đã chấm dứt' },
+  { v: 'Liquidated', label: 'Đã thanh lý' },
+]
+
+/** Facility × unit type breakdown with the same date range, filterable, exportable as the backend's CSV. */
+function ReportDetails({ from, to, facilities }: { from: string; to: string; facilities: { id: number; name: string }[] }) {
+  const [types, setTypes] = useState<UnitType[]>([])
+  const [facilityId, setFacilityId] = useState('')
+  const [unitTypeId, setUnitTypeId] = useState('')
+  const [contractStatus, setContractStatus] = useState('')
+  const [rows, setRows] = useState<OperationsReportRow[] | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => { api<UnitType[]>('/api/unit-types').then(setTypes).catch(() => {}) }, [])
+  const params = () => {
+    const p = new URLSearchParams({ fromDate: from, toDate: to })
+    if (facilityId) p.set('facilityId', facilityId)
+    if (unitTypeId) p.set('unitTypeId', unitTypeId)
+    if (contractStatus) p.set('contractStatus', contractStatus)
+    return p
+  }
+  useEffect(() => {
+    api<OperationsReportRow[]>(`/api/operations/reports/details?${params()}`).then((r) => { setRows(r); setError('') }).catch((e) => setError((e as Error).message))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, to, facilityId, unitTypeId, contractStatus])
+
+  const exportCsv = async () => {
+    setBusy(true)
+    try {
+      await downloadFile(`/api/operations/reports/details.csv?${params()}`, `bao-cao-chi-tiet-${from}-${to}.csv`)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel-head wrap">
+        <div>
+          <h2 className="panel-title">Báo cáo chi tiết theo loại kho</h2>
+          <p className="muted">Mỗi dòng là một loại kho tại một cơ sở, cùng khoảng thời gian ở trên.</p>
+        </div>
+        <button className="btn outline sm" onClick={() => void exportCsv()} disabled={busy}><Icon name="file" size={14} /> {busy ? 'Đang xuất…' : 'Xuất CSV chi tiết'}</button>
+      </div>
+      <div className="filter-controls">
+        <select id="rd-facility" value={facilityId} onChange={(e) => setFacilityId(e.target.value)}>
+          <option value="">Tất cả cơ sở</option>
+          {facilities.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+        </select>
+        <select id="rd-type" value={unitTypeId} onChange={(e) => setUnitTypeId(e.target.value)}>
+          <option value="">Tất cả loại kho</option>
+          {types.map((t) => <option key={t.unitTypeId} value={t.unitTypeId}>{t.typeName}</option>)}
+        </select>
+        <select id="rd-status" value={contractStatus} onChange={(e) => setContractStatus(e.target.value)}>
+          {CONTRACT_STATUSES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
+        </select>
+      </div>
+      {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+      <div className="table-scroll">
+        <table>
+          <thead><tr><th>Cơ sở · loại kho</th><th className="right">Kho</th><th className="right">Trống</th><th className="right">Giữ chỗ</th><th className="right">Đang thuê</th><th className="right">Bảo trì</th><th className="right">Khóa</th><th className="right">Lấp đầy</th><th className="right">HĐ hiệu lực / quá hạn</th><th className="right">Doanh thu</th></tr></thead>
+          <tbody>
+            {(rows ?? []).map((r) => (
+              <tr key={`${r.facilityId}-${r.unitTypeId}`}>
+                <td><b>{r.facilityName}</b><br /><small className="muted">{r.unitTypeName}</small></td>
+                <td className="right">{r.totalUnits}</td>
+                <td className="right">{r.availableUnits}</td>
+                <td className="right">{r.reservedUnits}</td>
+                <td className="right">{r.rentedUnits}</td>
+                <td className="right">{r.maintenanceUnits}</td>
+                <td className="right">{r.overdueLockedUnits}</td>
+                <td className="right">{r.occupancyRatePercent.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%</td>
+                <td className="right">{r.activeContracts} / <span className={r.overdueContracts ? 'danger-text' : ''}>{r.overdueContracts}</span></td>
+                <td className="right money">{fmtMoney(r.netRevenue)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {rows && rows.length === 0 && <Empty icon="chart">Không có dữ liệu khớp bộ lọc.</Empty>}
+      </div>
+    </section>
   )
 }

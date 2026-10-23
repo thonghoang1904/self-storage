@@ -94,6 +94,39 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
   return res.json() as Promise<T>
 }
 
+/** GET a file (CSV export) with the signed-in user's token and hand it to the browser as a download. */
+export async function downloadFile(path: string, fileName: string): Promise<void> {
+  let blob: Blob
+  if (IS_DEMO) {
+    const { mockRequest, MockHttpError } = await import('./mock/server')
+    try {
+      blob = new Blob([String(await mockRequest('GET', path, undefined, tokenStore.get()))], { type: 'text/csv;charset=utf-8' })
+    } catch (e) {
+      if (e instanceof MockHttpError) throw new ApiError(e.status, e.message)
+      throw e
+    }
+  } else {
+    const token = tokenStore.get()
+    let res: Response
+    try {
+      res = await fetch(`${API_URL}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    } catch {
+      throw new ApiError(0, BACKEND_DOWN)
+    }
+    if (!res.ok) {
+      let message = `Lỗi ${res.status}`
+      try { const p = await res.json(); message = p.title ?? message } catch { /* not JSON */ }
+      throw new ApiError(res.status, message)
+    }
+    blob = await res.blob()
+  }
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = fileName
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+}
+
 export const fmtMoney = (n: number) => n.toLocaleString('vi-VN') + 'đ'
 // "2026-10-13" (DateOnly) must be read as a local date, not UTC midnight.
 export const fmtDate = (s: string) =>

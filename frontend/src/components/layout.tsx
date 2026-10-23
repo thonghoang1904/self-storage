@@ -304,14 +304,15 @@ function ConsoleLayout({ nav, titles }: { nav: ConsoleNavItem[]; titles: Record<
 export function AdminLayout() {
   return (
     <ConsoleLayout
-      titles={{ '/admin/users': 'Nhân Viên Hệ Thống' }}
+      titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu' }}
       nav={[
         { icon: 'grid', label: 'Tổng Quan' },
         { icon: 'building', label: 'Kho Lưu Trữ' },
         { icon: 'users', label: 'Khách Hàng' },
         { icon: 'user', label: 'Nhân Viên', to: '/admin/users' },
-        { icon: 'chart', label: 'Doanh Thu' },
-        { icon: 'file', label: 'Báo Cáo' },
+        { icon: 'file', label: 'Hợp Đồng', to: '/admin/contracts' },
+        { icon: 'chart', label: 'Doanh Thu', to: '/admin/revenue' },
+        { icon: 'mail', label: 'Email Hệ Thống', to: '/admin/emails' },
         { icon: 'settings', label: 'Cài Đặt' },
       ]}
     />

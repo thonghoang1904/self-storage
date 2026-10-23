@@ -4,6 +4,8 @@ import { IS_DEMO } from './api'
 import { AuthProvider, useAuth } from './auth'
 import { AdminLayout, OpsLayout, PortalLayout, StaffLayout } from './components/layout'
 import AdminUsers from './pages/AdminUsers'
+import AdminContracts from './pages/AdminContracts'
+import AdminEmails from './pages/AdminEmails'
 import OpsFacilities from './pages/OpsFacilities'
 import Pricing from './pages/Pricing'
 import OpsPolicies from './pages/OpsPolicies'
@@ -77,6 +79,9 @@ export default function App() {
           </Route>
           <Route element={<RequireRole roles={[Roles.Admin]}><AdminLayout /></RequireRole>}>
             <Route path="/admin/users" element={<AdminUsers />} />
+            <Route path="/admin/contracts" element={<AdminContracts />} />
+            <Route path="/admin/emails" element={<AdminEmails />} />
+            <Route path="/admin/revenue" element={<OpsRevenue />} />
           </Route>
           <Route element={<RequireRole roles={[Roles.OpsManager]}><OpsLayout /></RequireRole>}>
             <Route path="/ops/facilities" element={<OpsFacilities />} />

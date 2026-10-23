@@ -7,7 +7,7 @@ import { roleLabel, Roles, type ActivityLog, type AdminUser, type Facility, type
 /**
  * #45 System Admin, Figma "staff-management": the system's staff accounts (GET /api/admin/users), adding
  * one with its facilities (POST /api/admin/users), changing role (PUT .../role) or status (PUT .../status)
- * and its activity log (GET .../activity). The API has no delete and no department/position fields, so the
+ * edits name, email, phone and CCCD (PUT .../profile) and shows its activity log (GET .../activity). The API has no delete and no department/position fields, so the
  * red action deactivates the account and the Figma "Phòng Ban / Chức Vụ" columns show role and phone.
  * The API refuses changing your own role/status and leaving no active administrator; its message is shown.
  */
@@ -246,18 +246,28 @@ function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleIn
 function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser; roles: RoleInfo[]; isMe: boolean; onCancel: () => void; onDone: (msg: string) => Promise<void> }) {
   const [roleId, setRoleId] = useState(user.roleId)
   const [status, setStatus] = useState(user.status)
+  const [profile, setProfile] = useState({ fullName: user.fullName, email: user.email, phoneNumber: user.phoneNumber, citizenId: user.citizenId ?? '' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
   const newRoleName = roles.find((r) => r.roleId === roleId)?.roleName ?? ''
   const losesFacilities = FACILITY_ROLES.includes(user.roleName) && !FACILITY_ROLES.includes(newRoleName)
-  const changed = roleId !== user.roleId || status !== user.status
+  const profileChanged = profile.fullName.trim() !== user.fullName || profile.email.trim() !== user.email
+    || profile.phoneNumber.trim() !== user.phoneNumber || profile.citizenId.trim() !== (user.citizenId ?? '')
+  const changed = roleId !== user.roleId || status !== user.status || profileChanged
+  const setP = (k: keyof typeof profile) => (e: { target: { value: string } }) => setProfile({ ...profile, [k]: e.target.value })
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
     setBusy(true)
     try {
+      if (profileChanged) {
+        if (!profile.fullName.trim() || !profile.phoneNumber.trim()) throw new Error('Họ tên và số điện thoại không được để trống')
+        await api(`/api/admin/users/${user.userId}/profile`, { method: 'PUT', body: {
+          fullName: profile.fullName.trim(), email: profile.email.trim(), phoneNumber: profile.phoneNumber.trim(),
+          citizenId: profile.citizenId.trim() || null } })
+      }
       if (roleId !== user.roleId) await api(`/api/admin/users/${user.userId}/role`, { method: 'PUT', body: { roleId } })
       if (status !== user.status) await api(`/api/admin/users/${user.userId}/status`, { method: 'PUT', body: { status } })
       await onDone(`Đã cập nhật tài khoản ${user.username}.`)
@@ -275,6 +285,12 @@ function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser
         <button className="icon-btn" aria-label="Đóng" onClick={onCancel}><Icon name="x" /></button>
       </div>
       <form className="stack" onSubmit={submit}>
+        <div className="form-grid">
+          <label className="field"><span>Họ và tên</span><input id="edit-fullname" value={profile.fullName} maxLength={100} onChange={setP('fullName')} required /></label>
+          <label className="field"><span>Email</span><input id="edit-email" type="email" value={profile.email} maxLength={100} onChange={setP('email')} required /></label>
+          <label className="field"><span>Số điện thoại</span><input id="edit-phone" value={profile.phoneNumber} maxLength={20} onChange={setP('phoneNumber')} required /></label>
+          <label className="field"><span>Số CCCD</span><input id="edit-cccd" value={profile.citizenId} maxLength={25} onChange={setP('citizenId')} placeholder="Không bắt buộc" /></label>
+        </div>
         {isMe && <p className="muted">Bạn không thể tự đổi vai trò hay trạng thái của chính mình.</p>}
         <div className="form-grid">
           <label className="field"><span>Vai trò</span>
@@ -290,12 +306,10 @@ function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser
         </div>
         {losesFacilities && <p className="alert bad"><Icon name="alert" size={16} />Đổi sang vai trò này sẽ kết thúc mọi phân công cơ sở hiện tại của tài khoản.</p>}
         {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
-        {!isMe && (
-          <div className="row">
-            <button className="btn primary sm" type="submit" disabled={busy || !changed}>{busy ? 'Đang lưu…' : 'Lưu thay đổi'}</button>
-            <button className="btn ghost sm" type="button" onClick={onCancel}>Hủy</button>
-          </div>
-        )}
+        <div className="row">
+          <button className="btn primary sm" type="submit" disabled={busy || !changed}>{busy ? 'Đang lưu…' : 'Lưu thay đổi'}</button>
+          <button className="btn ghost sm" type="button" onClick={onCancel}>Hủy</button>
+        </div>
       </form>
       <ActivityLogTable userId={user.userId} />
     </div>
