@@ -6,6 +6,8 @@ interface AuthState {
   user: UserDto | null
   loading: boolean
   login: (username: string, password: string) => Promise<UserDto>
+  /** Signs in with a Google ID token (POST /api/auth/google); only works for an existing account with that email. */
+  loginWithGoogle: (idToken: string) => Promise<UserDto>
   logout: () => void
 }
 
@@ -30,12 +32,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return res.user
   }
 
+  const loginWithGoogle = async (idToken: string) => {
+    const res = await api<LoginResponse>('/api/auth/google', { body: { idToken } })
+    tokenStore.set(res.token)
+    setUser(res.user)
+    return res.user
+  }
+
   const logout = () => {
     tokenStore.clear()
     setUser(null)
   }
 
-  return <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ user, loading, login, loginWithGoogle, logout }}>{children}</AuthContext.Provider>
 }
 
 export function useAuth() {
