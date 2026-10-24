@@ -853,3 +853,43 @@ small.center { text-align: center; }
 @media (max-width: 640px) { .pricing-grid { grid-template-columns: 1fr; } }
 .demo-emails span { display: inline; }
 .demo-emails .link-btn { margin-right: 10px; font-weight: 700; }
+
+/* ---------- invoices ---------- */
+.invoice-list { display: flex; flex-direction: column; gap: 12px; }
+.invoice-card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); overflow: hidden; }
+.invoice-card.payable { border-left: 4px solid var(--warn); }
+.invoice-card.overdue { border-left-color: var(--bad); }
+.invoice-card.highlight { border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-50), var(--shadow); }
+.invoice-head { width: 100%; display: grid; grid-template-columns: 42px minmax(0, 1fr) auto auto 18px; gap: 16px; align-items: center; padding: 16px 20px; background: none; border: 0; text-align: left; cursor: pointer; font: inherit; color: inherit; }
+.invoice-head:hover { background: var(--bg-tint); }
+.invoice-head:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; }
+.invoice-icon { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: var(--info-bg); color: var(--info); }
+.invoice-icon.t-monthly_rent { background: var(--cyan-50); color: var(--cyan-600); }
+.invoice-icon.t-deposit { background: var(--ok-bg); color: var(--ok); }
+.invoice-icon.t-overdue_fine { background: var(--bad-bg); color: var(--bad); }
+.invoice-icon.t-extra_charge { background: var(--warn-bg); color: var(--warn); }
+.invoice-main { display: flex; flex-direction: column; min-width: 0; }
+.invoice-main b { font-size: 15.5px; color: var(--text-strong); }
+.invoice-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.invoice-due { display: flex; flex-direction: column; align-items: flex-end; font-size: 14px; white-space: nowrap; }
+.invoice-amount { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; min-width: 130px; }
+.invoice-amount b { font-family: var(--font-head); font-size: 17px; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.invoice-chevron { transition: transform .15s; color: var(--muted-2); }
+.invoice-chevron.open { transform: rotate(90deg); }
+.invoice-body { border-top: 1px solid var(--border); padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 16px; background: var(--bg-tint); }
+.invoice-lines { width: 100%; border-collapse: collapse; font-size: 14px; }
+.invoice-lines td { padding: 6px 0; border: 0; }
+.invoice-lines td + td { padding-left: 16px; white-space: nowrap; }
+.invoice-lines tr.total td { border-top: 1px solid var(--border); padding-top: 10px; font-weight: 800; color: var(--text-strong); }
+.payment-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 12px; align-items: center; padding: 8px 12px; background: #fff; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; }
+.payment-row b:last-child { font-variant-numeric: tabular-nums; }
+.pay-actions { align-items: center; }
+.btn.momo { background: #a50064; color: #fff; }
+.btn.momo:hover:not(:disabled) { background: #8a0054; }
+@media (max-width: 720px) {
+  .invoice-head { grid-template-columns: 38px minmax(0, 1fr) auto; }
+  .invoice-due, .invoice-chevron { display: none; }
+  .invoice-amount { min-width: 0; }
+  .payment-row { grid-template-columns: 1fr auto; }
+}
+@media (prefers-reduced-motion: reduce) { .invoice-chevron { transition: none; } }
