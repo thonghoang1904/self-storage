@@ -1,19 +1,16 @@
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
-import { QrCode } from '../components/qr'
+import { MomoQrPanel, PayButtons, TYPE_ICON, useCheckout } from '../components/checkout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
-import type { CheckoutResponse, Invoice } from '../types'
-
-const isMobile = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+import type { Invoice } from '../types'
 
 export default function Invoices() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
-  const [startingInvoiceId, setStartingInvoiceId] = useState<number | null>(null)
-  /** MoMo checkout shown as a QR code to scan (desktop), keyed by invoice. */
-  const [momo, setMomo] = useState<{ invoiceId: number; checkout: CheckoutResponse } | null>(null)
+  /** VNPay redirect / MoMo QR (desktop), keyed by invoice. */
+  const { startingInvoiceId, momo, setMomo, startCheckout } = useCheckout(setError)
   const [searchParams] = useSearchParams()
   const returnedFromGateway = searchParams.get('paymentReturn') === '1'
   // Arrived from the rent page right after agreeing to the terms: put that deposit invoice first.
@@ -52,24 +49,6 @@ export default function Invoices() {
     }
   }, [])
 
-  const startCheckout = async (invoiceId: number, provider: 'vnpay' | 'momo') => {
-    setError('')
-    setStartingInvoiceId(invoiceId)
-    try {
-      const checkout = await api<CheckoutResponse>(`/api/invoices/${invoiceId}/checkout/${provider}`, { method: 'POST' })
-      // MoMo: on a computer show the QR to scan with the MoMo app; on a phone open the app directly.
-      if (provider === 'momo' && checkout.qrCodeUrl && !(isMobile() && checkout.deeplink)) {
-        setMomo({ invoiceId, checkout })
-        setStartingInvoiceId(null)
-        return
-      }
-      window.location.assign(provider === 'momo' && isMobile() && checkout.deeplink ? checkout.deeplink : checkout.paymentUrl)
-    } catch (e) {
-      setError((e as Error).message)
-      setStartingInvoiceId(null)
-    }
-  }
-
   const isNew = (i: Invoice) => !!newReservationId && i.reservationId === newReservationId && i.invoiceType === 'DEPOSIT'
   const isPayable = (i: Invoice) => i.status === 'Unpaid' || i.status === 'Overdue'
   const due = invoices.filter(isPayable)
@@ -79,7 +58,6 @@ export default function Invoices() {
     .reduce((n, p) => n + p.amountPaid, 0)
   const [tab, setTab] = useState<'due' | 'paid' | 'all'>('all')
   const [type, setType] = useState('')
-  const [openId, setOpenId] = useState<number | null>(null)
   useEffect(() => { if (!loading && due.length) setTab('due') }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
   const shown = ordered.filter((i) => (tab === 'due' ? isPayable(i) : tab === 'paid' ? i.status === 'Paid' : true) && (!type || i.invoiceType === type))
   const types = [...new Set(invoices.map((i) => i.invoiceType))]
@@ -146,11 +124,10 @@ export default function Invoices() {
       <div className="invoice-list">
         {shown.map((invoice) => {
           const payable = isPayable(invoice)
-          const open = openId === invoice.invoiceId || payable && (isNew(invoice) || momo?.invoiceId === invoice.invoiceId)
           const period = invoice.billingPeriodStart && invoice.billingPeriodEnd ? `Kỳ ${fmtDate(invoice.billingPeriodStart)} – ${fmtDate(invoice.billingPeriodEnd)}` : null
           return (
             <section className={`invoice-card ${payable ? 'payable' : ''} ${invoice.status === 'Overdue' ? 'overdue' : ''} ${isNew(invoice) ? 'highlight' : ''}`} key={invoice.invoiceId}>
-              <button type="button" className="invoice-head" aria-expanded={open} onClick={() => setOpenId(openId === invoice.invoiceId ? null : invoice.invoiceId)}>
+              <Link className="invoice-head" to={`/invoices/${invoice.invoiceId}`} aria-label={`Xem chi tiết hóa đơn ${invoice.invoiceNumber}`}>
                 <span className={`invoice-icon t-${invoice.invoiceType.toLowerCase()}`}><Icon name={TYPE_ICON[invoice.invoiceType] ?? 'file'} size={18} /></span>
                 <span className="invoice-main">
                   <b>{invoiceTypeName(invoice.invoiceType)}</b>
@@ -164,60 +141,13 @@ export default function Invoices() {
                   <b>{fmtMoney(invoice.totalAmount)}</b>
                   <StatusBadge status={invoice.status} />
                 </span>
-                <Icon name="arrowRight" size={15} className={`invoice-chevron ${open ? 'open' : ''}`} />
-              </button>
-
-              {open && (
+                <span className="invoice-more">Chi tiết <Icon name="arrowRight" size={14} /></span>
+              </Link>
+              {payable && (
                 <div className="invoice-body">
-                  <table className="invoice-lines">
-                    <tbody>
-                      {invoice.details.map((d) => (
-                        <tr key={d.detailId}><td>{d.description}</td><td className="right muted">{d.quantity} × {fmtMoney(d.unitPrice)}</td><td className="right">{fmtMoney(d.lineTotal)}</td></tr>
-                      ))}
-                      {invoice.discountAmount > 0 && <tr><td>Giảm giá</td><td /><td className="right ok-text">−{fmtMoney(invoice.discountAmount)}</td></tr>}
-                      <tr className="total"><td>Tổng cộng</td><td /><td className="right">{fmtMoney(invoice.totalAmount)}</td></tr>
-                    </tbody>
-                  </table>
-                  {invoice.payments.length > 0 && (
-                    <div className="stack-sm">
-                      <span className="label">Lịch sử thanh toán</span>
-                      {invoice.payments.map((p) => (
-                        <div key={p.paymentId} className="payment-row">
-                          <span><b>{PAY_METHOD[p.paymentMethod] ?? p.paymentMethod}</b>{p.transactionCode && <small className="muted"> · mã {p.transactionCode}</small>}</span>
-                          <small className="muted">{fmtTime(p.paymentDate)}{p.receivedByStaff && ` · ${p.receivedByStaff}`}</small>
-                          <span className={`badge ${PAY_STATUS[p.status]?.tone ?? 'muted'}`}>{PAY_STATUS[p.status]?.label ?? p.status}</span>
-                          <b className={p.status === 'Refunded' ? 'ok-text' : ''}>{p.status === 'Refunded' ? '+' : ''}{fmtMoney(p.amountPaid)}</b>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {payable && momo?.invoiceId === invoice.invoiceId && (
-                    <div className="momo-qr">
-                      <div className="momo-qr-code"><QrCode text={momo.checkout.qrCodeUrl!} size={200} label={`Mã QR MoMo cho hóa đơn ${invoice.invoiceNumber}`} /></div>
-                      <div className="stack-sm grow">
-                        <b className="momo-title">Quét mã bằng ứng dụng MoMo</b>
-                        <span className="muted">Mở MoMo → biểu tượng quét mã → quét mã bên cạnh để thanh toán <b>{fmtMoney(momo.checkout.amount)}</b>.</span>
-                        <small className="muted">Mã giao dịch: <span className="code">{momo.checkout.transactionReference}</span></small>
-                        <small className="muted">Hóa đơn chỉ chuyển sang Đã thanh toán sau khi MoMo xác nhận; bấm Làm mới sau khi trả xong.</small>
-                        <div className="row wrap">
-                          {momo.checkout.paymentUrl && <a className="btn outline sm" href={momo.checkout.paymentUrl}>Mở trang thanh toán MoMo</a>}
-                          <button className="btn primary sm" onClick={() => { setMomo(null); setLoading(true); void load() }}><Icon name="refresh" size={14} /> Tôi đã thanh toán, làm mới</button>
-                          <button className="btn ghost sm" onClick={() => setMomo(null)}>Đóng</button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  {payable && momo?.invoiceId !== invoice.invoiceId && (
-                    <div className="row wrap pay-actions">
-                      <button className="btn primary" disabled={startingInvoiceId !== null} onClick={() => void startCheckout(invoice.invoiceId, 'vnpay')}>
-                        <Icon name="card" size={16} /> {startingInvoiceId === invoice.invoiceId ? 'Đang chuyển đến thanh toán…' : 'Thanh toán VNPay'}
-                      </button>
-                      <button className="btn momo" disabled={startingInvoiceId !== null} onClick={() => void startCheckout(invoice.invoiceId, 'momo')}>
-                        <Icon name="scan" size={16} /> Thanh toán MoMo · quét QR
-                      </button>
-                      <small className="muted">Hoặc thanh toán tiền mặt / chuyển khoản tại quầy cơ sở.</small>
-                    </div>
-                  )}
+                  {momo?.invoiceId === invoice.invoiceId
+                    ? <MomoQrPanel invoiceNumber={invoice.invoiceNumber} checkout={momo.checkout} onPaid={() => { setMomo(null); setLoading(true); void load() }} onClose={() => setMomo(null)} />
+                    : <div className="row wrap between"><PayButtons invoiceId={invoice.invoiceId} startingInvoiceId={startingInvoiceId} startCheckout={(i, p) => void startCheckout(i, p)} /><small className="muted">Hoặc thanh toán tiền mặt / chuyển khoản tại quầy.</small></div>}
                 </div>
               )}
             </section>
@@ -230,15 +160,6 @@ export default function Invoices() {
     </div>
     </>
   )
-}
-
-const TYPE_ICON: Record<string, string> = { DEPOSIT: 'shield', MONTHLY_RENT: 'calendar', RENEWAL: 'refresh', OVERDUE_FINE: 'alert', EXTRA_CHARGE: 'plus' }
-const PAY_METHOD: Record<string, string> = { Cash: 'Tiền mặt', BankTransfer: 'Chuyển khoản', VNPay: 'VNPay', MoMo: 'MoMo', Momo: 'MoMo' }
-const PAY_STATUS: Record<string, { label: string; tone: string }> = {
-  Success: { label: 'Thành công', tone: 'ok' },
-  Pending: { label: 'Đang chờ', tone: 'warn' },
-  Failed: { label: 'Thất bại', tone: 'bad' },
-  Refunded: { label: 'Đã hoàn tiền', tone: 'info' },
 }
 
 function invoiceTypeName(type: string) {

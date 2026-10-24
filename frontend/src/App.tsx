@@ -19,6 +19,7 @@ import Gate from './pages/Gate'
 import ContractDetail from './pages/ContractDetail'
 import Home from './pages/Home'
 import Invoices from './pages/Invoices'
+import InvoiceDetail from './pages/InvoiceDetail'
 import { Login, Register } from './pages/Login'
 import MyUnits from './pages/MyUnits'
 import Rent from './pages/Rent'
@@ -62,6 +63,7 @@ export default function App() {
             <Route path="/support" element={<RequireRole roles={[Roles.Customer]}><Support /></RequireRole>} />
             <Route path="/rent" element={<RequireRole roles={[Roles.Customer]}><Rent /></RequireRole>} />
             <Route path="/invoices" element={<RequireRole roles={[Roles.Customer]}><Invoices /></RequireRole>} />
+            <Route path="/invoices/:id" element={<RequireRole roles={[Roles.Customer]}><InvoiceDetail /></RequireRole>} />
             <Route path="/payment-result" element={<RequireRole roles={[Roles.Customer]}><Invoices /></RequireRole>} />
           </Route>
           <Route element={<RequireRole roles={GATE_ROLES}><StaffLayout /></RequireRole>}>

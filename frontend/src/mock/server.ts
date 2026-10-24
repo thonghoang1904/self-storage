@@ -1028,6 +1028,13 @@ const routes: [string, RegExp, Handler][] = [
     requireRole(me, [Roles.Customer])
     return allInvoices().filter((x) => x.customerId === me.userId).map((x) => x.invoice)
   }],
+  ['GET', /^\/api\/invoices\/(\d+)$/, (m, { token }) => {
+    const me = currentUser(token)
+    requireRole(me, [Roles.Customer])
+    const x = allInvoices().find((i) => i.customerId === me.userId && i.invoice.invoiceId === Number(m[1]))
+    if (!x) throw new MockHttpError(404, 'Không tìm thấy hóa đơn')
+    return x.invoice
+  }],
   ['GET', /^\/api\/invoices\/facilities\/(\d+)$/, (m, { token }) => {
     const me = currentUser(token)
     requireRole(me, STAFF)
