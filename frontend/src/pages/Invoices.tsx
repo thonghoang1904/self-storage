@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
-import { MomoQrPanel, PayButtons, TYPE_ICON, useCheckout } from '../components/checkout'
+import { AppointmentPicker } from '../components/appointment'
+import { MomoQrPanel, PayButtons, SandboxPayButton, TYPE_ICON, useCheckout } from '../components/checkout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
-import type { Invoice } from '../types'
+import type { Facility, Invoice, Reservation } from '../types'
 
 export default function Invoices() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
@@ -21,33 +22,51 @@ export default function Invoices() {
     ? [...invoices.filter((i) => i.reservationId === newReservationId && i.invoiceType === 'DEPOSIT'), ...invoices.filter((i) => !(i.reservationId === newReservationId && i.invoiceType === 'DEPOSIT'))]
     : invoices
 
-  const load = async () => {
-    setError('')
+  const [reservations, setReservations] = useState<Reservation[]>([])
+  const [facilities, setFacilities] = useState<Facility[]>([])
+  const [paidNotice, setPaidNotice] = useState('')
+
+  /** Invoices plus the customer's reservations (deposit status and pick-up time). Quiet reloads keep the list in place. */
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) setError('')
     try {
-      setInvoices(await api<Invoice[]>('/api/invoices/my'))
+      const [inv, rs] = await Promise.all([
+        api<Invoice[]>('/api/invoices/my'),
+        api<Reservation[]>('/api/reservations/my').catch(() => [] as Reservation[]),
+      ])
+      setInvoices(inv)
+      setReservations(rs)
     } catch (e) {
-      setError((e as Error).message)
+      if (!quiet) setError((e as Error).message)
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
-    let cancelled = false
-    void api<Invoice[]>('/api/invoices/my')
-      .then((items) => {
-        if (!cancelled) setInvoices(items)
-      })
-      .catch((e: Error) => {
-        if (!cancelled) setError(e.message)
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+    void load()
+    void api<Facility[]>('/api/facilities').then(setFacilities).catch(() => {})
+  }, [load])
+
+  // A gateway confirms payments on its own: while something is unpaid, check again every 10 seconds so the status changes by itself.
+  const hasPayable = invoices.some((i) => i.status === 'Unpaid' || i.status === 'Overdue')
+  useEffect(() => {
+    if (!hasPayable) return
+    const t = window.setInterval(() => { if (document.visibilityState === 'visible') void load(true) }, 10000)
+    return () => window.clearInterval(t)
+  }, [hasPayable, load])
+
+  const onSandboxPaid = (paid: Invoice) => {
+    setMomo(null)
+    setInvoices((all) => all.map((i) => (i.invoiceId === paid.invoiceId ? paid : i)))
+    setPaidNotice(`Đã thanh toán ${paid.invoiceNumber} · ${fmtMoney(paid.totalAmount)}.`)
+    setJustPaid((ids) => [...ids, paid.invoiceId])
+    void load(true)
+  }
+  const reservationOf = (i: Invoice) => (i.invoiceType === 'DEPOSIT' ? reservations.find((r) => r.reservationId === i.reservationId) : undefined)
+  const hoursOf = (r: Reservation) => facilities.find((f) => f.facilityName === r.facilityName)?.operatingHours
+  const updateReservation = (u: Reservation) => setReservations((rs) => rs.map((x) => (x.reservationId === u.reservationId ? u : x)))
+  const newDepositPaid = !!newReservationId && reservations.some((r) => r.reservationId === newReservationId && r.status === 'Confirmed')
 
   const isNew = (i: Invoice) => !!newReservationId && i.reservationId === newReservationId && i.invoiceType === 'DEPOSIT'
   const isPayable = (i: Invoice) => i.status === 'Unpaid' || i.status === 'Overdue'
@@ -59,7 +78,10 @@ export default function Invoices() {
   const [tab, setTab] = useState<'due' | 'paid' | 'all'>('all')
   const [type, setType] = useState('')
   useEffect(() => { if (!loading && due.length) setTab('due') }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
-  const shown = ordered.filter((i) => (tab === 'due' ? isPayable(i) : tab === 'paid' ? i.status === 'Paid' : true) && (!type || i.invoiceType === type))
+  // Just paid here (or the deposit of the reservation just made): keep it on screen so the next step (pick-up time) stays visible.
+  const [justPaid, setJustPaid] = useState<number[]>([])
+  const pinned = (i: Invoice) => isNew(i) || justPaid.includes(i.invoiceId)
+  const shown = ordered.filter((i) => pinned(i) || ((tab === 'due' ? isPayable(i) : tab === 'paid' ? i.status === 'Paid' : true) && (!type || i.invoiceType === type)))
   const types = [...new Set(invoices.map((i) => i.invoiceType))]
 
   return (
@@ -76,11 +98,13 @@ export default function Invoices() {
         <div className="success-panel">
           <span className="success-icon"><Icon name="check" size={22} /></span>
           <div className="grow">
-            <h3>Đã đồng ý điều khoản & giữ chỗ · {newCode}</h3>
-            <p>Bước cuối: thanh toán tiền cọc bên dưới{deadline && <> trước <b>{fmtTime(deadline)}</b></>} qua VNPay, MoMo hoặc tại quầy. Sau khi cọc được xác nhận, đặt lịch nhận kho ở mục Thuê Kho.</p>
+            {newDepositPaid
+              ? <><h3>Đã thanh toán cọc · {newCode}</h3><p>Đơn đã chuyển sang <b>Chờ bàn giao kho</b>. Chọn giờ đến nhận kho ngay ở hóa đơn cọc bên dưới.</p></>
+              : <><h3>Đã đồng ý điều khoản & giữ chỗ · {newCode}</h3><p>Bước cuối: thanh toán tiền cọc{deadline && <> trước <b>{fmtTime(deadline)}</b></>}.</p></>}
           </div>
         </div>
       )}
+      {paidNotice && <p className="alert ok"><Icon name="check" size={16} />{paidNotice}</p>}
       {returnedFromGateway && (
         <p className="alert ok">Đã quay lại từ cổng thanh toán. Trạng thái được cập nhật khi cổng thanh toán xác nhận; bấm Làm mới nếu hóa đơn vẫn đang chờ.</p>
       )}
@@ -146,10 +170,28 @@ export default function Invoices() {
               {payable && (
                 <div className="invoice-body">
                   {momo?.invoiceId === invoice.invoiceId
-                    ? <MomoQrPanel invoiceNumber={invoice.invoiceNumber} checkout={momo.checkout} onPaid={() => { setMomo(null); setLoading(true); void load() }} onClose={() => setMomo(null)} />
-                    : <div className="row wrap between"><PayButtons invoiceId={invoice.invoiceId} startingInvoiceId={startingInvoiceId} startCheckout={(i, p) => void startCheckout(i, p)} /><small className="muted">Hoặc thanh toán tiền mặt / chuyển khoản tại quầy.</small></div>}
+                    ? <MomoQrPanel invoiceNumber={invoice.invoiceNumber} checkout={momo.checkout} onPaid={() => { setMomo(null); void load(true) }} onClose={() => setMomo(null)} />
+                    : <div className="row wrap pay-row">
+                        <PayButtons invoiceId={invoice.invoiceId} startingInvoiceId={startingInvoiceId} startCheckout={(i, p) => void startCheckout(i, p)} />
+                        <SandboxPayButton invoiceId={invoice.invoiceId} onPaid={onSandboxPaid} onError={setError} />
+                      </div>}
+                  {momo?.invoiceId === invoice.invoiceId && <SandboxPayButton invoiceId={invoice.invoiceId} provider="momo" onPaid={onSandboxPaid} onError={setError} />}
                 </div>
               )}
+              {(() => {
+                const r = reservationOf(invoice)
+                if (!r || r.status !== 'Confirmed') return null
+                return (
+                  <div className="handover-cta">
+                    <span className="handover-icon"><Icon name="package" size={20} /></span>
+                    <div className="grow">
+                      <b>Chờ bàn giao kho · {r.reservationCode}</b>
+                      <small className="muted">Nhận kho ngày <b>{fmtDate(r.expectedStartDate)}</b> tại {r.facilityName}{r.assignedUnitCode && <> · kho {r.assignedUnitCode}</>}. {r.checkInAppointmentAt ? 'Mang CCCD khi đến.' : 'Chọn giờ đến để nhân viên chuẩn bị bàn giao.'}</small>
+                    </div>
+                    <AppointmentPicker reservation={r} operatingHours={hoursOf(r)} defaultOpen onSaved={updateReservation} />
+                  </div>
+                )
+              })()}
             </section>
           )
         })}

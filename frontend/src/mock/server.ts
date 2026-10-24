@@ -407,12 +407,34 @@ const SUPPORT_CATEGORIES = ['LockIssue', 'AccessCodeIssue', 'DamagedUnit', 'Paym
 const SUPPORT_PRIORITIES = ['Low', 'Medium', 'High', 'Urgent']
 const SUPPORT_STATUSES = ['Open', 'InProgress', 'Resolved', 'Closed']
 
-type Paid = { method: string; code: string | null; at: string; staffId: number }
+/** Applies a successful payment, like BillingService: a deposit confirms the reservation, a renewal extends the contract. */
+function markPaid(inv: Invoice, paid: Paid, now: string) {
+  if (inv.invoiceType === 'DEPOSIT') {
+    const r = db.reservations.find((x) => x.reservationId === inv.reservationId)!
+    if (r.status !== 'PendingDeposit' || r.depositDeadline <= now) throw conflict('Đơn đặt kho không còn chờ đặt cọc')
+    r.status = 'Confirmed'
+    ;(r as Rsv & { paid?: typeof paid }).paid = paid
+  } else if (inv.invoiceType === 'MONTHLY_RENT') {
+    db.rentPaid = { ...db.rentPaid, [`${inv.contractId}:${inv.billingPeriodStart}`]: paid }
+  } else if (inv.invoiceType === 'EXTRA_CHARGE') {
+    db.extraCharges!.find((x) => 40000 + x.id === inv.invoiceId)!.paid = paid
+  } else {
+    const rn = db.renewals.find((x) => 20000 + x.renewalId === inv.invoiceId)!
+    const c = db.contracts.find((x) => x.contractId === rn.contractId)!
+    if (rn.status !== 'Pending' || c.endDate !== rn.oldEndDate) throw conflict('Yêu cầu gia hạn không còn chờ thanh toán')
+    rn.status = 'Paid'
+    c.endDate = rn.newEndDate
+    unitById(c.unitId).status = 'Rented'
+    ;(rn as Rnw & { paid?: typeof paid }).paid = paid
+  }
+}
+
+type Paid = { method: string; code: string | null; at: string; staffId: number | null }
 /** Invoices derived from deposits and renewals (the demo keeps no separate invoice table). */
 function allInvoices(): { customerId: number; facilityId: number; invoice: Invoice }[] {
   const payments = (id: number, amount: number, p: Paid | undefined, fallbackAt: string, note: string) => [{
     paymentId: id, paymentMethod: p?.method ?? 'Cash', transactionCode: p?.code ?? null, amountPaid: amount,
-    paymentDate: p?.at ?? fallbackAt, status: 'Success', paymentNotes: note, receivedByStaff: userById(p?.staffId ?? 3).fullName,
+    paymentDate: p?.at ?? fallbackAt, status: 'Success', paymentNotes: p && p.staffId === null ? `Thanh toán trực tuyến ${p.method} đã được xác nhận.` : note, receivedByStaff: p && p.staffId === null ? null : userById(p?.staffId ?? 3).fullName,
   }]
   const now = localIso(new Date())
   const fromRsv = db.reservations.map((r) => {
@@ -1055,26 +1077,21 @@ const routes: [string, RegExp, Handler][] = [
     if (inv.status !== 'Unpaid' && inv.status !== 'Overdue') throw conflict('Hóa đơn không còn ở trạng thái chờ thanh toán')
     if (Number(body.amountPaid) !== inv.totalAmount) throw bad(`Số tiền cần thanh toán chính xác là ${inv.totalAmount.toLocaleString('vi-VN')}đ`)
     const now = localIso(new Date())
-    const paid = { method, code: code || null, at: now, staffId: me.userId }
-    if (inv.invoiceType === 'DEPOSIT') {
-      const r = db.reservations.find((x) => x.reservationId === inv.reservationId)!
-      if (r.status !== 'PendingDeposit' || r.depositDeadline <= now) throw conflict('Đơn đặt kho không còn chờ đặt cọc')
-      r.status = 'Confirmed'
-      ;(r as Rsv & { paid?: typeof paid }).paid = paid
-    } else if (inv.invoiceType === 'MONTHLY_RENT') {
-      db.rentPaid = { ...db.rentPaid, [`${inv.contractId}:${inv.billingPeriodStart}`]: paid }
-    } else if (inv.invoiceType === 'EXTRA_CHARGE') {
-      db.extraCharges!.find((x) => 40000 + x.id === inv.invoiceId)!.paid = paid
-    } else {
-      const rn = db.renewals.find((x) => 20000 + x.renewalId === inv.invoiceId)!
-      const c = db.contracts.find((x) => x.contractId === rn.contractId)!
-      if (rn.status !== 'Pending' || c.endDate !== rn.oldEndDate) throw conflict('Yêu cầu gia hạn không còn chờ thanh toán')
-      rn.status = 'Paid'
-      c.endDate = rn.newEndDate
-      unitById(c.unitId).status = 'Rented'
-      ;(rn as Rnw & { paid?: typeof paid }).paid = paid
-    }
+    const paid: Paid = { method, code: code || null, at: now, staffId: me.userId }
+    markPaid(inv, paid, now)
     return { paymentId: nextId(), paymentMethod: method, transactionCode: code || null, amountPaid: inv.totalAmount, paymentDate: now, status: 'Success', paymentNotes: (body.paymentNotes as string) || null, receivedByStaff: me.fullName }
+  }],
+  // Development sandbox (InvoicesController.CompleteSandboxCheckout): pays as if the gateway confirmed it.
+  ['POST', /^\/api\/invoices\/(\d+)\/checkout\/(vnpay|momo)\/sandbox-complete$/, (m, { token }) => {
+    const me = currentUser(token)
+    requireRole(me, [Roles.Customer])
+    const found = allInvoices().find((x) => x.invoice.invoiceId === Number(m[1]) && x.customerId === me.userId)
+    if (!found) throw notFound('Không tìm thấy hóa đơn')
+    const inv = found.invoice
+    if (inv.status !== 'Unpaid' && inv.status !== 'Overdue') throw conflict('Hóa đơn không còn chờ thanh toán')
+    const now = localIso(new Date())
+    markPaid(inv, { method: m[2] === 'vnpay' ? 'VNPay' : 'MoMo', code: `SANDBOX-${Date.now()}`, at: now, staffId: null }, now)
+    return allInvoices().find((x) => x.invoice.invoiceId === inv.invoiceId)!.invoice
   }],
   ['POST', /^\/api\/invoices\/(\d+)\/checkout\/(vnpay|momo)$/, (m, { token }) => {
     const me = currentUser(token)

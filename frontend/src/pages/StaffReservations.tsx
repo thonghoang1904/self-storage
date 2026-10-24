@@ -37,6 +37,9 @@ export default function StaffReservations() {
 
   useEffect(() => {
     void load()
+    // Online payments confirm deposits on their own (gateway IPN): refresh so new "chờ bàn giao" orders appear without reloading.
+    const t = window.setInterval(() => { if (document.visibilityState === 'visible') void load() }, 15000)
+    return () => window.clearInterval(t)
   }, [load])
 
   const act = async (fn: () => Promise<unknown>, done: string) => {

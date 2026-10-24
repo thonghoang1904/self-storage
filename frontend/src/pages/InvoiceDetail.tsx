@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
-import { INVOICE_TYPE, MomoQrPanel, PAY_METHOD, PAY_STATUS, PayButtons, TYPE_ICON, moneyInWords, useCheckout } from '../components/checkout'
+import { AppointmentPicker } from '../components/appointment'
+import { INVOICE_TYPE, MomoQrPanel, PAY_METHOD, PAY_STATUS, PayButtons, SandboxPayButton, TYPE_ICON, moneyInWords, useCheckout } from '../components/checkout'
 import { Icon, StatusBadge } from '../components/ui'
 import type { ContractDetail, Facility, Invoice, Reservation } from '../types'
 
@@ -41,8 +42,8 @@ export default function InvoiceDetail() {
   const [loading, setLoading] = useState(true)
   const { startingInvoiceId, momo, setMomo, startCheckout } = useCheckout(setError)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true)
     try {
       const inv = await api<Invoice>(`/api/invoices/${id}`)
       setInvoice(inv)
@@ -62,12 +63,20 @@ export default function InvoiceDetail() {
         }).catch(() => {})
       }
     } catch (e) {
-      setError((e as Error).message)
+      if (!quiet) setError((e as Error).message)
     } finally {
       setLoading(false)
     }
   }, [id])
   useEffect(() => { void load() }, [load])
+  // The gateway confirms on its own: while unpaid, check every 10 seconds so the status changes by itself.
+  const unpaid = invoice?.status === 'Unpaid' || invoice?.status === 'Overdue'
+  useEffect(() => {
+    if (!unpaid) return
+    const t = window.setInterval(() => { if (document.visibilityState === 'visible') void load(true) }, 10000)
+    return () => window.clearInterval(t)
+  }, [unpaid, load])
+  const onSandboxPaid = () => { setMomo(null); void load(true) }
 
   if (!invoice) {
     return (
@@ -202,12 +211,23 @@ export default function InvoiceDetail() {
                 <div><dt>Còn lại</dt><dd><b>{fmtMoney(remaining)}</b></dd></div>
               </dl>
               {payable && (momo?.invoiceId === invoice.invoiceId
-                ? <MomoQrPanel invoiceNumber={invoice.invoiceNumber} checkout={momo.checkout} onPaid={() => { setMomo(null); void load() }} onClose={() => setMomo(null)} />
+                ? <><MomoQrPanel invoiceNumber={invoice.invoiceNumber} checkout={momo.checkout} onPaid={() => { setMomo(null); void load() }} onClose={() => setMomo(null)} />
+                    <SandboxPayButton invoiceId={invoice.invoiceId} provider="momo" onPaid={onSandboxPaid} onError={setError} /></>
                 : <>
                     <PayButtons invoiceId={invoice.invoiceId} startingInvoiceId={startingInvoiceId} startCheckout={(i, p) => void startCheckout(i, p)} />
+                    <SandboxPayButton invoiceId={invoice.invoiceId} onPaid={onSandboxPaid} onError={setError} />
                     <small className="muted">Hoặc thanh toán tiền mặt / chuyển khoản tại quầy{facilityName ? ` cơ sở ${facilityName}` : ''}, đọc mã <b className="code">{invoice.invoiceNumber}</b> cho nhân viên.</small>
                   </>)}
             </section>
+
+            {reservation?.status === 'Confirmed' && invoice.invoiceType === 'DEPOSIT' && (
+              <section className="panel handover-panel">
+                <span className="handover-icon"><Icon name="package" size={20} /></span>
+                <h3 className="panel-title">Chờ bàn giao kho</h3>
+                <small className="muted">Đơn {reservation.reservationCode} · nhận kho ngày <b>{fmtDate(reservation.expectedStartDate)}</b> tại {reservation.facilityName}. {reservation.checkInAppointmentAt ? 'Nhớ mang CCCD khi đến.' : 'Chọn giờ đến để nhân viên chuẩn bị bàn giao.'}</small>
+                <AppointmentPicker reservation={reservation} operatingHours={facility?.operatingHours} defaultOpen onSaved={setReservation} />
+              </section>
+            )}
 
             <section className="panel">
               <h3 className="panel-title">Lịch sử hóa đơn</h3>

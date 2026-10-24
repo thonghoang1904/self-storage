@@ -170,7 +170,7 @@ export default function StaffBilling() {
       <div className="panel collection-note">
         <div>
           <b>Sau khi ghi nhận</b>
-          <p className="muted">Hóa đơn cọc đã thu → đơn đặt kho chuyển "Đã nhận cọc", sẵn sàng bàn giao. Hóa đơn gia hạn đã thu → hợp đồng tự gia hạn đến ngày mới.</p>
+          <p className="muted">Hóa đơn cọc đã thu → đơn đặt kho chuyển "Chờ bàn giao kho". Hóa đơn gia hạn đã thu → hợp đồng tự gia hạn đến ngày mới.</p>
         </div>
       </div>
     </div>

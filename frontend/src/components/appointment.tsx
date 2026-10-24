@@ -37,15 +37,17 @@ export const appointmentReached = (r: Reservation, now = new Date()) =>
  * Only a confirmed reservation can be booked, on its start date and in the future (PUT /api/reservations/{id}/appointment).
  * Times are sent with the Vietnam offset because every facility is in Vietnam.
  */
-export function AppointmentPicker({ reservation: r, operatingHours, onSaved }: {
+export function AppointmentPicker({ reservation: r, operatingHours, onSaved, defaultOpen = false }: {
   reservation: Reservation
   operatingHours?: string
   onSaved: (updated: Reservation) => void
+  /** Open the time picker straight away (right after the deposit is paid). */
+  defaultOpen?: boolean
 }) {
-  const [open, setOpen] = useState(false)
   const slots = appointmentSlots(r.expectedStartDate, operatingHours)
   const current = r.checkInAppointmentAt ? r.checkInAppointmentAt.slice(11, 16) : ''
-  const [time, setTime] = useState('')
+  const [open, setOpen] = useState(defaultOpen && !r.checkInAppointmentAt && slots.length > 0)
+  const [time, setTime] = useState(open ? slots[0] : '')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -96,7 +98,7 @@ export function AppointmentPicker({ reservation: r, operatingHours, onSaved }: {
         <select value={time} onChange={(e) => setTime(e.target.value)} aria-label="Giờ nhận kho">
           {slots.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
-        <button type="button" className="btn primary sm" disabled={busy} onClick={save}>{busy ? 'Đang lưu…' : 'Xác nhận'}</button>
+        <button type="button" className="btn primary sm" disabled={busy} onClick={save}>{busy ? 'Đang lưu…' : 'Chốt giờ nhận kho'}</button>
         <button type="button" className="btn ghost sm" onClick={() => { setOpen(false); setError('') }}>Hủy</button>
       </span>
       {error && <small className="bad-text"><Icon name="alert" size={13} /> {error}</small>}

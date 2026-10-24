@@ -956,3 +956,18 @@ small.center { text-align: center; }
   .invoice-detail-grid { display: block; }
   .invoice-paper { box-shadow: none; border: 0; padding: 0; }
 }
+
+/* ---------- sandbox payment & hand-over ---------- */
+.btn.success { background: var(--ok); color: #fff; }
+.btn.success:hover:not(:disabled) { filter: brightness(.94); }
+.sandbox-tag { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; background: rgba(255,255,255,.25); border-radius: 4px; padding: 1px 5px; }
+.pay-row { align-items: center; gap: 10px; }
+.pay-summary .btn.success { justify-content: center; }
+.handover-cta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 20px; border-top: 1px solid var(--border); background: var(--cyan-50); }
+.handover-cta .grow { display: flex; flex-direction: column; gap: 2px; min-width: 220px; }
+.handover-cta .grow > b { color: var(--text-strong); font-size: 15px; }
+.handover-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: #fff; color: var(--cyan-600); flex: none; }
+.handover-cta .appt, .handover-panel .appt { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.handover-cta .appt-time { font-size: 15px; }
+.handover-panel { display: flex; flex-direction: column; gap: 8px; border-top: 4px solid var(--cyan); }
+.handover-panel .handover-icon { background: var(--cyan-50); }

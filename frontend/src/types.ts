@@ -481,7 +481,7 @@ export const StatusLabels: Record<string, { label: string; tone: 'ok' | 'warn' |
   Liquidated: { label: 'Đã thanh lý', tone: 'muted' },
   // reservations
   PendingDeposit: { label: 'Chờ đặt cọc', tone: 'warn' },
-  Confirmed: { label: 'Đã nhận cọc', tone: 'info' },
+  Confirmed: { label: 'Chờ bàn giao kho', tone: 'info' },
   CheckedIn: { label: 'Đã bàn giao', tone: 'ok' },
   Cancelled: { label: 'Đã hủy', tone: 'muted' },
   Expired: { label: 'Hết hạn cọc', tone: 'muted' },
