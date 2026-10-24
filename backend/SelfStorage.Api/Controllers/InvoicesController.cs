@@ -15,7 +15,8 @@ namespace SelfStorage.Api.Controllers;
 public class InvoicesController(
     SelfStorageDbContext db,
     BillingService billing,
-    PaymentGatewayService paymentGateways) : ControllerBase
+    PaymentGatewayService paymentGateways,
+    IWebHostEnvironment environment) : ControllerBase
 {
     [HttpGet("my")]
     [Authorize(Roles = AppRoles.Customer)]
@@ -86,6 +87,20 @@ public class InvoicesController(
     public Task<CheckoutResponse> StartCheckout(int id, string provider, CancellationToken ct) =>
         paymentGateways.StartCheckoutAsync(id, User.GetUserId(), provider,
             HttpContext.Connection.RemoteIpAddress?.ToString(), ct);
+
+    /// <summary>
+    /// Development only (PaymentGateways:SandboxEnabled): marks the invoice paid as if the gateway had confirmed it,
+    /// so a deposit moves the reservation to Confirmed without staff. Returns the updated invoice.
+    /// </summary>
+    [HttpPost("{id:int}/checkout/{provider}/sandbox-complete")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public async Task<InvoiceDto> CompleteSandboxCheckout(int id, string provider, CancellationToken ct)
+    {
+        if (!environment.IsDevelopment())
+            throw AppException.NotFound("Không tìm thấy chức năng");
+        await paymentGateways.CompleteSandboxPaymentAsync(id, User.GetUserId(), provider, ct);
+        return await Detail(id, ct);
+    }
 
     private async Task EnsureAssignedAsync(int staffId, int facilityId, CancellationToken ct)
     {
