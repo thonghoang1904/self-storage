@@ -5,6 +5,7 @@ import { useAuth } from '../auth'
 import { DemoBar } from '../components/layout'
 import { CorridorArt, Icon, Logo } from '../components/ui'
 import { homeFor } from '../types'
+import { citizenIdError, digitsOnly, phoneError } from '../validation'
 
 const DEMO_ACCOUNTS = [
   { username: 'customer1', label: 'Khách hàng', note: 'Đang thuê kho B-01' },
@@ -216,10 +217,14 @@ export function Register() {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    const invalid = (!form.fullName.trim() && 'Vui lòng nhập họ và tên') || citizenIdError(form.citizenId) || phoneError(form.phoneNumber)
+    if (invalid) { setError(invalid); return }
     setError('')
     setBusy(true)
     try {
-      await api('/api/auth/register', { body: form })
+      await api('/api/auth/register', {
+        body: { ...form, fullName: form.fullName.trim(), citizenId: digitsOnly(form.citizenId), phoneNumber: digitsOnly(form.phoneNumber) },
+      })
       await login(form.username, form.password)
       navigate('/rent')
     } catch (err) {

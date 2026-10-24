@@ -81,7 +81,7 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
     try {
       const p = await res.json()
       isProblem = true
-      message = p.errors ? Object.values(p.errors).flat().join(' ') : (p.title ?? message)
+      message = p.errors ? (Object.values(p.errors).flat() as string[]).map(toVietnamese).join(' ') : (p.title ?? message)
     } catch {
       /* empty or non-JSON body */
     }
@@ -127,7 +127,30 @@ export async function downloadFile(path: string, fileName: string): Promise<void
   setTimeout(() => URL.revokeObjectURL(a.href), 1000)
 }
 
-export const fmtMoney = (n: number) => n.toLocaleString('vi-VN') + 'đ'
+// ASP.NET Core writes model validation errors in English ("The FullName field is required.").
+// Translate the common ones so every form shows Vietnamese messages.
+const FIELD_LABELS: Record<string, string> = {
+  Username: 'Tên đăng nhập', Password: 'Mật khẩu', NewPassword: 'Mật khẩu mới', FullName: 'Họ tên', Email: 'Email',
+  PhoneNumber: 'Số điện thoại', CitizenId: 'Số CCCD', Title: 'Tiêu đề', Description: 'Mô tả', Relationship: 'Quan hệ',
+  FacilityName: 'Tên cơ sở', Address: 'Địa chỉ', City: 'Thành phố', District: 'Quận/Huyện', Hotline: 'Hotline',
+  OperatingHours: 'Giờ hoạt động', UnitCode: 'Mã kho', Notes: 'Ghi chú', Token: 'Mã xác minh',
+}
+const label = (field: string) => FIELD_LABELS[field] ?? field
+
+function toVietnamese(msg: string): string {
+  let m
+  if ((m = msg.match(/^The (\w+) field is required\.$/))) { const l = label(m[1]); return `Vui lòng nhập ${l[0].toLowerCase()}${l.slice(1)}.` }
+  if ((m = msg.match(/^The field (\w+) must be a string with a minimum length of (\d+) and a maximum length of (\d+)\.$/)))
+    return `${label(m[1])} phải từ ${m[2]} đến ${m[3]} ký tự.`
+  if ((m = msg.match(/^The field (\w+) must be a string(?: or array type)? with a maximum length of '?(\d+)'?\.$/)))
+    return `${label(m[1])} tối đa ${m[2]} ký tự.`
+  if ((m = msg.match(/^The (\w+) field is not a valid e-mail address\.$/))) return 'Email không hợp lệ.'
+  if ((m = msg.match(/^The field (\w+) must be between (.+) and (.+)\.$/))) return `${label(m[1])} phải từ ${m[2]} đến ${m[3]}.`
+  if (/^The JSON value could not be converted|^'.*' is an invalid/.test(msg)) return 'Dữ liệu gửi lên không đúng định dạng.'
+  return msg
+}
+
+export const fmtMoney =(n: number) => n.toLocaleString('vi-VN') + 'đ'
 // "2026-10-13" (DateOnly) must be read as a local date, not UTC midnight.
 export const fmtDate = (s: string) =>
   new Date(/^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T00:00:00` : s).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })

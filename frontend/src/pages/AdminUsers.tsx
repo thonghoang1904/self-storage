@@ -3,6 +3,7 @@ import { api, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { Badge, Empty, Icon } from '../components/ui'
 import { roleLabel, Roles, type ActivityLog, type AdminUser, type Facility, type RoleInfo } from '../types'
+import { citizenIdError, digitsOnly, phoneError } from '../validation'
 
 /**
  * #45 System Admin, Figma "staff-management": the system's staff accounts (GET /api/admin/users), adding
@@ -185,6 +186,8 @@ function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleIn
     e.preventDefault()
     setError('')
     if (needsFacility && facilityIds.length === 0) { setError('Hãy chọn ít nhất một cơ sở cho nhân viên / quản lý cơ sở.'); return }
+    const invalid = phoneError(f.phoneNumber) || citizenIdError(f.citizenId, true)
+    if (invalid) { setError(invalid); return }
     setBusy(true)
     try {
       const created = await api<AdminUser>('/api/admin/users', {
@@ -193,8 +196,8 @@ function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleIn
           password: f.password,
           fullName: f.fullName.trim(),
           email: f.email.trim(),
-          phoneNumber: f.phoneNumber.trim(),
-          citizenId: f.citizenId.trim() || null,
+          phoneNumber: digitsOnly(f.phoneNumber),
+          citizenId: digitsOnly(f.citizenId) || null,
           roleId,
           // The API rejects an empty list; leave it out for roles without facilities.
           facilityIds: needsFacility ? facilityIds : undefined,
@@ -263,10 +266,12 @@ function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser
     setBusy(true)
     try {
       if (profileChanged) {
-        if (!profile.fullName.trim() || !profile.phoneNumber.trim()) throw new Error('Họ tên và số điện thoại không được để trống')
+        if (!profile.fullName.trim()) throw new Error('Họ tên không được để trống')
+        const invalid = phoneError(profile.phoneNumber) || citizenIdError(profile.citizenId, true)
+        if (invalid) throw new Error(invalid)
         await api(`/api/admin/users/${user.userId}/profile`, { method: 'PUT', body: {
-          fullName: profile.fullName.trim(), email: profile.email.trim(), phoneNumber: profile.phoneNumber.trim(),
-          citizenId: profile.citizenId.trim() || null } })
+          fullName: profile.fullName.trim(), email: profile.email.trim(), phoneNumber: digitsOnly(profile.phoneNumber),
+          citizenId: digitsOnly(profile.citizenId) || null } })
       }
       if (roleId !== user.roleId) await api(`/api/admin/users/${user.userId}/role`, { method: 'PUT', body: { roleId } })
       if (status !== user.status) await api(`/api/admin/users/${user.userId}/status`, { method: 'PUT', body: { status } })

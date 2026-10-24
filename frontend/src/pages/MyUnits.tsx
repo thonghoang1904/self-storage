@@ -5,6 +5,7 @@ import { useAuth } from '../auth'
 import { AppointmentPicker } from '../components/appointment'
 import { Empty, Eyebrow, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
 import { DenyReasons, type AccessRecord, type Contract, type Facility, type Invoice, type Person, type Reservation } from '../types'
+import { citizenIdError, digitsOnly, phoneError } from '../validation'
 
 const daysUntil = (iso: string) => Math.ceil((new Date(`${iso}T00:00:00`).getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000)
 
@@ -248,9 +249,13 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
 
   const add = async (e: FormEvent) => {
     e.preventDefault()
+    const invalid = citizenIdError(form.citizenId) || phoneError(form.phoneNumber)
+    if (invalid) { setError(invalid); return }
     setError('')
     try {
-      await api(base, { body: { ...form, relationship: form.relationship || null } })
+      await api(base, {
+        body: { ...form, citizenId: digitsOnly(form.citizenId), phoneNumber: digitsOnly(form.phoneNumber), relationship: form.relationship || null },
+      })
       setForm({ fullName: '', phoneNumber: '', citizenId: '', relationship: '' })
       setAdding(false)
       void load()

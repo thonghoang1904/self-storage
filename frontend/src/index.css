@@ -440,7 +440,7 @@ td select { height: 36px; width: auto; min-width: 120px; font-size: 13px; }
 .decision.blocked { background: #fff8eb; border-color: #fbe3b5; }
 .deny-row { display: flex; gap: 10px; }
 .deny-row select { flex: 1; height: 42px; }
-.segmented { display: inline-flex; padding: 4px; gap: 4px; border-radius: 10px; background: var(--bg-tint); }
+.segmented { display: inline-flex; flex-wrap: wrap; max-width: 100%; padding: 4px; gap: 4px; border-radius: 10px; background: var(--bg-tint); }
 .segmented button { border: 0; background: none; padding: 7px 14px; border-radius: 7px; font-weight: 700; font-size: 13px; color: var(--muted); cursor: pointer; }
 .segmented button.active { background: #fff; color: var(--cyan-600); box-shadow: 0 1px 3px rgba(11, 19, 43, 0.1); }
 
