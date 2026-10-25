@@ -305,11 +305,11 @@ export function AdminLayout() {
   return (
     <ConsoleLayout
       titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu',
-        '/admin': 'Tổng Quan Quản Lý' }}
+        '/admin/storage': 'Kho Lưu Trữ Hệ Thống', '/admin/customers': 'Khách Hàng & Hợp Đồng', '/admin': 'Tổng Quan Quản Lý' }}
       nav={[
         { icon: 'grid', label: 'Tổng Quan', to: '/admin', end: true },
-        { icon: 'building', label: 'Kho Lưu Trữ' },
-        { icon: 'users', label: 'Khách Hàng' },
+        { icon: 'building', label: 'Kho Lưu Trữ', to: '/admin/storage' },
+        { icon: 'users', label: 'Khách Hàng', to: '/admin/customers' },
         { icon: 'user', label: 'Nhân Viên', to: '/admin/users' },
         { icon: 'file', label: 'Hợp Đồng', to: '/admin/contracts' },
         { icon: 'chart', label: 'Doanh Thu', to: '/admin/revenue' },

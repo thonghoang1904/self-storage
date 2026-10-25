@@ -6,6 +6,8 @@ import { AdminLayout, OpsLayout, PortalLayout, StaffLayout } from './components/
 import AdminUsers from './pages/AdminUsers'
 import AdminContracts from './pages/AdminContracts'
 import AdminEmails from './pages/AdminEmails'
+import AdminCustomers from './pages/AdminCustomers'
+import AdminStorage from './pages/AdminStorage'
 import ConsoleOverview from './pages/ConsoleOverview'
 import OpsFacilities from './pages/OpsFacilities'
 import Pricing from './pages/Pricing'
@@ -80,6 +82,8 @@ export default function App() {
           </Route>
           <Route element={<RequireRole roles={[Roles.Admin]}><AdminLayout /></RequireRole>}>
             <Route path="/admin" element={<ConsoleOverview admin />} />
+            <Route path="/admin/storage" element={<AdminStorage />} />
+            <Route path="/admin/customers" element={<AdminCustomers />} />
             <Route path="/admin/users" element={<AdminUsers />} />
             <Route path="/admin/contracts" element={<AdminContracts />} />
             <Route path="/admin/emails" element={<AdminEmails />} />

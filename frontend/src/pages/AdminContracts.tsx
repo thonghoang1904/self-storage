@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { AdminContract, Facility, ReturnUnitResult, StorageUnit } from '../types'
@@ -25,8 +26,10 @@ export default function AdminContracts() {
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [facilityId, setFacilityId] = useState('')
   const [status, setStatus] = useState('')
-  const [search, setSearch] = useState('')
-  const [query, setQuery] = useState('')
+  // Other admin screens link here with ?search=<contract number or email> to open on that customer.
+  const [params] = useSearchParams()
+  const [search, setSearch] = useState(() => params.get('search') ?? '')
+  const [query, setQuery] = useState(() => params.get('search') ?? '')
   const [page, setPage] = useState(1)
   const [rows, setRows] = useState<AdminContract[]>([])
   const [loading, setLoading] = useState(true)
