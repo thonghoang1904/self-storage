@@ -112,6 +112,60 @@ public class ReservationsController(
         return Project(db.Reservations.Where(r => r.CustomerId == me).OrderByDescending(r => r.CreatedAt)).ToListAsync(ct);
     }
 
+    [HttpGet("reservations/{id:int}")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public async Task<ReservationDto> Detail(int id, CancellationToken ct)
+    {
+        var me = User.GetUserId();
+        return await Project(db.Reservations.Where(r => r.ReservationId == id && r.CustomerId == me))
+            .FirstOrDefaultAsync(ct)
+            ?? throw AppException.NotFound("Không tìm thấy đơn đặt kho");
+    }
+
+    /// <summary>Customer cancels a reservation whose deposit has not been paid yet.</summary>
+    [HttpPost("reservations/{id:int}/cancel")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public async Task<ReservationDto> Cancel(int id, CancellationToken ct)
+    {
+        var me = User.GetUserId();
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var reservation = await db.Reservations.FirstOrDefaultAsync(r => r.ReservationId == id && r.CustomerId == me, ct)
+            ?? throw AppException.NotFound("Không tìm thấy đơn đặt kho");
+        if (reservation.Status != ReservationStatus.PendingDeposit)
+            throw AppException.Conflict("Chỉ hủy trực tiếp được đơn chưa đặt cọc; đơn đã đặt cọc cần gửi yêu cầu hủy");
+
+        var now = Now;
+        var invoice = await db.Invoices.Include(i => i.Payments)
+            .FirstOrDefaultAsync(i => i.ReservationId == id && i.InvoiceType == "DEPOSIT", ct);
+        if (invoice is not null)
+        {
+            if (invoice.Payments.Any(p => p.Status == "Success"))
+                throw AppException.Conflict("Khoản cọc đã được thanh toán; vui lòng gửi yêu cầu hủy đơn");
+            if (invoice.Payments.Any(p => p.Status == "Pending"
+                    && p.PaymentDate > now - BillingService.PendingPaymentCancelAfter))
+                throw AppException.Conflict("Đang có giao dịch thanh toán chờ xử lý; vui lòng thử lại sau ít phút");
+            foreach (var payment in invoice.Payments.Where(p => p.Status == "Pending"))
+            {
+                payment.Status = "Failed";
+                payment.PaymentNotes = "Giao dịch bị hủy do khách hủy đơn đặt kho.";
+            }
+            if (invoice.Status is "Unpaid" or "Overdue") invoice.Status = "Cancelled";
+        }
+
+        reservation.Status = ReservationStatus.Cancelled;
+        db.ActivityLogs.Add(new ActivityLog
+        {
+            UserId = me,
+            Action = "ReservationCancelledByCustomer",
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+            Details = $"Reservation {reservation.ReservationCode} cancelled before deposit payment",
+            CreatedAt = now,
+        });
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return await Project(db.Reservations.Where(r => r.ReservationId == id)).SingleAsync(ct);
+    }
+
     [HttpPut("reservations/{id:int}/appointment")]
     [Authorize(Roles = AppRoles.Customer)]
     public async Task<ReservationDto> SetCheckInAppointment(

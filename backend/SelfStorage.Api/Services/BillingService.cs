@@ -14,6 +14,9 @@ public sealed class BillingService(
     EmailOutboxService emailOutbox,
     TimeProvider clock)
 {
+    /// <summary>Gateway links expire within 15 minutes; after this a still-pending payment may be cancelled safely.</summary>
+    public static readonly TimeSpan PendingPaymentCancelAfter = TimeSpan.FromMinutes(30);
+
     public Invoice CreateInvoice(
         int customerId,
         string invoiceType,
