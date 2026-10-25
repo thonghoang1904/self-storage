@@ -5,7 +5,7 @@
  * Data lives in localStorage of this browser only; "Đặt lại dữ liệu demo" wipes it.
  */
 import type {
-  AccessIssue, ActivityLog, EarlyReturnQuote, AdminUser, AdminContract, EmailOutboxMessage, OperationsReportRow, CancellationRequest, CancellationRefund, ExtraChargeInvoice, FacilityStaff, FacilityWorkQueue, FacilityTaskContract, FacilityReport, OperationsReport, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
+  AccessIssue, ActivityLog, EarlyReturnQuote, EarlyReturnRequest, AdminUser, AdminContract, EmailOutboxMessage, OperationsReportRow, CancellationRequest, CancellationRefund, ExtraChargeInvoice, FacilityStaff, FacilityWorkQueue, FacilityTaskContract, FacilityReport, OperationsReport, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
   OverdueSummary, Person, Renewal, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate, VisitRegistration, RentalPolicy, FeeConfiguration, Promotion,
 } from '../types'
 import { Roles } from '../types'
@@ -51,6 +51,7 @@ interface Db {
   supports: Sup[]
   supportUpdates: SupUpd[]
   refunds?: { contractId: number; amount: number; at: string }[]
+  earlyRequests?: EarlyReturnRequest[]
   logs?: (ActivityLog & { userId: number })[]
   /** ReservationCancellationRequests; refunds of an approved one are kept with it. */
   cancellations?: Cnl[]
@@ -228,6 +229,12 @@ function requireRole(u: User, roles: string[]) {
   if (!roles.includes(u.role)) throw forbidden()
 }
 const STAFF = [Roles.Staff, Roles.Manager] as string[]
+/** The signed-in customer; other roles get 403. */
+function customerOnly(token: string | null): User {
+  const me = currentUser(token)
+  requireRole(me, [Roles.Customer])
+  return me
+}
 
 function ensureAssigned(staffId: number, facilityId: number) {
   if (!db.assignments.some((a) => a.staffId === staffId && a.facilityId === facilityId))
@@ -358,10 +365,10 @@ function ownContract(user: User, id: number): Ctr {
 const returnAppointment = (c: Ctr) => `${c.endDate}T20:00:00`
 /** Fee for handing a unit back before its end date (demo value; the real one comes from the fee configuration). */
 const EARLY_RETURN_FEE = 200000
-function earlyQuote(c: Ctr): EarlyReturnQuote {
+function earlyQuote(c: Ctr, returnDate = today()): EarlyReturnQuote {
   const late = openOverdue(c.contractId)?.accumulatedLateFee ?? 0
   const charges = late + EARLY_RETURN_FEE
-  const daysEarly = Math.max(0, Math.round((new Date(c.endDate + 'T00:00:00').getTime() - new Date(today() + 'T00:00:00').getTime()) / 86400000))
+  const daysEarly = Math.max(0, Math.round((new Date(c.endDate + 'T00:00:00').getTime() - new Date(returnDate + 'T00:00:00').getTime()) / 86400000))
   return { contractId: c.contractId, endDate: c.endDate, daysEarly, earlyReturnFee: EARLY_RETURN_FEE, lateFees: late, depositPaid: c.depositPaid,
     depositDeducted: Math.min(c.depositPaid, charges), depositRefundDue: Math.max(0, c.depositPaid - charges), amountStillOwed: Math.max(0, charges - c.depositPaid), invoicesCancelled: 0 }
 }
@@ -945,14 +952,48 @@ const routes: [string, RegExp, Handler][] = [
     return undefined
   }],
   // Early return (not in the real API yet): a fixed fee taken from the deposit, rent already paid is kept.
-  ['GET', /^\/api\/contracts\/(\d+)\/early-return-quote$/, (m, { token }) => {
+  ['GET', /^\/api\/contracts\/(\d+)\/early-return-quote$/, (m, { token, query }) => {
+    const me = currentUser(token)
+    requireRole(me, [...STAFF, Roles.Customer])
+    const c = me.role === Roles.Customer ? ownContract(me, Number(m[1])) : db.contracts.find((x) => x.contractId === Number(m[1]))
+    if (!c) throw notFound('Không tìm thấy hợp đồng')
+    if (me.role !== Roles.Customer) ensureAssigned(me.userId, unitById(c.unitId).facilityId)
+    if (localIso(new Date()) >= returnAppointment(c)) throw conflict('Hợp đồng đã đến lịch trả kho, không phải trả sớm')
+    return earlyQuote(c, query.get('returnDate') ?? today())
+  }],
+  ['GET', /^\/api\/contracts\/(\d+)\/early-return-requests$/, (m, { token }) => {
+    const c = ownContract(customerOnly(token), Number(m[1]))
+    return (db.earlyRequests ?? []).filter((r) => r.contractId === c.contractId).sort((a, b) => b.requestId - a.requestId)
+  }],
+  ['POST', /^\/api\/contracts\/(\d+)\/early-return-requests$/, (m, { token, body }) => {
+    const me = customerOnly(token)
+    const c = ownContract(me, Number(m[1]))
+    const returnDate = String(body.returnDate ?? '')
+    const reason = String(body.reason ?? '').trim()
+    if (c.status !== 'Active' || localIso(new Date()) >= returnAppointment(c)) throw conflict('Chỉ gửi yêu cầu trả sớm khi hợp đồng còn hiệu lực và chưa đến ngày hết hạn')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(returnDate) || returnDate < today() || returnDate >= c.endDate) throw bad('Ngày trả kho phải từ hôm nay đến trước ngày hết hạn')
+    if (reason.length < 5 || reason.length > 500) throw bad('Lý do trả sớm từ 5 đến 500 ký tự')
+    db.earlyRequests ??= []
+    if (db.earlyRequests.some((r) => r.contractId === c.contractId && r.status === 'Pending')) throw conflict('Hợp đồng đã có yêu cầu trả sớm đang chờ')
+    const r: EarlyReturnRequest = { requestId: nextId(), contractId: c.contractId, contractNumber: c.contractNumber, unitCode: unitById(c.unitId).unitCode,
+      customerName: me.fullName, returnDate, reason, earlyReturnFee: EARLY_RETURN_FEE, status: 'Pending', requestedAt: localIso(new Date()) }
+    db.earlyRequests.push(r)
+    return r
+  }],
+  ['DELETE', /^\/api\/contracts\/(\d+)\/early-return-requests\/(\d+)$/, (m, { token }) => {
+    const c = ownContract(customerOnly(token), Number(m[1]))
+    const r = (db.earlyRequests ?? []).find((x) => x.requestId === Number(m[2]) && x.contractId === c.contractId)
+    if (!r) throw notFound('Không tìm thấy yêu cầu trả sớm')
+    if (r.status !== 'Pending') throw conflict('Chỉ hủy được yêu cầu đang chờ')
+    r.status = 'Cancelled'
+    return undefined
+  }],
+  ['GET', /^\/api\/contracts\/facilities\/(\d+)\/early-return-requests$/, (m, { token }) => {
     const me = currentUser(token)
     requireRole(me, STAFF)
-    const c = db.contracts.find((x) => x.contractId === Number(m[1]))
-    if (!c) throw notFound('Không tìm thấy hợp đồng')
-    ensureAssigned(me.userId, unitById(c.unitId).facilityId)
-    if (localIso(new Date()) >= returnAppointment(c)) throw conflict('Hợp đồng đã đến lịch trả kho, không phải trả sớm')
-    return earlyQuote(c)
+    ensureAssigned(me.userId, Number(m[1]))
+    return (db.earlyRequests ?? []).filter((r) => r.status === 'Pending' && unitById(db.contracts.find((c) => c.contractId === r.contractId)!.unitId).facilityId === Number(m[1]))
+      .sort((a, b) => a.returnDate.localeCompare(b.returnDate))
   }],
   ['POST', /^\/api\/(?:admin\/)?contracts\/(\d+)\/return$/, (m, { token, body }) => {
     const me = currentUser(token)
@@ -974,7 +1015,11 @@ const routes: [string, RegExp, Handler][] = [
     const accumulated = (o?.accumulatedLateFee ?? 0) + earlyFee
     const deducted = Math.min(c.depositPaid, accumulated)
     const stillOwed = accumulated - deducted
-    if (early) { c.earlyReturnFee = earlyFee; c.endDate = today() }
+    if (early) {
+      c.earlyReturnFee = earlyFee
+      c.endDate = today()
+      for (const r of db.earlyRequests ?? []) if (r.contractId === c.contractId && r.status === 'Pending') r.status = 'Completed'
+    }
     c.status = 'Terminated'
     unit.status = 'Available'
     if (o && stillOwed === 0) o.resolvedAt = now

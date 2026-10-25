@@ -4,7 +4,7 @@ import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { FormField } from '../components/form'
 import { Empty, Icon, StatusBadge } from '../components/ui'
-import type { EarlyReturnQuote, OverdueSummary, ReturnUnitResult, StaffContract } from '../types'
+import type { EarlyReturnQuote, EarlyReturnRequest, OverdueSummary, ReturnUnitResult, StaffContract } from '../types'
 import { amountError, textError, transactionCodeError } from '../validation'
 
 /**
@@ -12,7 +12,8 @@ import { amountError, textError, transactionCodeError } from '../validation'
  * walk the inspection checklist, complete the return (POST /api/contracts/{id}/return) and
  * refund the deposit (POST /api/contracts/{id}/deposit-refunds).
  * Before the end date the return is an early return: GET /api/contracts/{id}/early-return-quote shows the fee
- * and the deposit left, and the return is sent with earlyReturn and the customer's reason.
+ * and the deposit left, and the return is sent with earlyReturn and the customer's reason. Customers who asked to
+ * return early from their contract page are listed from GET /api/contracts/facilities/{id}/early-return-requests.
  */
 
 const CHECKLIST = [
@@ -43,6 +44,7 @@ export default function StaffReturn() {
 
   const [contracts, setContracts] = useState<StaffContract[]>([])
   const [overdue, setOverdue] = useState<OverdueSummary[]>([])
+  const [requests, setRequests] = useState<EarlyReturnRequest[]>([])
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<number | null>(wanted || null)
   const [error, setError] = useState('')
@@ -56,6 +58,8 @@ export default function StaffReturn() {
       ])
       setContracts(c)
       setOverdue(o)
+      // Customers' early-return requests: optional, the page works without them.
+      api<EarlyReturnRequest[]>(`/api/contracts/facilities/${facilityId}/early-return-requests`).then(setRequests).catch(() => setRequests([]))
     } catch (e) {
       setError((e as Error).message)
     }
@@ -66,6 +70,7 @@ export default function StaffReturn() {
   const now = new Date()
   const due = contracts.filter((c) => (c.status === 'Active' || c.status === 'Overdue') && new Date(c.returnAppointment) <= now)
   const selected = contracts.find((c) => c.contractId === selectedId) ?? null
+  const pick = (id: number) => { setSelectedId(id); navigate(`/staff-return?contract=${id}`, { replace: true }) }
 
   const find = (e?: FormEvent) => {
     e?.preventDefault()
@@ -106,8 +111,18 @@ export default function StaffReturn() {
             <span className="muted">Đến lịch trả kho:</span>
             {due.map((c) => (
               <button key={c.contractId} type="button" className={`chip ${c.contractId === selectedId ? 'active' : ''}`}
-                onClick={() => { setSelectedId(c.contractId); navigate(`/staff-return?contract=${c.contractId}`, { replace: true }) }}>
+                onClick={() => pick(c.contractId)}>
                 {c.contractNumber} · {c.unitCode}
+              </button>
+            ))}
+          </div>
+        )}
+        {requests.length > 0 && (
+          <div className="quick-tries">
+            <span className="muted">Khách hẹn trả sớm:</span>
+            {requests.map((r) => (
+              <button key={r.requestId} type="button" className={`chip ${r.contractId === selectedId ? 'active' : ''}`} onClick={() => pick(r.contractId)}>
+                {r.unitCode} · {r.customerName} · {fmtDate(r.returnDate)}
               </button>
             ))}
           </div>
@@ -116,7 +131,8 @@ export default function StaffReturn() {
       </section>
 
       {selected
-        ? <Inspection key={selected.contractId} contract={selected} overdue={overdue.find((o) => o.contractId === selected.contractId)} onChanged={load} />
+        ? <Inspection key={selected.contractId} contract={selected} overdue={overdue.find((o) => o.contractId === selected.contractId)}
+            request={requests.find((r) => r.contractId === selected.contractId)} onChanged={load} />
         : <div className="panel"><Empty icon="door">Chọn một hợp đồng để bắt đầu kiểm tra trả kho.</Empty></div>}
     </div>
   )
@@ -126,7 +142,9 @@ function Info({ label, children }: { label: string; children: ReactNode }) {
   return <div className="info-row"><span className="muted">{label}</span><b>{children}</b></div>
 }
 
-function Inspection({ contract: c, overdue, onChanged }: { contract: StaffContract; overdue?: OverdueSummary; onChanged: () => Promise<void> }) {
+function Inspection({ contract: c, overdue, request, onChanged }: {
+  contract: StaffContract; overdue?: OverdueSummary; request?: EarlyReturnRequest; onChanged: () => Promise<void>
+}) {
   const [checked, setChecked] = useState<boolean[]>(() => CHECKLIST.map(() => false))
   const [damage, setDamage] = useState('')
   const [staffNotes, setStaffNotes] = useState('')
@@ -135,7 +153,7 @@ function Inspection({ contract: c, overdue, onChanged }: { contract: StaffContra
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   // Early return: the customer's reason, the quote from the API and the "customer was told" confirmation.
-  const [reason, setReason] = useState('')
+  const [reason, setReason] = useState(request?.reason ?? '')
   const [informed, setInformed] = useState(false)
   const [quote, setQuote] = useState<EarlyReturnQuote | null>(null)
   const [quoteError, setQuoteError] = useState('')
@@ -268,6 +286,7 @@ function Inspection({ contract: c, overdue, onChanged }: { contract: StaffContra
                   Khách trả kho trước ngày hết hạn {fmtDate(c.endDate)}{quote ? ` (${quote.daysEarly} ngày)` : ''}. Tiền thuê đã trả không được hoàn
                   {quote?.invoicesCancelled ? `, ${quote.invoicesCancelled} hóa đơn tiền thuê chưa thanh toán sẽ được hủy` : ''}; phí trả sớm trừ vào cọc.
                 </p>
+                {request && <p className="hint"><Icon name="calendar" size={15} /> Khách đã gửi yêu cầu lúc {fmtTime(request.requestedAt)}, hẹn trả ngày {fmtDate(request.returnDate)}.</p>}
                 {quoteError && <p className="hint"><Icon name="clock" size={15} /> {quoteError}</p>}
                 <FormField label="Lý do trả sớm *" error={shown('reason')} hint={`${reason.trim().length}/500 ký tự`}>
                   <textarea rows={2} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)}

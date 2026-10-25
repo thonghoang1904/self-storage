@@ -112,6 +112,9 @@ export default function MyUnits() {
                     {(c.status === 'Active' || c.status === 'Renewed') && (
                       <Link to={`/my-units/${c.contractId}/visit`} className="btn ghost sm block"><Icon name="calendar" size={14} /> Đăng Ký Ra Vào Kho</Link>
                     )}
+                    {c.status === 'Active' && left > 0 && (
+                      <Link to={`/my-units/${c.contractId}?return=early`} className="btn ghost sm block"><Icon name="logout" size={14} /> Trả Kho Sớm</Link>
+                    )}
                   </div>
                 </article>
               )
