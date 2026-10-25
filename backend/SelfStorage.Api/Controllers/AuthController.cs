@@ -259,6 +259,82 @@ public class AuthController(
 
     private static UserDto ToDto(User u) => new(u.UserId, u.Username, u.FullName, u.Role.RoleName);
 
+    /// <summary>Full profile of the signed-in account.</summary>
+    [HttpGet("profile")]
+    [Authorize]
+    public async Task<UserProfileDto> Profile(CancellationToken ct)
+    {
+        var id = User.GetUserId();
+        var user = await db.Users.Include(u => u.Role).SingleAsync(u => u.UserId == id, ct);
+        return ToProfileDto(user);
+    }
+
+    /// <summary>Update own name, email, phone and address.</summary>
+    [HttpPut("me")]
+    [Authorize]
+    public async Task<UserProfileDto> UpdateMe(UpdateProfileRequest req, CancellationToken ct)
+    {
+        var id = User.GetUserId();
+        var fullName = req.FullName.Trim();
+        var email = req.Email.Trim();
+        var phoneNumber = req.PhoneNumber.Trim();
+        var address = string.IsNullOrWhiteSpace(req.Address) ? null : req.Address.Trim();
+        if (fullName.Length == 0 || phoneNumber.Length == 0)
+            throw AppException.BadRequest("Họ tên và số điện thoại không được để trống");
+
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var user = await db.Users.Include(u => u.Role).SingleAsync(u => u.UserId == id, ct);
+        if (await db.Users.AnyAsync(u => u.UserId != id && u.Email == email, ct))
+            throw AppException.Conflict("Email đã được sử dụng");
+
+        user.FullName = fullName;
+        user.Email = email;
+        user.PhoneNumber = phoneNumber;
+        user.Address = address;
+        user.UpdatedAt = clock.GetLocalNow().DateTime;
+        db.ActivityLogs.Add(new ActivityLog
+        {
+            UserId = id,
+            Action = "ProfileUpdated",
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+            Details = "Account holder updated profile information",
+            CreatedAt = user.UpdatedAt.Value,
+        });
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return ToProfileDto(user);
+    }
+
+    /// <summary>Change the password of the signed-in account after confirming the current one.</summary>
+    [HttpPost("change-password")]
+    [Authorize]
+    [EnableRateLimiting("password-reset")]
+    public async Task<IActionResult> ChangePassword(ChangePasswordRequest req, CancellationToken ct)
+    {
+        var id = User.GetUserId();
+        var user = await db.Users.SingleAsync(u => u.UserId == id, ct);
+        if (hasher.VerifyHashedPassword(user, user.PasswordHash, req.CurrentPassword) == PasswordVerificationResult.Failed)
+            throw AppException.BadRequest("Mật khẩu hiện tại không đúng");
+        if (req.CurrentPassword == req.NewPassword)
+            throw AppException.BadRequest("Mật khẩu mới phải khác mật khẩu hiện tại");
+
+        user.PasswordHash = hasher.HashPassword(user, req.NewPassword);
+        user.UpdatedAt = clock.GetLocalNow().DateTime;
+        db.ActivityLogs.Add(new ActivityLog
+        {
+            UserId = id,
+            Action = "PasswordChanged",
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+            Details = "Account holder changed password",
+            CreatedAt = user.UpdatedAt.Value,
+        });
+        await db.SaveChangesAsync(ct);
+        return Ok(new { message = "Đổi mật khẩu thành công." });
+    }
+
+    private static UserProfileDto ToProfileDto(User u) => new(u.UserId, u.Username, u.FullName, u.Email,
+        u.PhoneNumber, u.CitizenId, u.Address, u.Role.RoleName, u.Status, u.CreatedAt);
+
     private Task<int> InvalidateResetTokenAsync(int userId, string details, CancellationToken ct) =>
         db.ActivityLogs
             .Where(log => log.UserId == userId && log.Action == ResetTokenAction && log.Details == details)
