@@ -254,7 +254,11 @@ Checkout trả `paymentUrl`, `qrCodeUrl`, `deeplink` và `deeplinkWebInApp` (n�
 
 Sau khi khách thanh toán, chỉ IPN MoMo có chữ ký hợp lệ mới xác nhận hóa đơn và hoàn tất gia hạn. Return URL không cập nhật trạng thái. Kiểm tra kết quả bằng `GET /api/invoices/{invoiceId}` hoặc `GET /api/invoices/my`; cần đối chiếu trạng thái hóa đơn/payment là `Paid`/`Success`, không chỉ dựa vào trang redirect.
 
-Nếu đang bật VNPay, đăng ký IPN là `https://<api-public-url>/api/payments/vnpay/ipn` trong merchant sandbox. Hai gateway đều cần callback HTTPS truy cập được từ bên ngoài.
+VNPay cần merchant sandbox credentials và IPN callback HTTPS công khai. Xem [hướng dẫn cấu hình VNPay sandbox local](./docs/vnpay-sandbox-local.md) để thiết lập bằng User Secrets và kiểm thử callback. Script cấu hình nhanh:
+
+```powershell
+.\scripts\configure-vnpay-sandbox.ps1
+```
 
 ```http
 POST /api/invoices/{invoiceId}/checkout/vnpay
