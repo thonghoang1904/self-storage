@@ -153,6 +153,56 @@ public sealed class FacilityManagementController(
         return await ProjectUnit(unitId, ct);
     }
 
+    /// <summary>Remove a unit that has never been used; otherwise put it under maintenance instead.</summary>
+    [HttpDelete("units/{unitId:int}")]
+    [Authorize(Roles = AppRoles.Manager)]
+    public async Task<IActionResult> DeleteUnit(int facilityId, int unitId, CancellationToken ct)
+    {
+        await EnsureManagerOwnsFacilityAsync(facilityId, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var unit = await db.StorageUnits.FirstOrDefaultAsync(
+            u => u.UnitId == unitId && u.FacilityId == facilityId, ct)
+            ?? throw AppException.NotFound("Không tìm thấy kho tại cơ sở");
+        if (unit.Status is not (UnitStatus.Available or UnitStatus.UnderMaintenance))
+            throw AppException.Conflict("Chỉ xóa được kho đang trống hoặc đang bảo trì");
+        if (await db.Contracts.AnyAsync(c => c.UnitId == unitId, ct)
+            || await db.Reservations.AnyAsync(r => r.AssignedUnitId == unitId, ct)
+            || await db.SupportRequests.AnyAsync(r => r.UnitId == unitId, ct))
+            throw AppException.Conflict("Kho đã có lịch sử hợp đồng hoặc hỗ trợ nên không thể xóa; hãy chuyển sang bảo trì");
+        if (unit.Status == UnitStatus.Available)
+        {
+            var available = await db.StorageUnits.CountAsync(u => u.FacilityId == facilityId
+                && u.UnitTypeId == unit.UnitTypeId && u.Status == UnitStatus.Available, ct);
+            var now = clock.GetLocalNow().DateTime;
+            var held = await db.Reservations.CountAsync(r => r.FacilityId == facilityId
+                && r.UnitTypeId == unit.UnitTypeId
+                && (r.Status == ReservationStatus.Confirmed
+                    || (r.Status == ReservationStatus.PendingDeposit && r.DepositDeadline > now)), ct);
+            if (available - 1 < held)
+                throw AppException.Conflict("Không thể xóa kho vì sẽ làm thiếu chỗ cho các đơn đã đặt");
+        }
+
+        db.StorageUnits.Remove(unit);
+        db.ActivityLogs.Add(new ActivityLog
+        {
+            UserId = User.GetUserId(),
+            Action = "StorageUnitDeleted",
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+            Details = $"Deleted unit {unit.UnitCode} at facility {facilityId}",
+            CreatedAt = clock.GetLocalNow().DateTime,
+        });
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            throw AppException.Conflict("Kho đang được tham chiếu bởi dữ liệu khác nên không thể xóa");
+        }
+        await transaction.CommitAsync(ct);
+        return NoContent();
+    }
+
     [HttpGet("staff")]
     [Authorize(Roles = AppRoles.Manager)]
     public async Task<List<FacilityStaffDto>> Staff(int facilityId, CancellationToken ct)

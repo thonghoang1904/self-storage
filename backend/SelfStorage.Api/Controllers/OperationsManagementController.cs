@@ -250,6 +250,44 @@ public sealed class OperationsManagementController(
         return ToPromotionDto(promotion);
     }
 
+    [HttpDelete("rental-policies/{policyId:int}")]
+    public async Task<IActionResult> DeleteRentalPolicy(int policyId, CancellationToken ct)
+    {
+        var policy = await db.RentalPolicies.FindAsync([policyId], ct)
+            ?? throw AppException.NotFound("Không tìm thấy chính sách thuê");
+        db.RentalPolicies.Remove(policy);
+        AddLog("RentalPolicyDeleted", $"Deleted rental policy {policyId}");
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    [HttpDelete("fees/{feeTypeId:int}")]
+    public async Task<IActionResult> DeleteFee(int feeTypeId, CancellationToken ct)
+    {
+        var fee = await db.FeeConfigurations.FindAsync([feeTypeId], ct)
+            ?? throw AppException.NotFound("Không tìm thấy loại phí");
+        if (await db.InvoiceDetails.AnyAsync(d => d.FeeTypeId == feeTypeId, ct))
+            throw AppException.Conflict("Loại phí đã được dùng trong hóa đơn nên không thể xóa");
+        db.FeeConfigurations.Remove(fee);
+        AddLog("FeeConfigurationDeleted", $"Deleted fee configuration {fee.FeeCode}");
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    [HttpDelete("promotions/{promotionId:int}")]
+    public async Task<IActionResult> DeletePromotion(int promotionId, CancellationToken ct)
+    {
+        var promotion = await db.Promotions.FindAsync([promotionId], ct)
+            ?? throw AppException.NotFound("Không tìm thấy khuyến mãi");
+        if (await db.Reservations.AnyAsync(r => r.PromotionId == promotionId, ct)
+            || await db.Contracts.AnyAsync(c => c.PromotionId == promotionId, ct))
+            throw AppException.Conflict("Khuyến mãi đã được áp dụng nên không thể xóa; hãy tắt IsActive");
+        db.Promotions.Remove(promotion);
+        AddLog("PromotionDeleted", $"Deleted promotion {promotion.PromoCode}");
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
     private void AddLog(string action, string details)
     {
         db.ActivityLogs.Add(new ActivityLog
