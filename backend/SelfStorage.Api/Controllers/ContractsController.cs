@@ -385,6 +385,22 @@ public class ContractsController(
         return new PersonDto(person.AuthorizedPersonId, person.FullName, person.CitizenId, person.PhoneNumber, person.Relationship);
     }
 
+    [HttpPut("{id:int}/authorized-persons/{personId:int}")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public async Task<PersonDto> UpdateAuthorizedPerson(
+        int id, int personId, UpdateAuthorizedPersonRequest req, CancellationToken ct)
+    {
+        await LoadOwnAsync(id, ct);
+        var person = await db.AuthorizedPersons.FirstOrDefaultAsync(
+                         p => p.ContractId == id && p.AuthorizedPersonId == personId && p.Status == "Active", ct)
+                     ?? throw AppException.NotFound("Không tìm thấy người được ủy quyền");
+        person.FullName = req.FullName.Trim();
+        person.PhoneNumber = req.PhoneNumber.Trim();
+        person.Relationship = string.IsNullOrWhiteSpace(req.Relationship) ? null : req.Relationship.Trim();
+        await db.SaveChangesAsync(ct);
+        return new PersonDto(person.AuthorizedPersonId, person.FullName, person.CitizenId, person.PhoneNumber, person.Relationship);
+    }
+
     [HttpDelete("{id:int}/authorized-persons/{personId:int}")]
     [Authorize(Roles = AppRoles.Customer)]
     public async Task<IActionResult> RevokeAuthorizedPerson(int id, int personId, CancellationToken ct)
