@@ -15,7 +15,8 @@ namespace SelfStorage.Api.Controllers;
 public class InvoicesController(
     SelfStorageDbContext db,
     BillingService billing,
-    PaymentGatewayService paymentGateways) : ControllerBase
+    PaymentGatewayService paymentGateways,
+    TimeProvider clock) : ControllerBase
 {
     [HttpGet("my")]
     [Authorize(Roles = AppRoles.Customer)]
@@ -41,6 +42,42 @@ public class InvoicesController(
             .FirstOrDefaultAsync(i => i.InvoiceId == id && i.CustomerId == User.GetUserId(), ct)
             ?? throw AppException.NotFound("Không tìm thấy hóa đơn");
         return (await MapAsync([invoice], ct))[0];
+    }
+
+    /// <summary>Printable HTML invoice/receipt (use the browser's "Save as PDF").</summary>
+    [HttpGet("{id:int}/receipt")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public async Task<ContentResult> Receipt(int id, CancellationToken ct)
+    {
+        var invoice = await db.Invoices
+            .Include(i => i.Details)
+            .Include(i => i.Payments)
+            .Include(i => i.Customer)
+            .FirstOrDefaultAsync(i => i.InvoiceId == id && i.CustomerId == User.GetUserId(), ct)
+            ?? throw AppException.NotFound("Không tìm thấy hóa đơn");
+
+        static string H(string? value) => System.Net.WebUtility.HtmlEncode(value ?? "");
+        static string Money(decimal value) => $"{value:N0} đ";
+        var rows = string.Concat(invoice.Details.OrderBy(d => d.DetailId).Select(d =>
+            $"<tr><td>{H(d.Description)}</td><td class=\"n\">{d.Quantity}</td><td class=\"n\">{Money(d.UnitPrice)}</td><td class=\"n\">{Money(d.LineTotal)}</td></tr>"));
+        var paid = string.Concat(invoice.Payments.Where(p => p.Status == "Success").OrderBy(p => p.PaymentDate).Select(p =>
+            $"<tr><td>{p.PaymentDate:dd/MM/yyyy HH:mm}</td><td>{H(p.PaymentMethod)}</td><td>{H(p.TransactionCode)}</td><td class=\"n\">{Money(p.AmountPaid)}</td></tr>"));
+        var html = $$"""
+            <!DOCTYPE html>
+            <html lang="vi"><head><meta charset="utf-8"><title>Hóa đơn {{H(invoice.InvoiceNumber)}}</title>
+            <style>body{font-family:Arial,sans-serif;max-width:720px;margin:24px auto;color:#222}
+            table{width:100%;border-collapse:collapse;margin:12px 0}th,td{border-bottom:1px solid #ddd;padding:6px;text-align:left}
+            .n{text-align:right}h1{margin-bottom:4px}</style></head><body>
+            <h1>Hóa đơn {{H(invoice.InvoiceNumber)}}</h1>
+            <p>Khách hàng: {{H(invoice.Customer.FullName)}}<br>Loại: {{H(invoice.InvoiceType)}} · Hạn thanh toán: {{invoice.DueDate:dd/MM/yyyy}} · Trạng thái: {{H(invoice.Status)}}</p>
+            <table><tr><th>Nội dung</th><th class="n">SL</th><th class="n">Đơn giá</th><th class="n">Thành tiền</th></tr>{{rows}}
+            <tr><td colspan="3" class="n">Giảm giá</td><td class="n">{{Money(invoice.DiscountAmount)}}</td></tr>
+            <tr><th colspan="3" class="n">Tổng cộng</th><th class="n">{{Money(invoice.TotalAmount)}}</th></tr></table>
+            <h3>Thanh toán đã ghi nhận</h3>
+            <table><tr><th>Thời gian</th><th>Phương thức</th><th>Mã giao dịch</th><th class="n">Số tiền</th></tr>{{paid}}</table>
+            </body></html>
+            """;
+        return Content(html, "text/html; charset=utf-8");
     }
 
     [HttpGet("facilities/{facilityId:int}")]
@@ -75,6 +112,38 @@ public class InvoicesController(
         var staffName = await db.Users.Where(u => u.UserId == staffId).Select(u => u.FullName).SingleAsync(ct);
         return new PaymentDto(payment.PaymentId, payment.PaymentMethod, payment.TransactionCode,
             payment.AmountPaid, payment.PaymentDate, payment.Status, payment.PaymentNotes, staffName);
+    }
+
+    /// <summary>Staff cancels an unpaid extra-charge invoice that was entered by mistake.</summary>
+    [HttpPost("{id:int}/cancel")]
+    [Authorize(Roles = AppRoles.GateRoles)]
+    public async Task<InvoiceDto> Cancel(int id, CancelInvoiceRequest req, CancellationToken ct)
+    {
+        var staffId = User.GetUserId();
+        await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+        var invoice = await db.Invoices.Include(i => i.Details).Include(i => i.Payments)
+            .FirstOrDefaultAsync(i => i.InvoiceId == id, ct)
+            ?? throw AppException.NotFound("Không tìm thấy hóa đơn");
+        await billing.EnsureStaffOwnsInvoiceAsync(invoice, staffId, ct);
+        if (invoice.InvoiceType != "EXTRA_CHARGE")
+            throw AppException.Conflict("Chỉ được hủy hóa đơn phụ thu do nhân viên lập");
+        if (invoice.Status is not ("Unpaid" or "Overdue"))
+            throw AppException.Conflict("Chỉ hủy được hóa đơn chưa thanh toán");
+        if (invoice.Payments.Any(p => p.Status is "Pending" or "Success"))
+            throw AppException.Conflict("Hóa đơn đã có giao dịch thanh toán nên không thể hủy");
+
+        invoice.Status = "Cancelled";
+        db.ActivityLogs.Add(new ActivityLog
+        {
+            UserId = staffId,
+            Action = "InvoiceCancelled",
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+            Details = $"Invoice {invoice.InvoiceNumber} cancelled: {req.Reason.Trim()}",
+            CreatedAt = clock.GetLocalNow().DateTime,
+        });
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return (await MapAsync([invoice], ct))[0];
     }
 
     /// <summary>
