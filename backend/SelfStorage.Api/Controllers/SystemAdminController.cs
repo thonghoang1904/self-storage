@@ -189,6 +189,97 @@ public sealed class SystemAdminController(
             .ToListAsync(ct);
     }
 
+    /// <summary>System-wide audit log with filters, newest first.</summary>
+    [HttpGet("activity-logs")]
+    public async Task<List<AdminActivityLogDto>> ActivityLogs(
+        [FromQuery] int? userId, [FromQuery] string? action,
+        [FromQuery] DateTime? from, [FromQuery] DateTime? to,
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 50, CancellationToken ct = default)
+    {
+        ValidatePaging(page, pageSize);
+        if (from is not null && to is not null && from > to)
+            throw AppException.BadRequest("Ngày bắt đầu không được sau ngày kết thúc");
+
+        var query = db.ActivityLogs.AsQueryable();
+        if (userId is not null) query = query.Where(l => l.UserId == userId);
+        if (!string.IsNullOrWhiteSpace(action))
+        {
+            var term = action.Trim();
+            query = query.Where(l => l.Action.Contains(term));
+        }
+        if (from is not null) query = query.Where(l => l.CreatedAt >= from);
+        if (to is not null) query = query.Where(l => l.CreatedAt <= to);
+
+        Response.Headers["X-Total-Count"] = (await query.CountAsync(ct)).ToString();
+        return await query.OrderByDescending(l => l.CreatedAt).ThenByDescending(l => l.LogId)
+            .Skip((page - 1) * pageSize).Take(pageSize)
+            .Select(l => new AdminActivityLogDto(l.LogId, l.UserId,
+                db.Users.Where(u => u.UserId == l.UserId).Select(u => u.Username).FirstOrDefault(),
+                l.Action, l.Details, l.IpAddress, l.CreatedAt))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>All payments in the system, for reconciliation with VNPay/MoMo statements.</summary>
+    [HttpGet("payments")]
+    public async Task<List<AdminPaymentDto>> Payments(
+        [FromQuery] string? status, [FromQuery] string? method, [FromQuery] string? search,
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 50, CancellationToken ct = default)
+    {
+        ValidatePaging(page, pageSize);
+        if (status is not null && status is not ("Pending" or "Success" or "Failed" or "Refunded"))
+            throw AppException.BadRequest("Trạng thái giao dịch không hợp lệ");
+        if (method is not null && method is not ("VNPay" or "MoMo" or "BankTransfer" or "Cash" or "CreditCard"))
+            throw AppException.BadRequest("Phương thức thanh toán không hợp lệ");
+
+        var query = from p in db.Payments
+                    join i in db.Invoices on p.InvoiceId equals i.InvoiceId
+                    select new { Payment = p, Invoice = i };
+        if (status is not null) query = query.Where(x => x.Payment.Status == status);
+        if (method is not null) query = query.Where(x => x.Payment.PaymentMethod == method);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(x => x.Invoice.InvoiceNumber.Contains(term)
+                || (x.Payment.TransactionCode != null && x.Payment.TransactionCode.Contains(term)));
+        }
+
+        Response.Headers["X-Total-Count"] = (await query.CountAsync(ct)).ToString();
+        return await query.OrderByDescending(x => x.Payment.PaymentDate).ThenByDescending(x => x.Payment.PaymentId)
+            .Skip((page - 1) * pageSize).Take(pageSize)
+            .Select(x => new AdminPaymentDto(x.Payment.PaymentId, x.Invoice.InvoiceId, x.Invoice.InvoiceNumber,
+                x.Invoice.CustomerId, x.Invoice.Customer.FullName, x.Payment.PaymentMethod, x.Payment.Status,
+                x.Payment.AmountPaid, x.Payment.PaymentDate, x.Payment.TransactionCode))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>System-wide counters for the administrator home screen.</summary>
+    [HttpGet("dashboard")]
+    public async Task<SystemDashboardDto> Dashboard(CancellationToken ct)
+    {
+        var now = clock.GetLocalNow().DateTime;
+        var monthStart = new DateTime(now.Year, now.Month, 1);
+        var received = await db.Payments.Where(p => p.Status == "Success" && p.PaymentDate >= monthStart)
+            .SumAsync(p => (decimal?)p.AmountPaid, ct) ?? 0m;
+        var refunded = await db.Payments.Where(p => p.Status == "Refunded" && p.PaymentDate >= monthStart)
+            .SumAsync(p => (decimal?)p.AmountPaid, ct) ?? 0m;
+
+        return new SystemDashboardDto(
+            now,
+            await db.Users.CountAsync(ct),
+            await db.Users.CountAsync(u => u.Status == "Active", ct),
+            await db.Facilities.CountAsync(ct),
+            await db.StorageUnits.CountAsync(ct),
+            await db.StorageUnits.CountAsync(u => u.Status == UnitStatus.Available, ct),
+            await db.StorageUnits.CountAsync(u => u.Status == UnitStatus.Rented, ct),
+            await db.Contracts.CountAsync(c => c.Status == ContractStatus.Active, ct),
+            await db.Contracts.CountAsync(c => c.Status == ContractStatus.Overdue, ct),
+            await db.SupportRequests.CountAsync(r => r.Status == "Open" || r.Status == "InProgress", ct),
+            await db.Payments.CountAsync(p => p.Status == "Pending", ct),
+            await db.EmailOutboxMessages.CountAsync(m => m.Status == "Pending" || m.Status == "Processing", ct),
+            await db.EmailOutboxMessages.CountAsync(m => m.Status == "Failed", ct),
+            received - refunded);
+    }
+
     private async Task ValidateAccountAsync(
         string username, string email, string? citizenId, int? excludeUserId, CancellationToken ct)
     {
