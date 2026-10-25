@@ -5,7 +5,7 @@
  * Data lives in localStorage of this browser only; "Đặt lại dữ liệu demo" wipes it.
  */
 import type {
-  AccessIssue, ActivityLog, AdminUser, AdminContract, EmailOutboxMessage, OperationsReportRow, CancellationRequest, CancellationRefund, ExtraChargeInvoice, FacilityStaff, FacilityWorkQueue, FacilityTaskContract, FacilityReport, OperationsReport, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
+  AccessIssue, ActivityLog, EarlyReturnQuote, AdminUser, AdminContract, EmailOutboxMessage, OperationsReportRow, CancellationRequest, CancellationRefund, ExtraChargeInvoice, FacilityStaff, FacilityWorkQueue, FacilityTaskContract, FacilityReport, OperationsReport, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
   OverdueSummary, Person, Renewal, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate, VisitRegistration, RentalPolicy, FeeConfiguration, Promotion,
 } from '../types'
 import { Roles } from '../types'
@@ -18,7 +18,7 @@ const DB_KEY = 'ss_mock_db_v12'
 interface User { userId: number; username: string; password: string; fullName: string; email: string; phoneNumber: string; citizenId: string | null; role: string; status?: string }
 interface Unit { unitId: number; facilityId: number; unitTypeId: number; unitCode: string; floorNumber: number; zoneArea: string; monthlyPrice: number; status: string }
 interface Rsv { reservationId: number; reservationCode: string; customerId: number; facilityId: number; unitTypeId: number; assignedUnitId: number | null; expectedStartDate: string; checkInAppointmentAt?: string | null; durationMonths: number; depositAmount: number; estimatedTotalFee: number; status: string; depositDeadline: string; createdAt: string; promoCode?: string | null; promotionDiscountAmount?: number; depositWasPaid?: boolean }
-interface Ctr { contractId: number; contractNumber: string; customerId: number; unitId: number; startDate: string; endDate: string; monthlyRentFee: number; depositPaid: number; status: string; signedDate?: string; termsConditions?: string | null }
+interface Ctr { contractId: number; contractNumber: string; customerId: number; unitId: number; startDate: string; endDate: string; monthlyRentFee: number; depositPaid: number; status: string; signedDate?: string; termsConditions?: string | null; earlyReturnFee?: number }
 interface Rnw { renewalId: number; contractId: number; oldEndDate: string; newEndDate: string; extensionMonths: number; renewalFee: number; status: string; requestedAt: string }
 interface Sup { requestId: number; requestCode: string; customerId: number; facilityId: number; contractId: number; unitId: number; assignedStaffId: number | null; category: string; priority: string; title: string; description: string; status: string; createdAt: string; resolvedAt: string | null; checklist?: Chk[] }
 interface Chk { checklistItemId: number; sortOrder: number; description: string; isCompleted: boolean; completedAt: string | null; completedByStaffId: number | null; notes: string | null }
@@ -356,6 +356,15 @@ function ownContract(user: User, id: number): Ctr {
 }
 
 const returnAppointment = (c: Ctr) => `${c.endDate}T20:00:00`
+/** Fee for handing a unit back before its end date (demo value; the real one comes from the fee configuration). */
+const EARLY_RETURN_FEE = 200000
+function earlyQuote(c: Ctr): EarlyReturnQuote {
+  const late = openOverdue(c.contractId)?.accumulatedLateFee ?? 0
+  const charges = late + EARLY_RETURN_FEE
+  const daysEarly = Math.max(0, Math.round((new Date(c.endDate + 'T00:00:00').getTime() - new Date(today() + 'T00:00:00').getTime()) / 86400000))
+  return { contractId: c.contractId, endDate: c.endDate, daysEarly, earlyReturnFee: EARLY_RETURN_FEE, lateFees: late, depositPaid: c.depositPaid,
+    depositDeducted: Math.min(c.depositPaid, charges), depositRefundDue: Math.max(0, c.depositPaid - charges), amountStillOwed: Math.max(0, charges - c.depositPaid), invoicesCancelled: 0 }
+}
 const openOverdue = (contractId: number) =>
   db.overdues.filter((o) => o.contractId === contractId && !o.resolvedAt).sort((a, b) => b.overdueId - a.overdueId)[0]
 const renewalDto = (r: Rnw): Renewal => ({ ...r })
@@ -935,6 +944,16 @@ const routes: [string, RegExp, Handler][] = [
     r.status = 'Rejected'
     return undefined
   }],
+  // Early return (not in the real API yet): a fixed fee taken from the deposit, rent already paid is kept.
+  ['GET', /^\/api\/contracts\/(\d+)\/early-return-quote$/, (m, { token }) => {
+    const me = currentUser(token)
+    requireRole(me, STAFF)
+    const c = db.contracts.find((x) => x.contractId === Number(m[1]))
+    if (!c) throw notFound('Không tìm thấy hợp đồng')
+    ensureAssigned(me.userId, unitById(c.unitId).facilityId)
+    if (localIso(new Date()) >= returnAppointment(c)) throw conflict('Hợp đồng đã đến lịch trả kho, không phải trả sớm')
+    return earlyQuote(c)
+  }],
   ['POST', /^\/api\/(?:admin\/)?contracts\/(\d+)\/return$/, (m, { token, body }) => {
     const me = currentUser(token)
     requireRole(me, [...STAFF, Roles.Admin])
@@ -943,19 +962,23 @@ const routes: [string, RegExp, Handler][] = [
     const unit = unitById(c.unitId)
     if (me.role !== Roles.Admin) ensureAssigned(me.userId, unit.facilityId)
     const now = localIso(new Date())
-    if (now < returnAppointment(c)) throw conflict(`Lịch trả kho là 20:00 ngày ${c.endDate.split('-').reverse().join('/')}`)
+    const early = now < returnAppointment(c)
+    if (early && !body.earlyReturn) throw conflict(`Lịch trả kho là 20:00 ngày ${c.endDate.split('-').reverse().join('/')}`)
+    if (early && String(body.earlyReturnReason ?? '').trim().length < 5) throw bad('Cần ghi lý do khách trả kho sớm')
     if (!body.allItemsRemoved) throw bad('Nhân viên cần xác nhận kho đã được dọn sạch trước khi hoàn tất trả kho')
     if (c.status !== 'Active' && c.status !== 'Overdue') throw conflict('Hợp đồng không ở trạng thái có thể trả kho')
     if (db.records.some((r) => r.contractId === c.contractId && r.result === 'Granted' && !r.exitTime))
       throw conflict('Cần xác nhận tất cả khách đã ra khỏi cơ sở trước khi trả kho')
     const o = openOverdue(c.contractId)
-    const accumulated = o?.accumulatedLateFee ?? 0
+    const earlyFee = early ? EARLY_RETURN_FEE : 0
+    const accumulated = (o?.accumulatedLateFee ?? 0) + earlyFee
     const deducted = Math.min(c.depositPaid, accumulated)
     const stillOwed = accumulated - deducted
+    if (early) { c.earlyReturnFee = earlyFee; c.endDate = today() }
     c.status = 'Terminated'
     unit.status = 'Available'
     if (o && stillOwed === 0) o.resolvedAt = now
-    const res: ReturnUnitResult = { contractId: c.contractId, status: c.status, unitStatus: unit.status, depositPaid: c.depositPaid, lateFeesDeducted: deducted, depositRefundDue: c.depositPaid - deducted, lateFeesStillOwed: stillOwed, returnedAt: now }
+    const res: ReturnUnitResult = { contractId: c.contractId, status: c.status, unitStatus: unit.status, depositPaid: c.depositPaid, lateFeesDeducted: deducted, depositRefundDue: c.depositPaid - deducted, lateFeesStillOwed: stillOwed, returnedAt: now, ...(early ? { earlyReturnFee: earlyFee } : {}) }
     return res
   }],
   ['POST', /^\/api\/contracts\/(\d+)\/deposit-refunds$/, (m, { token, body }) => {
@@ -972,7 +995,7 @@ const routes: [string, RegExp, Handler][] = [
     const o = db.overdues.filter((x) => x.contractId === c.contractId).sort((a, b) => b.overdueId - a.overdueId)[0]
     db.refunds ??= []
     const already = db.refunds.filter((x) => x.contractId === c.contractId).reduce((s, x) => s + x.amount, 0)
-    const remaining = Math.max(0, c.depositPaid - (o?.accumulatedLateFee ?? 0)) - already
+    const remaining = Math.max(0, c.depositPaid - (o?.accumulatedLateFee ?? 0) - (c.earlyReturnFee ?? 0)) - already
     const amount = Number(body.amount)
     if (!(amount > 0) || amount > remaining) throw bad(`Số tiền hoàn cọc còn có thể hoàn là ${Math.max(0, remaining).toLocaleString('vi-VN')}đ`)
     const at = localIso(new Date())
