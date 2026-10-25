@@ -331,8 +331,6 @@ export function OpsLayout() {
       nav={[
         { icon: 'grid', label: 'Tổng Quan', to: '/ops', end: true },
         { icon: 'package', label: 'Vận Hành Kho', to: '/ops/storage' },
-        { icon: 'users', label: 'Khách Hàng' },
-        { icon: 'phone', label: 'Hỗ Trợ' },
         { icon: 'building', label: 'Cơ Sở', to: '/ops/facilities' },
         { icon: 'chart', label: 'Doanh Thu', to: '/ops/revenue' },
         { icon: 'file', label: 'Chính Sách', to: '/ops/policies' },
