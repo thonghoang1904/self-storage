@@ -256,7 +256,7 @@ export function StaffLayout() {
 // ------------------------------------------------------------------ management consoles (admin, operations manager): same dark sidebar
 
 /** A sidebar entry: a built screen has a route, the rest of the Figma menu shows greyed out. */
-interface ConsoleNavItem { icon: string; label: string; to?: string }
+interface ConsoleNavItem { icon: string; label: string; to?: string; end?: boolean }
 
 function ConsoleLayout({ nav, titles }: { nav: ConsoleNavItem[]; titles: Record<string, string> }) {
   const { user, logout } = useAuth()
@@ -272,7 +272,7 @@ function ConsoleLayout({ nav, titles }: { nav: ConsoleNavItem[]; titles: Record<
         <div className="sidebar-brand"><Logo admin light /></div>
         <nav className="sidebar-nav">
           {nav.map((n) => n.to
-            ? <NavLink key={n.label} to={n.to}><Icon name={n.icon} /> {n.label}</NavLink>
+            ? <NavLink key={n.label} to={n.to} end={n.end}><Icon name={n.icon} /> {n.label}</NavLink>
             : <span key={n.label} className="soon" title="Chưa có màn hình"><Icon name={n.icon} /> {n.label}</span>)}
           <Link to="/"><Icon name="arrowRight" className="flip" /> Trang khách hàng</Link>
         </nav>
@@ -304,9 +304,10 @@ function ConsoleLayout({ nav, titles }: { nav: ConsoleNavItem[]; titles: Record<
 export function AdminLayout() {
   return (
     <ConsoleLayout
-      titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu' }}
+      titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu',
+        '/admin': 'Tổng Quan Quản Lý' }}
       nav={[
-        { icon: 'grid', label: 'Tổng Quan' },
+        { icon: 'grid', label: 'Tổng Quan', to: '/admin', end: true },
         { icon: 'building', label: 'Kho Lưu Trữ' },
         { icon: 'users', label: 'Khách Hàng' },
         { icon: 'user', label: 'Nhân Viên', to: '/admin/users' },
@@ -323,9 +324,10 @@ export function AdminLayout() {
 export function OpsLayout() {
   return (
     <ConsoleLayout
-      titles={{ '/ops/facilities': 'Quản Lý Cơ Sở', '/ops/policies': 'Chính Sách & Giá', '/ops/revenue': 'Doanh Thu' }}
+      titles={{ '/ops/facilities': 'Quản Lý Cơ Sở', '/ops/policies': 'Chính Sách & Giá', '/ops/revenue': 'Doanh Thu',
+        '/ops': 'Tổng Quan Vận Hành' }}
       nav={[
-        { icon: 'grid', label: 'Tổng Quan' },
+        { icon: 'grid', label: 'Tổng Quan', to: '/ops', end: true },
         { icon: 'package', label: 'Vận Hành Kho' },
         { icon: 'users', label: 'Khách Hàng' },
         { icon: 'phone', label: 'Hỗ Trợ' },
