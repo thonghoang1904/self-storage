@@ -383,7 +383,7 @@ td select { height: 36px; width: auto; min-width: 120px; font-size: 13px; }
 .staff { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; background: var(--bg-tint); }
 .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 28px; padding: 22px 16px; background: var(--navy); color: #c5cedb; }
 .sidebar-brand { padding: 0 6px; }
-.sidebar-brand .logo { font-size: 19px; }
+.sidebar-brand .logo { font-size: 18px; white-space: nowrap; }
 .sidebar-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
 .sidebar-nav a { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: var(--radius); text-decoration: none; font-weight: 600; font-size: 14px; color: #aab5c6; position: relative; }
 .sidebar-nav a:hover { background: rgba(255, 255, 255, 0.05); color: #fff; }
