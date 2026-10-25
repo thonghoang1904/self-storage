@@ -7,6 +7,8 @@ import { AppointmentPicker } from '../components/appointment'
 import { Empty, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
 import { TermsList, TERMS_VERSION } from './Terms'
 import { CancellationStatuses, type Availability, type CancellationRequest, type Facility, type Reservation, type UnitType } from '../types'
+import { CODE_FILTER, promoCodeError, textError } from '../validation'
+import { FieldNote, useInputFilter } from '../components/form'
 
 const DURATIONS = [1, 3, 6, 12]
 const SIGN_KEY = 'ss_signed_contracts'
@@ -37,6 +39,7 @@ export default function Rent() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [promoCode, setPromoCode] = useState('')
+  const promo = useInputFilter(CODE_FILTER)
   /** Latest cancellation request of each reservation that can still have one. */
   const [cancellations, setCancellations] = useState<Record<number, CancellationRequest | undefined>>({})
   const [cancelling, setCancelling] = useState<number | null>(null)
@@ -81,6 +84,12 @@ export default function Rent() {
   const signError = !agreed ? 'Vui lòng đọc và đồng ý với điều khoản hợp đồng' : ''
 
   const openSigning = () => {
+    // Check what the customer typed before showing the contract to sign.
+    const invalid = (!startDate && 'Vui lòng chọn ngày bắt đầu thuê')
+      || (startDate < todayIso() && 'Ngày bắt đầu thuê không được ở quá khứ')
+      || ((months < 1 || months > 60) && 'Số tháng thuê phải từ 1 đến 60')
+      || promoCodeError(promoCode)
+    if (invalid) { setError(invalid); return }
     setError('')
     setSigning(true)
     setTimeout(() => document.getElementById('sign-contract')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
@@ -218,7 +227,8 @@ export default function Rent() {
             </dl>
             <label className="field compact promo-field">
               <span>Mã khuyến mãi (nếu có)</span>
-              <input value={promoCode} onChange={(e) => setPromoCode(e.target.value.toUpperCase())} placeholder="vd: WELCOME10" maxLength={30} />
+              <input value={promoCode} onChange={(e) => setPromoCode(promo.keep(e.target.value))} placeholder="vd: WELCOME10" maxLength={30} />
+              <FieldNote text={promo.hint} />
             </label>
             <div className="summary-total"><span>Tạm Tính</span><b>{fmtMoney(total)}</b></div>
             {promoCode.trim() && <p className="fine-print">Mã chỉ dành cho lần thuê đầu tiên; mức giảm được trừ vào tiền thuê tháng đầu và hiện sau khi giữ chỗ.</p>}
@@ -332,7 +342,8 @@ function CancelForm({ reservation: r, onDone }: { reservation: Reservation; onDo
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const send = async () => {
-    if (!reason.trim()) { setError('Vui lòng nhập lý do hủy'); return }
+    const invalid = textError(reason, 'Lý do hủy', 5, 1000)
+    if (invalid) { setError(invalid); return }
     setError('')
     setBusy(true)
     try {

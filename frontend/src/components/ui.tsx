@@ -58,11 +58,12 @@ export function Icon({ name, size = 18, className }: { name: keyof typeof ICONS 
 
 // ------------------------------------------------------------------ brand
 
-export function Logo({ admin = false, light = false }: { admin?: boolean; light?: boolean }) {
+/** `area` names the back-office section next to the brand (Admin, Operations, Facility); without it the logo is the public "SafeKeep Storage". */
+export function Logo({ area, light = false }: { area?: string; light?: boolean }) {
   return (
     <span className={`logo ${light ? 'light' : ''}`}>
-      {admin ? <span className="logo-mark"><Icon name="circleX" size={18} /></span> : <Icon name="circleX" size={26} className="cyan" />}
-      <span className="logo-text">SafeKeep <span className="cyan">{admin ? 'Admin' : 'Storage'}</span></span>
+      {area ? <span className="logo-mark"><Icon name="circleX" size={18} /></span> : <Icon name="circleX" size={26} className="cyan" />}
+      <span className="logo-text">SafeKeep <span className="cyan">{area ?? 'Storage'}</span></span>
     </span>
   )
 }

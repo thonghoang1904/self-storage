@@ -4,6 +4,8 @@ import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { Empty, Icon, UnitArt } from '../components/ui'
 import { VisitPurposes, type ContractDetail, type Facility, type Person, type VisitRegistration } from '../types'
+import { CITIZEN_ID_FILTER, citizenIdError, textError } from '../validation'
+import { FieldNote, useInputFilter } from '../components/form'
 
 /**
  * Figma "Đăng ký vào kho" (120:2111): the customer books a time to come to the unit, for themselves or an
@@ -50,6 +52,7 @@ export default function VisitRegistrationPage() {
   const [otherPurpose, setOtherPurpose] = useState('')
   const [who, setWho] = useState<number | null>(null) // null = contract holder
   const [citizenId, setCitizenId] = useState('')
+  const cid = useInputFilter(CITIZEN_ID_FILTER)
   const [agree, setAgree] = useState(false)
 
   const loadRows = useCallback(() => api<VisitRegistration[]>(`/api/contracts/${id}/visit-registrations`).then(setRows).catch(() => {}), [id])
@@ -93,7 +96,8 @@ export default function VisitRegistrationPage() {
     setError('')
     setNotice('')
     if (!agree) return setError('Vui lòng xác nhận cam kết trước khi gửi đăng ký')
-    if (!finalPurpose) return setError('Vui lòng nhập mục đích vào kho')
+    const invalid = textError(finalPurpose ?? '', 'Mục đích vào kho', 3, 255) || citizenIdError(citizenId)
+    if (invalid) return setError(invalid)
     setBusy(true)
     try {
       const r = await api<VisitRegistration>(`/api/contracts/${id}/visit-registrations`, {
@@ -226,7 +230,8 @@ export default function VisitRegistrationPage() {
                   </div>
                   {people.length === 0 && <p className="hint"><Icon name="users" size={15} /> Muốn người nhà vào thay bạn? <Link to={`/my-units?contract=${c.contractId}&tab=people`} className="link">Thêm người được ủy quyền</Link></p>}
                   <label className="field"><span>Số CCCD của người đến kho *</span>
-                    <input value={citizenId} inputMode="numeric" maxLength={25} onChange={(e) => setCitizenId(e.target.value)} placeholder="Nhập đủ số trên thẻ CCCD" required />
+                    <input value={citizenId} inputMode="numeric" maxLength={12} onChange={(e) => setCitizenId(cid.keep(e.target.value))} placeholder="Nhập đủ số trên thẻ CCCD" required />
+                    <FieldNote text={cid.hint} />
                   </label>
                 </section>
 

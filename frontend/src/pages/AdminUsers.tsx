@@ -3,6 +3,8 @@ import { api, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { Badge, Empty, Icon } from '../components/ui'
 import { roleLabel, Roles, type ActivityLog, type AdminUser, type Facility, type RoleInfo } from '../types'
+import { FormField, PasswordChecklist, useValidatedForm } from '../components/form'
+import { CITIZEN_ID_FILTER, citizenIdError, digitsOnly, emailError, fullNameError, NAME_FILTER, normalizePhone, passwordError, PHONE_FILTER, phoneError, USERNAME_FILTER, usernameError } from '../validation'
 
 /**
  * #45 System Admin, Figma "staff-management": the system's staff accounts (GET /api/admin/users), adding
@@ -170,13 +172,16 @@ export default function AdminUsers() {
 
 function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleInfo[]; facilities: Facility[]; onCancel: () => void; onDone: (msg: string) => Promise<void> }) {
   const staffRoles = roles.filter((r) => r.roleName !== Roles.Customer)
-  const [f, setF] = useState({ username: '', password: '', fullName: '', email: '', phoneNumber: '', citizenId: '' })
+  const form = useValidatedForm(
+    { fullName: '', email: '', username: '', password: '', phoneNumber: '', citizenId: '' },
+    { fullName: fullNameError, email: emailError, username: usernameError, password: passwordError, phoneNumber: phoneError, citizenId: (v) => citizenIdError(v, true) },
+    { fullName: NAME_FILTER, username: USERNAME_FILTER, phoneNumber: PHONE_FILTER, citizenId: CITIZEN_ID_FILTER },
+  )
+  const f = form.values
   const [roleId, setRoleId] = useState(() => roles.find((r) => r.roleName === Roles.Staff)?.roleId ?? staffRoles[0]?.roleId ?? 0)
   const [facilityIds, setFacilityIds] = useState<number[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value })
-
   const roleName = roles.find((r) => r.roleId === roleId)?.roleName ?? ''
   const needsFacility = FACILITY_ROLES.includes(roleName)
   const toggle = (id: number) => setFacilityIds(facilityIds.includes(id) ? facilityIds.filter((x) => x !== id) : [...facilityIds, id])
@@ -184,7 +189,9 @@ function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleIn
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
+    const valid = form.validateAll()
     if (needsFacility && facilityIds.length === 0) { setError('Hãy chọn ít nhất một cơ sở cho nhân viên / quản lý cơ sở.'); return }
+    if (!valid) return
     setBusy(true)
     try {
       const created = await api<AdminUser>('/api/admin/users', {
@@ -193,8 +200,8 @@ function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleIn
           password: f.password,
           fullName: f.fullName.trim(),
           email: f.email.trim(),
-          phoneNumber: f.phoneNumber.trim(),
-          citizenId: f.citizenId.trim() || null,
+          phoneNumber: normalizePhone(f.phoneNumber),
+          citizenId: f.citizenId || null,
           roleId,
           // The API rejects an empty list; leave it out for roles without facilities.
           facilityIds: needsFacility ? facilityIds : undefined,
@@ -209,15 +216,18 @@ function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleIn
   }
 
   return (
-    <form className="panel" onSubmit={submit}>
+    <form className="panel" onSubmit={submit} noValidate>
       <h2 className="panel-title"><Icon name="plus" size={18} className="cyan" /> Thêm Nhân Viên</h2>
       <div className="form-grid">
-        <label className="field"><span>Họ tên</span><input value={f.fullName} onChange={set('fullName')} required maxLength={100} /></label>
-        <label className="field"><span>Email</span><input type="email" value={f.email} onChange={set('email')} required maxLength={100} /></label>
-        <label className="field"><span>Tên đăng nhập</span><input value={f.username} onChange={set('username')} required minLength={3} maxLength={50} autoComplete="off" /></label>
-        <label className="field"><span>Mật khẩu ban đầu</span><input type="password" value={f.password} onChange={set('password')} required minLength={8} maxLength={100} autoComplete="new-password" placeholder="Ít nhất 8 ký tự" /></label>
-        <label className="field"><span>Số điện thoại</span><input value={f.phoneNumber} onChange={set('phoneNumber')} required maxLength={20} /></label>
-        <label className="field"><span>CCCD (không bắt buộc)</span><input value={f.citizenId} onChange={set('citizenId')} maxLength={25} /></label>
+        <FormField label="Họ tên" error={form.error('fullName')}><input {...form.field('fullName')} maxLength={100} placeholder="Nguyễn Văn An" /></FormField>
+        <FormField label="Email" error={form.error('email')}><input {...form.field('email')} type="email" maxLength={100} placeholder="ten@safekeep.com.vn" /></FormField>
+        <FormField label="Tên đăng nhập" error={form.error('username')}><input {...form.field('username')} maxLength={50} autoComplete="off" placeholder="vd: nhanvien01" /></FormField>
+        <FormField label="Mật khẩu ban đầu" error={form.error('password')}>
+          <input {...form.field('password')} type="password" maxLength={100} autoComplete="new-password" placeholder="Có chữ hoa, chữ thường, số" />
+          <PasswordChecklist value={f.password} />
+        </FormField>
+        <FormField label="Số điện thoại" error={form.error('phoneNumber')}><input {...form.field('phoneNumber')} inputMode="tel" placeholder="0901234567" /></FormField>
+        <FormField label="CCCD (không bắt buộc)" error={form.error('citizenId')}><input {...form.field('citizenId')} inputMode="numeric" placeholder="12 chữ số" /></FormField>
         <label className="field"><span>Vai trò</span>
           <select value={roleId} onChange={(e) => setRoleId(Number(e.target.value))}>
             {staffRoles.map((r) => <option key={r.roleId} value={r.roleId}>{roleLabel(r.roleName)}</option>)}
@@ -246,7 +256,13 @@ function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleIn
 function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser; roles: RoleInfo[]; isMe: boolean; onCancel: () => void; onDone: (msg: string) => Promise<void> }) {
   const [roleId, setRoleId] = useState(user.roleId)
   const [status, setStatus] = useState(user.status)
-  const [profile, setProfile] = useState({ fullName: user.fullName, email: user.email, phoneNumber: user.phoneNumber, citizenId: user.citizenId ?? '' })
+  // Same rules and character filters as the create form, shown under each field.
+  const form = useValidatedForm(
+    { fullName: user.fullName, email: user.email, phoneNumber: user.phoneNumber, citizenId: user.citizenId ?? '' },
+    { fullName: fullNameError, email: emailError, phoneNumber: phoneError, citizenId: (v) => citizenIdError(v, true) },
+    { fullName: NAME_FILTER, phoneNumber: PHONE_FILTER, citizenId: CITIZEN_ID_FILTER },
+  )
+  const profile = form.values
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -255,18 +271,17 @@ function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser
   const profileChanged = profile.fullName.trim() !== user.fullName || profile.email.trim() !== user.email
     || profile.phoneNumber.trim() !== user.phoneNumber || profile.citizenId.trim() !== (user.citizenId ?? '')
   const changed = roleId !== user.roleId || status !== user.status || profileChanged
-  const setP = (k: keyof typeof profile) => (e: { target: { value: string } }) => setProfile({ ...profile, [k]: e.target.value })
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
+    if (profileChanged && !form.validateAll()) return
     setBusy(true)
     try {
       if (profileChanged) {
-        if (!profile.fullName.trim() || !profile.phoneNumber.trim()) throw new Error('Họ tên và số điện thoại không được để trống')
         await api(`/api/admin/users/${user.userId}/profile`, { method: 'PUT', body: {
-          fullName: profile.fullName.trim(), email: profile.email.trim(), phoneNumber: profile.phoneNumber.trim(),
-          citizenId: profile.citizenId.trim() || null } })
+          fullName: profile.fullName.trim(), email: profile.email.trim(), phoneNumber: normalizePhone(profile.phoneNumber),
+          citizenId: digitsOnly(profile.citizenId) || null } })
       }
       if (roleId !== user.roleId) await api(`/api/admin/users/${user.userId}/role`, { method: 'PUT', body: { roleId } })
       if (status !== user.status) await api(`/api/admin/users/${user.userId}/status`, { method: 'PUT', body: { status } })
@@ -284,12 +299,12 @@ function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser
         <h3 className="panel-title"><Icon name="edit" size={18} className="cyan" /> {user.fullName}</h3>
         <button className="icon-btn" aria-label="Đóng" onClick={onCancel}><Icon name="x" /></button>
       </div>
-      <form className="stack" onSubmit={submit}>
+      <form className="stack" onSubmit={submit} noValidate>
         <div className="form-grid">
-          <label className="field"><span>Họ và tên</span><input id="edit-fullname" value={profile.fullName} maxLength={100} onChange={setP('fullName')} required /></label>
-          <label className="field"><span>Email</span><input id="edit-email" type="email" value={profile.email} maxLength={100} onChange={setP('email')} required /></label>
-          <label className="field"><span>Số điện thoại</span><input id="edit-phone" value={profile.phoneNumber} maxLength={20} onChange={setP('phoneNumber')} required /></label>
-          <label className="field"><span>Số CCCD</span><input id="edit-cccd" value={profile.citizenId} maxLength={25} onChange={setP('citizenId')} placeholder="Không bắt buộc" /></label>
+          <FormField label="Họ và tên" error={form.error('fullName')}><input id="edit-fullname" {...form.field('fullName')} maxLength={100} /></FormField>
+          <FormField label="Email" error={form.error('email')}><input id="edit-email" type="email" {...form.field('email')} maxLength={100} /></FormField>
+          <FormField label="Số điện thoại" error={form.error('phoneNumber')}><input id="edit-phone" {...form.field('phoneNumber')} inputMode="tel" /></FormField>
+          <FormField label="Số CCCD" error={form.error('citizenId')}><input id="edit-cccd" {...form.field('citizenId')} inputMode="numeric" placeholder="Không bắt buộc" /></FormField>
         </div>
         {isMe && <p className="muted">Bạn không thể tự đổi vai trò hay trạng thái của chính mình.</p>}
         <div className="form-grid">

@@ -4,6 +4,7 @@ import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { OverdueSummary, ReturnUnitResult, StaffContract } from '../types'
+import { amountError, transactionCodeError } from '../validation'
 
 /**
  * Figma "storage-return-inspection": find a contract, check its return schedule and deposit,
@@ -210,7 +211,7 @@ function Inspection({ contract: c, overdue, onChanged }: { contract: StaffContra
           ))}
           <div className="damage-record">
             <b>Ghi nhận hư hỏng (nếu có)</b>
-            <textarea rows={3} value={damage} disabled={returned} onChange={(e) => setDamage(e.target.value)}
+            <textarea rows={3} maxLength={1000} value={damage} disabled={returned} onChange={(e) => setDamage(e.target.value)}
               placeholder="Mô tả vị trí, mức độ hư hỏng… Để trống nếu kho bình thường." />
           </div>
         </section>
@@ -225,7 +226,7 @@ function Inspection({ contract: c, overdue, onChanged }: { contract: StaffContra
             <Info label="Hư hỏng">{damage.trim() ? 'Có ghi nhận' : 'Không'}</Info>
             <Info label="Phí quá hạn còn phải thu">{fmtMoney(stillOwed)}</Info>
             <label className="field"><span>Ghi chú nhân viên</span>
-              <textarea rows={2} value={staffNotes} disabled={returned} onChange={(e) => setStaffNotes(e.target.value)} placeholder="Không bắt buộc" />
+              <textarea rows={2} maxLength={500} value={staffNotes} disabled={returned} onChange={(e) => setStaffNotes(e.target.value)} placeholder="Không bắt buộc" />
             </label>
             {!returned && (
               <>
@@ -267,6 +268,11 @@ function RefundCard({ contract: c, returned, refundDue }: { contract: StaffContr
   const refund = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
+    const value = Number(amount)
+    const invalid = (!Number.isInteger(value) && 'Số tiền hoàn phải là số nguyên (đồng)')
+      || amountError(value, 'Số tiền hoàn', 1, left)
+      || (method === 'BankTransfer' || code.trim() ? transactionCodeError(code) : null)
+    if (invalid) { setError(invalid); return }
     setBusy(true)
     try {
       const res = await api<{ refundedAmount: number; remainingRefund: number; refundedAt: string }>(`/api/contracts/${c.contractId}/deposit-refunds`, {
@@ -306,9 +312,9 @@ function RefundCard({ contract: c, returned, refundDue }: { contract: StaffContr
             </label>
           </div>
           {method === 'BankTransfer' && (
-            <label className="field"><span>Mã giao dịch</span><input value={code} onChange={(e) => setCode(e.target.value)} required placeholder="Mã chuyển khoản ngân hàng" /></label>
+            <label className="field"><span>Mã giao dịch</span><input value={code} onChange={(e) => setCode(e.target.value.replace(/[^A-Za-z0-9-]/g, '').slice(0, 50))} required placeholder="Mã chuyển khoản ngân hàng" /></label>
           )}
-          <label className="field"><span>Ghi chú</span><input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Không bắt buộc" /></label>
+          <label className="field"><span>Ghi chú</span><input value={notes} maxLength={255} onChange={(e) => setNotes(e.target.value)} placeholder="Không bắt buộc" /></label>
           <label className="check-row"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> Khách đã nhận đủ số tiền hoàn cọc</label>
           <div className="row">
             <button className="btn primary grow" type="submit" disabled={busy || !confirmed}>{busy ? 'Đang ghi nhận…' : 'Xác nhận hoàn cọc'}</button>

@@ -198,7 +198,7 @@ export function StaffLayout() {
     <FacilityContext.Provider value={{ facilities, facilityId, setFacilityId, error }}>
       <div className="staff">
         <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
-          <div className="sidebar-brand"><Logo admin light /></div>
+          <div className="sidebar-brand"><Logo area="Facility" light /></div>
           <nav className="sidebar-nav">
             {isManager && (
               <>
@@ -256,9 +256,9 @@ export function StaffLayout() {
 // ------------------------------------------------------------------ management consoles (admin, operations manager): same dark sidebar
 
 /** A sidebar entry: a built screen has a route, the rest of the Figma menu shows greyed out. */
-interface ConsoleNavItem { icon: string; label: string; to?: string }
+interface ConsoleNavItem { icon: string; label: string; to?: string; end?: boolean }
 
-function ConsoleLayout({ nav, titles }: { nav: ConsoleNavItem[]; titles: Record<string, string> }) {
+function ConsoleLayout({ area, nav, titles }: { area: string; nav: ConsoleNavItem[]; titles: Record<string, string> }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
@@ -269,10 +269,10 @@ function ConsoleLayout({ nav, titles }: { nav: ConsoleNavItem[]; titles: Record<
   return (
     <div className="staff">
       <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
-        <div className="sidebar-brand"><Logo admin light /></div>
+        <div className="sidebar-brand"><Logo area={area} light /></div>
         <nav className="sidebar-nav">
           {nav.map((n) => n.to
-            ? <NavLink key={n.label} to={n.to}><Icon name={n.icon} /> {n.label}</NavLink>
+            ? <NavLink key={n.label} to={n.to} end={n.end}><Icon name={n.icon} /> {n.label}</NavLink>
             : <span key={n.label} className="soon" title="Chưa có màn hình"><Icon name={n.icon} /> {n.label}</span>)}
           <Link to="/"><Icon name="arrowRight" className="flip" /> Trang khách hàng</Link>
         </nav>
@@ -304,16 +304,18 @@ function ConsoleLayout({ nav, titles }: { nav: ConsoleNavItem[]; titles: Record<
 export function AdminLayout() {
   return (
     <ConsoleLayout
-      titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu' }}
+      area="Admin"
+      titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu',
+        '/admin/storage': 'Kho Lưu Trữ Hệ Thống', '/admin/customers': 'Khách Hàng & Hợp Đồng', '/admin/settings': 'Cài Đặt', '/admin': 'Tổng Quan Quản Lý' }}
       nav={[
-        { icon: 'grid', label: 'Tổng Quan' },
-        { icon: 'building', label: 'Kho Lưu Trữ' },
-        { icon: 'users', label: 'Khách Hàng' },
+        { icon: 'grid', label: 'Tổng Quan', to: '/admin', end: true },
+        { icon: 'building', label: 'Kho Lưu Trữ', to: '/admin/storage' },
+        { icon: 'users', label: 'Khách Hàng', to: '/admin/customers' },
         { icon: 'user', label: 'Nhân Viên', to: '/admin/users' },
         { icon: 'file', label: 'Hợp Đồng', to: '/admin/contracts' },
         { icon: 'chart', label: 'Doanh Thu', to: '/admin/revenue' },
         { icon: 'mail', label: 'Email Hệ Thống', to: '/admin/emails' },
-        { icon: 'settings', label: 'Cài Đặt' },
+        { icon: 'settings', label: 'Cài Đặt', to: '/admin/settings' },
       ]}
     />
   )
@@ -323,16 +325,18 @@ export function AdminLayout() {
 export function OpsLayout() {
   return (
     <ConsoleLayout
-      titles={{ '/ops/facilities': 'Quản Lý Cơ Sở', '/ops/policies': 'Chính Sách & Giá', '/ops/revenue': 'Doanh Thu' }}
+      area="Operations"
+      titles={{ '/ops/facilities': 'Quản Lý Cơ Sở', '/ops/policies': 'Chính Sách & Giá', '/ops/revenue': 'Doanh Thu',
+        '/ops/storage': 'Vận Hành Kho', '/ops/settings': 'Cài Đặt', '/ops': 'Tổng Quan Vận Hành' }}
       nav={[
-        { icon: 'grid', label: 'Tổng Quan' },
-        { icon: 'package', label: 'Vận Hành Kho' },
+        { icon: 'grid', label: 'Tổng Quan', to: '/ops', end: true },
+        { icon: 'package', label: 'Vận Hành Kho', to: '/ops/storage' },
         { icon: 'users', label: 'Khách Hàng' },
         { icon: 'phone', label: 'Hỗ Trợ' },
         { icon: 'building', label: 'Cơ Sở', to: '/ops/facilities' },
         { icon: 'chart', label: 'Doanh Thu', to: '/ops/revenue' },
         { icon: 'file', label: 'Chính Sách', to: '/ops/policies' },
-        { icon: 'settings', label: 'Cài Đặt' },
+        { icon: 'settings', label: 'Cài Đặt', to: '/ops/settings' },
       ]}
     />
   )
