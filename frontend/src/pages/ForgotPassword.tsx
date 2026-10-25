@@ -1,8 +1,10 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FocusEvent, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, ApiError, IS_DEMO } from '../api'
 import { Icon } from '../components/ui'
-import { AuthShell, Field, PasswordInput } from './Login'
+import { FormField, leavingToSubmit, PasswordChecklist } from '../components/form'
+import { confirmError, emailError, passwordError } from '../validation'
+import { AuthShell, PasswordInput } from './Login'
 
 /**
  * Forgot / reset password, Figma "forgot-password" (45:1230) on the same split layout as login.
@@ -32,6 +34,13 @@ export default function ForgotPassword() {
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  // Field errors show after the user leaves a field or presses the button.
+  const [shown, setShown] = useState<Record<string, boolean>>({})
+  const show = (k: string) => (e: FocusEvent) => { if (!leavingToSubmit(e)) setShown((x) => ({ ...x, [k]: true })) }
+  const emailErr = shown.email ? emailError(email) : null
+  const passwordErr = shown.password ? passwordError(password) : null
+  const confirmErr = shown.confirm ? confirmError(password, confirm) : null
+  const tokenErr = shown.token && !token.trim() ? 'Vui lòng dán mã trong email' : null
 
   const run = async (fn: () => Promise<void>, sending = false) => {
     setError('')
@@ -47,6 +56,8 @@ export default function ForgotPassword() {
 
   const send = (e: FormEvent) => {
     e.preventDefault()
+    setShown((x) => ({ ...x, email: true }))
+    if (emailError(email)) return
     void run(async () => {
       const res = await api<{ message: string; demoToken?: string }>('/api/auth/forgot-password', { body: { email: email.trim() } })
       setNotice(res.message)
@@ -60,11 +71,9 @@ export default function ForgotPassword() {
     e.preventDefault()
     // The code is long (43 characters); copying it from an email can bring spaces or line breaks along.
     const code = token.replace(/\s+/g, '')
-    if (!code) return setError('Vui lòng nhập mã trong email')
+    setShown({ token: true, password: true, confirm: true })
+    if (!code || passwordError(password) || confirmError(password, confirm)) return
     if (code.length > 100) return setError('Mã không hợp lệ, hãy copy lại đúng mã trong email')
-    if (password.length < 8) return setError('Mật khẩu mới cần ít nhất 8 ký tự')
-    if (password.length > 100) return setError('Mật khẩu mới tối đa 100 ký tự')
-    if (password !== confirm) return setError('Mật khẩu nhập lại không khớp')
     void run(async () => {
       await api('/api/auth/reset-password', { body: { token: code, newPassword: password } })
       setStep('done')
@@ -76,10 +85,11 @@ export default function ForgotPassword() {
   if (step === 'email') {
     return (
       <AuthShell title="Quên mật khẩu" subtitle="Vui lòng nhập email để đặt lại mật khẩu">
-        <form className="stack-lg" onSubmit={send}>
-          <Field label="Email">
-            <input type="email" maxLength={100} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="user@safekeep.com.vn" autoComplete="email" autoFocus required />
-          </Field>
+        <form className="stack-lg" onSubmit={send} noValidate>
+          <FormField label="Email" error={emailErr}>
+            <input type="email" maxLength={100} value={email} onChange={(e) => setEmail(e.target.value)} onBlur={show('email')} aria-invalid={!!emailErr || undefined}
+              placeholder="user@safekeep.com.vn" autoComplete="email" autoFocus />
+          </FormField>
           {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
           <button className="btn primary block lg upper" type="submit" disabled={busy}>{busy ? 'Đang gửi…' : 'Gửi mã xác minh'}</button>
         </form>
@@ -91,7 +101,7 @@ export default function ForgotPassword() {
   if (step === 'reset') {
     return (
       <AuthShell title="Đặt mật khẩu mới" subtitle={`Nhập mã đã gửi tới ${email} và chọn mật khẩu mới`}>
-        <form className="stack-lg" onSubmit={save}>
+        <form className="stack-lg" onSubmit={save} noValidate>
           {notice && <p className="alert ok"><Icon name="mail" size={16} />{notice}</p>}
           {IS_DEMO && demoToken && (
             <p className="hint"><Icon name="key" size={15} /> Bản demo không gửi email thật. Mã của bạn: <b>{demoToken}</b>
@@ -101,19 +111,22 @@ export default function ForgotPassword() {
             <p className="alert warn"><Icon name="alert" size={16} /><span>Bản demo không có tài khoản nào dùng email <b>{email}</b> nên không có mã.
               Bấm <b>Gửi lại mã</b> và nhập một email có sẵn: <b>customer1@example.com</b>, <b>customer2@example.com</b>, <b>staff1@example.com</b>.</span></p>
           )}
-          <Field label="Mã xác minh">
-            <input value={token} onChange={(e) => setToken(e.target.value)} placeholder="Dán mã trong email" autoComplete="one-time-code" spellCheck={false} required />
-          </Field>
-          <Field label="Mật khẩu mới">
-            <PasswordInput value={password} onChange={setPassword} placeholder="Ít nhất 8 ký tự" autoComplete="new-password" />
-          </Field>
-          <Field label="Nhập lại mật khẩu mới">
-            <PasswordInput value={confirm} onChange={setConfirm} placeholder="Nhập lại mật khẩu" autoComplete="new-password" />
-          </Field>
+          <FormField label="Mã xác minh" error={tokenErr}>
+            <input value={token} onChange={(e) => setToken(e.target.value)} onBlur={show('token')} aria-invalid={!!tokenErr || undefined}
+              placeholder="Dán mã trong email" autoComplete="one-time-code" spellCheck={false} />
+          </FormField>
+          <FormField label="Mật khẩu mới" error={passwordErr}>
+            <PasswordInput value={password} onChange={setPassword} onBlur={show('password')} invalid={!!passwordErr}
+              placeholder="Ít nhất 8 ký tự, có chữ hoa, chữ thường, số" autoComplete="new-password" />
+            <PasswordChecklist value={password} />
+          </FormField>
+          <FormField label="Nhập lại mật khẩu mới" error={confirmErr}>
+            <PasswordInput value={confirm} onChange={setConfirm} onBlur={show('confirm')} invalid={!!confirmErr} placeholder="Nhập lại mật khẩu" autoComplete="new-password" />
+          </FormField>
           <p className="hint"><Icon name="clock" size={15} /> Mã có hiệu lực 30 phút và chỉ dùng được một lần. Không thấy thư? Xem cả mục Spam; gửi lại mã sẽ làm mã cũ hết hiệu lực.</p>
           {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
           <button className="btn primary block lg upper" type="submit" disabled={busy}>{busy ? 'Đang lưu…' : 'Đặt lại mật khẩu'}</button>
-          <button className="btn ghost block" type="button" onClick={() => { setStep('email'); setError('') }}>Gửi lại mã</button>
+          <button className="btn ghost block" type="button" onClick={() => { setStep('email'); setError(''); setShown({}) }}>Gửi lại mã</button>
         </form>
         {back}
       </AuthShell>

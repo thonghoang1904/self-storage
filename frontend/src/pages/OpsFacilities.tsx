@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { api, fmtDate } from '../api'
 import { Badge, Empty, Icon } from '../components/ui'
 import type { Facility, FacilityReport, OperationsReport } from '../types'
+import { FormField, useValidatedForm } from '../components/form'
+import { hotlineError, normalizePhone, PHONE_FILTER, operatingHoursError, textError } from '../validation'
 
 /**
  * #44 Operations manager, Figma "facility-branch-management": every facility (GET /api/operations/facilities)
@@ -208,26 +210,38 @@ function Metric({ icon, tone, label, value, note }: { icon: string; tone: string
 
 /** Add a facility, or edit one when `facility` is given (status can only be changed when editing). */
 function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onCancel: () => void; onDone: (msg: string) => Promise<void> }) {
-  const [f, setF] = useState({
-    facilityName: facility?.facilityName ?? '',
-    address: facility?.address ?? '',
-    district: facility?.district ?? '',
-    city: facility?.city ?? 'TP. Hồ Chí Minh',
-    hotline: facility?.hotline ?? '',
-    operatingHours: facility?.operatingHours ?? '06:00 - 22:00',
-    status: facility?.status ?? 'Active',
-  })
+  const form = useValidatedForm(
+    {
+      facilityName: facility?.facilityName ?? '',
+      address: facility?.address ?? '',
+      district: facility?.district ?? '',
+      city: facility?.city ?? 'TP. Hồ Chí Minh',
+      hotline: facility?.hotline ?? '',
+      operatingHours: facility?.operatingHours ?? '06:00 - 22:00',
+      status: facility?.status ?? 'Active',
+    },
+    {
+      facilityName: (v) => textError(v, 'Tên cơ sở', 3, 150),
+      address: (v) => textError(v, 'Địa chỉ', 5, 255),
+      district: (v) => textError(v, 'Quận / Huyện', 2, 100),
+      city: (v) => textError(v, 'Thành phố', 2, 100),
+      hotline: hotlineError,
+      operatingHours: operatingHoursError,
+    },
+    { hotline: PHONE_FILTER },
+  )
+  const f = form.values
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value })
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
+    if (!form.validateAll()) return
     setBusy(true)
     const body = {
       facilityName: f.facilityName.trim(), address: f.address.trim(), district: f.district.trim(),
-      city: f.city.trim(), hotline: f.hotline.trim(), operatingHours: f.operatingHours.trim(),
+      city: f.city.trim(), hotline: normalizePhone(f.hotline), operatingHours: f.operatingHours.trim(),
     }
     try {
       if (facility) {
@@ -245,18 +259,18 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
   }
 
   return (
-    <form className={facility ? 'add-person' : 'panel'} onSubmit={submit}>
+    <form className={facility ? 'add-person' : 'panel'} onSubmit={submit} noValidate>
       <h3 className="panel-title"><Icon name="building" size={18} className="cyan" /> {facility ? `Quản lý ${facility.facilityName}` : 'Thêm cơ sở'}</h3>
       <div className="form-grid">
-        <label className="field"><span>Tên cơ sở</span><input value={f.facilityName} onChange={set('facilityName')} required maxLength={150} placeholder="SafeKeep Bình Thạnh" /></label>
-        <label className="field"><span>Hotline</span><input value={f.hotline} onChange={set('hotline')} required maxLength={20} /></label>
-        <label className="field"><span>Địa chỉ</span><input value={f.address} onChange={set('address')} required maxLength={255} /></label>
-        <label className="field"><span>Quận / Huyện</span><input value={f.district} onChange={set('district')} required maxLength={100} /></label>
-        <label className="field"><span>Thành phố</span><input value={f.city} onChange={set('city')} required maxLength={100} /></label>
-        <label className="field"><span>Giờ hoạt động</span><input value={f.operatingHours} onChange={set('operatingHours')} required maxLength={100} /></label>
+        <FormField label="Tên cơ sở" error={form.error('facilityName')}><input {...form.field('facilityName')} maxLength={150} placeholder="SafeKeep Bình Thạnh" /></FormField>
+        <FormField label="Hotline" error={form.error('hotline')}><input {...form.field('hotline')} inputMode="tel" placeholder="02812345678" /></FormField>
+        <FormField label="Địa chỉ" error={form.error('address')}><input {...form.field('address')} maxLength={255} placeholder="240 Điện Biên Phủ" /></FormField>
+        <FormField label="Quận / Huyện" error={form.error('district')}><input {...form.field('district')} maxLength={100} placeholder="Quận Bình Thạnh" /></FormField>
+        <FormField label="Thành phố" error={form.error('city')}><input {...form.field('city')} maxLength={100} /></FormField>
+        <FormField label="Giờ hoạt động" error={form.error('operatingHours')} hint="vd: 06:00 - 22:00 hoặc 24/7"><input {...form.field('operatingHours')} maxLength={100} /></FormField>
         {facility && (
           <label className="field"><span>Trạng thái</span>
-            <select value={f.status} onChange={set('status')}>
+            <select value={f.status} onChange={(e) => form.setValue('status', e.target.value)}>
               {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </label>

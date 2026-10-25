@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { api, fmtTime } from '../api'
+import { FormField, leavingToSubmit } from '../components/form'
 import { Badge, Empty, Eyebrow, Icon, StatusBadge } from '../components/ui'
+import { textError } from '../validation'
 import { SupportCategories, SupportPriorities, type Contract, type SupportChecklistItem, type SupportRequest, type SupportUpdate } from '../types'
 
 const EMPTY_FORM = { contractId: 0, category: 'LockIssue', priority: 'Medium', title: '', description: '' }
@@ -20,6 +22,9 @@ export default function Support() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  const [shown, setShown] = useState({ title: false, description: false })
+  const titleErr = shown.title ? textError(form.title, 'Tiêu đề', 5, 200) : null
+  const descErr = shown.description ? textError(form.description, 'Mô tả', 10, 4000) : null
 
   const load = useCallback(async () => {
     try {
@@ -42,11 +47,14 @@ export default function Support() {
     e.preventDefault()
     setError('')
     setNotice('')
+    setShown({ title: true, description: true })
+    if (textError(form.title, 'Tiêu đề', 5, 200) || textError(form.description, 'Mô tả', 10, 4000)) return
     setBusy(true)
     try {
-      const r = await api<SupportRequest>('/api/support-requests', { body: form })
+      const r = await api<SupportRequest>('/api/support-requests', { body: { ...form, title: form.title.trim(), description: form.description.trim() } })
       setNotice(`Đã gửi yêu cầu ${r.requestCode}. Nhân viên cơ sở sẽ tiếp nhận và cập nhật tại đây.`)
       setForm({ ...EMPTY_FORM, contractId: form.contractId })
+      setShown({ title: false, description: false })
       setOpenId(r.requestId)
       await load()
     } catch (err) {
@@ -85,7 +93,7 @@ export default function Support() {
           </section>
 
           <aside className="stack-lg">
-            <form className="panel" onSubmit={submit}>
+            <form className="panel" onSubmit={submit} noValidate>
               <h3 className="panel-title"><Icon name="plus" size={18} className="cyan" /> Gửi Yêu Cầu Mới</h3>
               {contracts.length === 0 ? (
                 <p className="muted">Bạn cần có hợp đồng thuê kho đang hiệu lực để gửi yêu cầu. <Link to="/rent" className="link">Thuê kho</Link></p>
@@ -108,13 +116,15 @@ export default function Support() {
                       ))}
                     </div>
                   </div>
-                  <label className="field"><span>Tiêu đề</span>
-                    <input value={form.title} maxLength={200} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="vd: Ổ khóa kho bị kẹt" required />
-                  </label>
-                  <label className="field"><span>Mô tả chi tiết</span>
+                  <FormField label="Tiêu đề" error={titleErr}>
+                    <input value={form.title} maxLength={200} onChange={(e) => setForm({ ...form, title: e.target.value })} onBlur={(e) => leavingToSubmit(e) || setShown({ ...shown, title: true })}
+                      aria-invalid={!!titleErr || undefined} placeholder="vd: Ổ khóa kho bị kẹt" />
+                  </FormField>
+                  <FormField label="Mô tả chi tiết" error={descErr} hint={`${form.description.trim().length}/4000 ký tự, ít nhất 10`}>
                     <textarea value={form.description} maxLength={4000} rows={4} onChange={(e) => setForm({ ...form, description: e.target.value })}
-                      placeholder="Mô tả sự cố, thời điểm phát hiện, bạn cần nhân viên hỗ trợ gì…" required />
-                  </label>
+                      onBlur={(e) => leavingToSubmit(e) || setShown({ ...shown, description: true })} aria-invalid={!!descErr || undefined}
+                      placeholder="Mô tả sự cố, thời điểm phát hiện, bạn cần nhân viên hỗ trợ gì…" />
+                  </FormField>
                   <button className="btn primary block" type="submit" disabled={busy}>{busy ? 'Đang gửi…' : 'Gửi Yêu Cầu'}</button>
                 </>
               )}

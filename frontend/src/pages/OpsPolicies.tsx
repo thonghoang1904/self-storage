@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNo
 import { api, fmtDate, fmtMoney } from '../api'
 import { Badge, Empty, Icon, splitTypeName } from '../components/ui'
 import { FeeMethods, type Facility, type FeeConfiguration, type Promotion, type RentalPolicy, type UnitType } from '../types'
+import { CODE_FILTER } from '../validation'
+import { FieldNote, useInputFilter } from '../components/form'
 
 /**
  * #44 Operations manager, Figma "policy-fee-discount-management" (75:29417): rental policies, the fee table,
@@ -313,7 +315,7 @@ function FeeForm({ fee, onCancel, onSaved }: { fee?: FeeConfiguration; onCancel:
   return (
     <FormShell title={fee ? 'Sửa loại phí' : 'Thêm loại phí'} busy={busy} error={error} onCancel={onCancel} onSubmit={submit}>
       <div className="form-grid">
-        <label className="field"><span>Mã phí *</span><input value={f.feeCode} maxLength={50} placeholder="VD: CLEANING_FEE" onChange={(e) => set('feeCode', e.target.value.toUpperCase())} required /></label>
+        <label className="field"><span>Mã phí *</span><input value={f.feeCode} maxLength={50} placeholder="VD: CLEANING_FEE" onChange={(e) => set('feeCode', e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))} required /></label>
         <label className="field"><span>Tên phí *</span><input value={f.feeName} maxLength={100} onChange={(e) => set('feeName', e.target.value)} required /></label>
         <label className="field"><span>Cách tính *</span>
           <select value={f.calculationMethod} onChange={(e) => set('calculationMethod', e.target.value)}>
@@ -329,6 +331,7 @@ function FeeForm({ fee, onCancel, onSaved }: { fee?: FeeConfiguration; onCancel:
 
 function PromotionForm({ promo, onCancel, onSaved }: { promo?: Promotion; onCancel: () => void; onSaved: (m: string) => void }) {
   const [f, setF] = useState(() => promo ?? { promoCode: '', title: '', discountPercent: 10, maxDiscountAmount: null as number | null, minRentalMonths: 1, startDate: todayIso(), endDate: todayIso(), isActive: true })
+  const code = useInputFilter(CODE_FILTER)
   const { busy, error, save } = useSave(onSaved)
   const set = (k: string, v: unknown) => setF({ ...f, [k]: v })
   const submit = (e: FormEvent) => {
@@ -340,7 +343,7 @@ function PromotionForm({ promo, onCancel, onSaved }: { promo?: Promotion; onCanc
   return (
     <FormShell title={promo ? 'Sửa khuyến mãi' : 'Thêm khuyến mãi'} busy={busy} error={error} onCancel={onCancel} onSubmit={submit}>
       <div className="form-grid">
-        <label className="field"><span>Mã khuyến mãi *</span><input value={f.promoCode} maxLength={30} placeholder="VD: WELCOME10" onChange={(e) => set('promoCode', e.target.value.toUpperCase())} required /></label>
+        <label className="field"><span>Mã khuyến mãi *</span><input value={f.promoCode} maxLength={30} placeholder="VD: WELCOME10" onChange={(e) => set('promoCode', code.keep(e.target.value))} required /><FieldNote text={code.hint} /></label>
         <label className="field"><span>Tên chương trình *</span><input value={f.title} maxLength={150} onChange={(e) => set('title', e.target.value)} required /></label>
         <label className="field"><span>Mức giảm (%) *</span><input type="number" min={0} max={100} step="0.01" value={f.discountPercent} onChange={(e) => set('discountPercent', e.target.value)} required /></label>
         <label className="field"><span>Giảm tối đa (đ, để trống = không giới hạn)</span><input type="number" min={0} value={f.maxDiscountAmount ?? ''} onChange={(e) => set('maxDiscountAmount', e.target.value === '' ? null : e.target.value)} /></label>
