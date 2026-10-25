@@ -90,7 +90,8 @@ builder.Services.AddAuthorization();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
     .WithOrigins(builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? [])
     .AllowAnyHeader()
-    .AllowAnyMethod()));
+    .AllowAnyMethod()
+    .WithExposedHeaders("X-Total-Count")));
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<AppExceptionHandler>();
@@ -155,5 +156,12 @@ app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+
+app.MapGet("/health", () => Results.Ok(new { status = "Healthy" })).AllowAnonymous();
+app.MapGet("/health/ready", async (SelfStorageDbContext db, CancellationToken ct) =>
+    await db.Database.CanConnectAsync(ct)
+        ? Results.Ok(new { status = "Healthy", database = "Connected" })
+        : Results.Json(new { status = "Unhealthy", database = "Unreachable" },
+            statusCode: StatusCodes.Status503ServiceUnavailable)).AllowAnonymous();
 
 app.Run();

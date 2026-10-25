@@ -121,6 +121,40 @@ public class SupportController(SelfStorageDbContext db, AccessService access, Ti
             .OrderByDescending(r => r.CreatedAt)).ToListAsync(ct);
     }
 
+    [HttpGet("{requestId:int}")]
+    [Authorize(Roles = AppRoles.Customer + "," + AppRoles.GateRoles)]
+    public async Task<SupportRequestDto> Detail(int requestId, CancellationToken ct)
+    {
+        var request = await db.SupportRequests.FirstOrDefaultAsync(r => r.RequestId == requestId, ct)
+                      ?? throw AppException.NotFound("Không tìm thấy yêu cầu hỗ trợ");
+        await EnsureCanReadRequestAsync(request, ct);
+        return await Project(db.SupportRequests.Where(r => r.RequestId == requestId)).SingleAsync(ct);
+    }
+
+    /// <summary>Customer or assigned facility staff adds a message to the ticket's timeline.</summary>
+    [HttpPost("{requestId:int}/messages")]
+    [Authorize(Roles = AppRoles.Customer + "," + AppRoles.GateRoles)]
+    public async Task<SupportUpdateDto> AddMessage(int requestId, AddSupportMessageRequest req, CancellationToken ct)
+    {
+        var request = await db.SupportRequests.FirstOrDefaultAsync(r => r.RequestId == requestId, ct)
+                      ?? throw AppException.NotFound("Không tìm thấy yêu cầu hỗ trợ");
+        await EnsureCanReadRequestAsync(request, ct);
+        if (request.Status == "Closed")
+            throw AppException.Conflict("Yêu cầu đã đóng, không thể thêm phản hồi");
+
+        var userId = User.GetUserId();
+        var update = new SupportUpdate
+        {
+            RequestId = requestId,
+            UpdatedByUserId = userId,
+            ActionMessage = req.Message.Trim(),
+        };
+        db.SupportUpdates.Add(update);
+        await db.SaveChangesAsync(ct);
+        var author = await db.Users.Where(u => u.UserId == userId).Select(u => u.FullName).SingleAsync(ct);
+        return new SupportUpdateDto(update.UpdateId, author, update.ActionMessage, null, null, update.CreatedAt);
+    }
+
     [HttpGet("{requestId:int}/updates")]
     [Authorize(Roles = AppRoles.Customer + "," + AppRoles.GateRoles)]
     public async Task<List<SupportUpdateDto>> Updates(int requestId, CancellationToken ct)

@@ -181,6 +181,12 @@ public record AddAuthorizedPersonRequest(
     [Required, StringLength(25)] string CitizenId,
     [StringLength(50)] string? Relationship);
 
+/// <summary>CitizenId identifies the person at the gate, so it cannot be changed; revoke and add again instead.</summary>
+public record UpdateAuthorizedPersonRequest(
+    [Required, StringLength(100)] string FullName,
+    [Required, StringLength(20)] string PhoneNumber,
+    [StringLength(50)] string? Relationship);
+
 public record ContractDetailDto(
     int ContractId,
     string ContractNumber,
@@ -279,8 +285,12 @@ public record CreateSupportRequest(
 public record SupportRequestDto(int RequestId, string RequestCode, int ContractId, string UnitCode,
     string Category, string Priority, string Title, string Description, string Status, DateTime CreatedAt,
     string? AssignedStaffName);
+public record AdminSupportRequestDto(int RequestId, string RequestCode, int ContractId, string UnitCode,
+    string Category, string Priority, string Title, string Description, string Status, DateTime CreatedAt,
+    string? AssignedStaffName, int FacilityId, string FacilityName, int CustomerId, string CustomerName);
 public record SupportUpdateDto(int UpdateId, string UpdatedBy, string ActionMessage,
     string? PreviousStatus, string? NewStatus, DateTime CreatedAt);
+public record AddSupportMessageRequest([Required, StringLength(1000)] string Message);
 
 public record RecordPaymentRequest(
     [Required] string PaymentMethod,
