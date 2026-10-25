@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useStaffFacility } from '../components/layout'
-import { appointmentReached } from '../components/appointment'
-import { Empty, Icon, splitTypeName, StatusBadge } from '../components/ui'
+import { appointmentReached, depositDueAt, depositMissed, pickupMissed } from '../components/appointment'
+import { Badge, Empty, Icon, splitTypeName, StatusBadge } from '../components/ui'
 import type { Reservation, StorageUnit } from '../types'
 
 const FILTERS = [
@@ -12,7 +13,12 @@ const FILTERS = [
   { key: 'all', label: 'Tất cả' },
 ] as const
 
-/** Staff: confirm deposits and check customers in (assign a unit, which creates the contract). */
+/**
+ * Staff: confirm deposits and check customers in (assign a unit, which creates the contract).
+ * Two time limits matter: the deposit is due 24 hours after booking but never after 20:00 on the start date,
+ * and a paid reservation not picked up by 20:00 on the start date expires (the system refunds minus the fee).
+ * Rows past either limit are marked and offer no action, since the API refuses them.
+ */
 export default function StaffReservations() {
   const { facilityId } = useStaffFacility()
   const [rows, setRows] = useState<Reservation[]>([])
@@ -51,8 +57,10 @@ export default function StaffReservations() {
     }
   }
 
-  const pending = rows.filter((r) => r.status === 'PendingDeposit').length
-  const confirmed = rows.filter((r) => r.status === 'Confirmed').length
+  const now = new Date()
+  const pending = rows.filter((r) => r.status === 'PendingDeposit' && !depositMissed(r, now)).length
+  const confirmed = rows.filter((r) => r.status === 'Confirmed' && !pickupMissed(r, now)).length
+  const late = rows.filter((r) => depositMissed(r, now) || pickupMissed(r, now)).length
   const checkedIn = rows.filter((r) => r.status === 'CheckedIn').length
   const shown = rows.filter((r) =>
     filter === 'all' ? true : filter === 'open' ? r.status === 'PendingDeposit' || r.status === 'Confirmed' : r.status === filter)
@@ -67,8 +75,8 @@ export default function StaffReservations() {
       </div>
 
       <div className="stat-grid three">
-        <div className="stat-card"><div className="row between"><span className="muted">Chờ đặt cọc</span><span className="stat-icon warn"><Icon name="wallet" size={17} /></span></div><b className="stat-value">{pending}</b><small className="stat-note warn">Giữ chỗ 24 giờ</small></div>
-        <div className="stat-card"><div className="row between"><span className="muted">Chờ bàn giao</span><span className="stat-icon info"><Icon name="key" size={17} /></span></div><b className="stat-value">{confirmed}</b><small className="stat-note info">{units.length} kho đang trống</small></div>
+        <div className="stat-card"><div className="row between"><span className="muted">Chờ đặt cọc</span><span className="stat-icon warn"><Icon name="wallet" size={17} /></span></div><b className="stat-value">{pending}</b><small className="stat-note warn">Giữ chỗ 24 giờ, tối đa 20:00 ngày bắt đầu</small></div>
+        <div className="stat-card"><div className="row between"><span className="muted">Chờ bàn giao</span><span className="stat-icon info"><Icon name="key" size={17} /></span></div><b className="stat-value">{confirmed}</b><small className={`stat-note ${late ? 'bad' : 'info'}`}>{units.length} kho đang trống{late ? ` · ${late} đơn quá hạn` : ''}</small></div>
         <div className="stat-card"><div className="row between"><span className="muted">Đã bàn giao</span><span className="stat-icon ok"><Icon name="check" size={17} /></span></div><b className="stat-value">{checkedIn}</b><small className="stat-note ok">Đã tạo hợp đồng</small></div>
       </div>
 
@@ -91,19 +99,25 @@ export default function StaffReservations() {
                   <td><b>{r.customerName}</b></td>
                   <td>{splitTypeName(r.unitTypeName).name}{r.assignedUnitCode && <><br /><small className="muted">Kho {r.assignedUnitCode}</small></>}</td>
                   <td>{fmtDate(r.expectedStartDate)}<br /><small className="muted">{r.durationMonths} tháng</small></td>
-                  <td>{r.checkInAppointmentAt ? <b>{fmtTime(r.checkInAppointmentAt)}</b>
+                  <td>{pickupMissed(r, now) ? <span className="pill bad">Quá 20:00 ngày bắt đầu</span>
+                    : r.checkInAppointmentAt ? <b>{fmtTime(r.checkInAppointmentAt)}</b>
                     : r.status === 'Confirmed' ? <span className="pill warn">Khách chưa đặt lịch</span> : <span className="muted">—</span>}</td>
-                  <td className="money">{fmtMoney(r.depositAmount)}{r.status === 'PendingDeposit' && <><br /><small className="muted">hạn {fmtTime(r.depositDeadline)}</small></>}</td>
-                  <td><StatusBadge status={r.status} /></td>
+                  <td className="money">{fmtMoney(r.depositAmount)}{r.status === 'PendingDeposit' && (
+                    <><br /><small className={depositMissed(r, now) ? 'danger-text' : 'muted'}>hạn {fmtTime(depositDueAt(r))}</small></>)}</td>
+                  <td>{depositMissed(r, now) ? <Badge tone="bad">Quá hạn cọc</Badge> : pickupMissed(r, now) ? <Badge tone="bad">Quá hạn nhận kho</Badge> : <StatusBadge status={r.status} />}</td>
                   <td className="right">
-                    {r.status === 'PendingDeposit' && (
+                    {depositMissed(r, now) && <span className="muted">Khách không cọc kịp, cần đặt lại</span>}
+                    {pickupMissed(r, now) && (
+                      <span className="muted">Khách không đến nhận kho. Hệ thống tự hủy, hoàn cọc trừ phí hủy · <Link to="/staff-cancellations" className="link">Hủy đơn & hoàn tiền</Link></span>
+                    )}
+                    {r.status === 'PendingDeposit' && !depositMissed(r, now) && (
                       <button className="btn outline sm" onClick={() => act(() => api(`/api/reservations/${r.reservationId}/confirm-deposit`, { method: 'POST' }), `Đã xác nhận cọc cho đơn ${r.reservationCode}.`)}>
                         <Icon name="wallet" size={15} /> Đã nhận cọc
                       </button>
                     )}
-                    {r.status === 'Confirmed' && !r.checkInAppointmentAt && <span className="muted">Chờ khách đặt lịch nhận kho</span>}
-                    {r.status === 'Confirmed' && r.checkInAppointmentAt && !appointmentReached(r) && <span className="muted">Bàn giao từ {fmtTime(r.checkInAppointmentAt)}</span>}
-                    {r.status === 'Confirmed' && appointmentReached(r) && (
+                    {r.status === 'Confirmed' && !pickupMissed(r, now) && !r.checkInAppointmentAt && <span className="muted">Chờ khách đặt lịch nhận kho</span>}
+                    {r.status === 'Confirmed' && !pickupMissed(r, now) && r.checkInAppointmentAt && !appointmentReached(r) && <span className="muted">Bàn giao từ {fmtTime(r.checkInAppointmentAt)}</span>}
+                    {r.status === 'Confirmed' && !pickupMissed(r, now) && appointmentReached(r) && (
                       <CheckIn
                         units={units.filter((u) => u.unitTypeName === r.unitTypeName)}
                         onCheckIn={(unit) => act(() => api(`/api/reservations/${r.reservationId}/check-in`, { body: { unitId: unit.unitId } }), `Đã bàn giao kho ${unit.unitCode} cho ${r.customerName} và tạo hợp đồng.`)}

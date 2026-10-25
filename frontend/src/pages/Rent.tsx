@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
-import { AppointmentPicker } from '../components/appointment'
+import { AppointmentPicker, depositDueAt } from '../components/appointment'
 import { Empty, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
 import { TermsList, TERMS_VERSION } from './Terms'
 import { CancellationStatuses, type Availability, type CancellationRequest, type Facility, type Reservation, type UnitType } from '../types'
@@ -106,7 +106,7 @@ export default function Rent() {
       })
       saveSigned(r.reservationCode, { at: new Date().toISOString(), version: TERMS_VERSION })
       // Agreed and reserved: go straight to paying the deposit.
-      navigate(`/invoices?reservation=${r.reservationId}&code=${encodeURIComponent(r.reservationCode)}&deadline=${encodeURIComponent(r.depositDeadline)}`)
+      navigate(`/invoices?reservation=${r.reservationId}&code=${encodeURIComponent(r.reservationCode)}&deadline=${encodeURIComponent(depositDueAt(r))}`)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -301,7 +301,7 @@ export default function Rent() {
                     <td>{r.facilityName}<br /><small className="muted">{splitTypeName(r.unitTypeName).name}{r.assignedUnitCode && ` · kho ${r.assignedUnitCode}`}</small></td>
                     <td>{fmtDate(r.expectedStartDate)}<br /><small className="muted">{r.durationMonths} tháng</small></td>
                     <td className="money">{fmtMoney(r.depositAmount)}{r.promoCode && <><br /><small className="ok-text">Mã {r.promoCode} · −{fmtMoney(r.promotionDiscountAmount ?? 0)}</small></>}</td>
-                    <td>{r.status === 'PendingDeposit' ? fmtTime(r.depositDeadline) : '—'}</td>
+                    <td>{r.status === 'PendingDeposit' ? fmtTime(depositDueAt(r)) : '—'}</td>
                     <td><AppointmentPicker reservation={r} operatingHours={facilities.find((f) => f.facilityName === r.facilityName)?.operatingHours}
                       onSaved={(u) => setReservations((rs) => rs.map((x) => (x.reservationId === u.reservationId ? u : x)))} /></td>
                     <td>

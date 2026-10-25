@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
-import { AppointmentPicker } from '../components/appointment'
+import { AppointmentPicker, depositDueAt } from '../components/appointment'
 import { Empty, Eyebrow, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
 import { DenyReasons, type AccessRecord, type Contract, type Facility, type Invoice, type Person, type Reservation } from '../types'
 import { FormField, useValidatedForm } from '../components/form'
@@ -208,7 +208,7 @@ export default function MyUnits() {
                     <div className="notice-head"><b>{r.status === 'PendingDeposit' ? 'Chờ đặt cọc' : r.checkInAppointmentAt ? 'Đã hẹn nhận kho' : 'Đặt lịch nhận kho'}</b><small>Nhận kho {fmtDate(r.expectedStartDate)}</small></div>
                     <p>
                       Đơn {r.reservationCode} ({splitTypeName(r.unitTypeName).name}, {r.facilityName})
-                      {r.status === 'PendingDeposit' ? ` cần đặt cọc ${fmtMoney(r.depositAmount)} trước ${fmtTime(r.depositDeadline)}.`
+                      {r.status === 'PendingDeposit' ? ` cần đặt cọc ${fmtMoney(r.depositAmount)} trước ${fmtTime(depositDueAt(r))}.`
                         : r.checkInAppointmentAt ? ` — đến cơ sở đúng giờ hẹn để nhân viên bàn giao kho.`
                         : ` đã nhận cọc. Chọn giờ đến nhận kho trong ngày ${fmtDate(r.expectedStartDate)}, nhân viên chỉ bàn giao từ giờ hẹn.`}
                     </p>

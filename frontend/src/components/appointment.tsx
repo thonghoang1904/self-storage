@@ -28,6 +28,24 @@ export function appointmentSlots(startDate: string, operatingHours?: string, now
   return slots
 }
 
+/** 20:00 on the start date: after that a paid reservation that was not picked up expires (no-show). */
+export const pickupClosesAt = (r: Reservation) => new Date(`${r.expectedStartDate}T20:00:00+07:00`)
+
+/**
+ * When the deposit really has to be paid: 24 hours after booking, but never later than 20:00 on the start date.
+ * A deposit paid after that would confirm a reservation that expires as a no-show straight away.
+ */
+export const depositDueAt = (r: Reservation) => {
+  const due = Math.min(new Date(r.depositDeadline).getTime(), pickupClosesAt(r).getTime())
+  return new Date(due).toISOString()
+}
+
+/** Unpaid and past its deposit time: it can no longer be confirmed, the customer has to book again. */
+export const depositMissed = (r: Reservation, now = new Date()) => r.status === 'PendingDeposit' && new Date(depositDueAt(r)) <= now
+
+/** Paid but not picked up by 20:00 on the start date: the system cancels it and refunds the deposit minus the fee. */
+export const pickupMissed = (r: Reservation, now = new Date()) => r.status === 'Confirmed' && pickupClosesAt(r) <= now
+
 /** True once the appointment time has come, which is when staff may hand the unit over. */
 export const appointmentReached = (r: Reservation, now = new Date()) =>
   !!r.checkInAppointmentAt && new Date(r.checkInAppointmentAt) <= now
