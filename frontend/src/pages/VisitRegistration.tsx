@@ -71,7 +71,11 @@ export default function VisitRegistrationPage() {
   const [open, close] = hours(facility?.operatingHours)
   const slots: string[] = []
   for (let t = Math.ceil(open / 30) * 30; t <= close; t += 30) slots.push(toHHMM(t))
+  // Today only future times; on the last day of the contract the visit must end before 20:00.
+  const nowHHMM = toHHMM(new Date().getHours() * 60 + new Date().getMinutes())
+  const entrySlots = slots.slice(0, -1).filter((s) => (date !== today || s > nowHHMM) && (date !== c?.endDate || s < '19:30'))
   const exitSlots = slots.filter((s) => s > entry && (date !== c?.endDate || s < '20:00'))
+  useEffect(() => { if (entrySlots.length && !entrySlots.includes(entry)) setEntry(entrySlots[0]) }, [date, entrySlots.join()]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!exitSlots.includes(exit)) setExit(exitSlots[1] ?? exitSlots[0] ?? '') }, [entry, date, exitSlots.join()]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!c) {
@@ -194,7 +198,8 @@ export default function VisitRegistrationPage() {
                     </label>
                     <label className="field"><span>Giờ đến dự kiến *</span>
                       <select value={entry} onChange={(e) => setEntry(e.target.value)}>
-                        {slots.slice(0, -1).map((s) => <option key={s} value={s}>{s}</option>)}
+                        {entrySlots.map((s) => <option key={s} value={s}>{s}</option>)}
+                        {entrySlots.length === 0 && <option value="">Hết giờ trong ngày, chọn ngày khác</option>}
                       </select>
                     </label>
                     <label className="field"><span>Giờ rời kho dự kiến *</span>
@@ -248,7 +253,7 @@ export default function VisitRegistrationPage() {
                     <span>Tôi cam kết đến đúng khung giờ, xuất trình CCCD của người đã đăng ký và tuân thủ nội quy kho.</span>
                   </label>
                   <div className="row wrap">
-                    <button className="btn primary" type="submit" disabled={busy}><Icon name="calendar" size={15} /> {busy ? 'Đang gửi…' : 'Gửi đăng ký vào kho'}</button>
+                    <button className="btn primary" type="submit" disabled={busy || !entrySlots.length || !exit}><Icon name="calendar" size={15} /> {busy ? 'Đang gửi…' : 'Gửi đăng ký vào kho'}</button>
                     <Link to={`/my-units/${c.contractId}`} className="btn outline">Để sau</Link>
                   </div>
                 </section>

@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
-import { AppointmentPicker, depositDueAt } from '../components/appointment'
+import { AppointmentPicker, depositDueAt, depositMissed, pickupMissed } from '../components/appointment'
 import { Empty, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
 import { TermsList, TERMS_VERSION } from './Terms'
 import { CancellationStatuses, type Availability, type CancellationRequest, type Facility, type Reservation, type UnitType } from '../types'
@@ -117,7 +117,7 @@ export default function Rent() {
   return (
     <>
       <PageHero center eyebrow="Đặt kho nhanh chóng · chỉ trong 4 bước" title="Đặt Kho Lưu Trữ SafeKeep">
-        Chọn cơ sở và kích thước kho, đồng ý điều khoản hợp đồng rồi thanh toán cọc. Đơn được giữ 24 giờ để bạn đặt cọc.
+        Chọn cơ sở và kích thước kho, đồng ý điều khoản hợp đồng rồi thanh toán cọc. Đơn được giữ 24 giờ (không quá 20:00 ngày bắt đầu) để bạn đặt cọc.
       </PageHero>
 
       <div className="container page-body">
@@ -236,7 +236,7 @@ export default function Rent() {
             <button className="btn primary block lg" disabled={!selected || busy || signing} onClick={openSigning}>
               {signing ? 'Xem điều khoản bên dưới ↓' : 'Tiếp Tục: Điều Khoản Hợp Đồng'}
             </button>
-            <p className="fine-print">Đơn được giữ 24 giờ. Muốn đổi ý, bạn gửi yêu cầu hủy ở bảng đơn đặt kho; cọc được hoàn sau khi trừ phí hủy theo chính sách.</p>
+            <p className="fine-print">Đơn được giữ 24 giờ, không quá 20:00 ngày bắt đầu thuê. Muốn đổi ý, bạn gửi yêu cầu hủy ở bảng đơn đặt kho; cọc được hoàn sau khi trừ phí hủy theo chính sách.</p>
           </aside>
         </div>
 
@@ -293,7 +293,9 @@ export default function Rent() {
               <tbody>
                 {reservations.map((r) => {
                   const cr = cancellations[r.reservationId]
-                  const canCancel = (r.status === 'PendingDeposit' || r.status === 'Confirmed') && cr?.status !== 'Pending'
+                  // Past the deposit time or 20:00 on the start date the API refuses a cancellation; the system expires it.
+                  const late = depositMissed(r) || pickupMissed(r)
+                  const canCancel = (r.status === 'PendingDeposit' || r.status === 'Confirmed') && cr?.status !== 'Pending' && !late
                   return (
                   <Fragment key={r.reservationId}>
                   <tr>
@@ -305,7 +307,7 @@ export default function Rent() {
                     <td><AppointmentPicker reservation={r} operatingHours={facilities.find((f) => f.facilityName === r.facilityName)?.operatingHours}
                       onSaved={(u) => setReservations((rs) => rs.map((x) => (x.reservationId === u.reservationId ? u : x)))} /></td>
                     <td>
-                      <StatusBadge status={r.status} />
+                      {late ? <span className="badge bad">{depositMissed(r) ? 'Quá hạn đặt cọc' : 'Quá hạn nhận kho'}</span> : <StatusBadge status={r.status} />}
                       {cr && <><br /><span className={`badge ${CancellationStatuses[cr.status]?.tone ?? 'muted'}`}>{CancellationStatuses[cr.status]?.label ?? cr.status}</span></>}
                     </td>
                     <td>

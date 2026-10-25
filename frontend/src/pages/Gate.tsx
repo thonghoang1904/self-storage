@@ -270,7 +270,10 @@ function RegistrationsPanel({ facilityId, regs, onReview }: { facilityId: number
                 </span>
               ) : (
                 <span className="row">
-                  <button className="btn primary sm" onClick={() => onReview(r, true)}><Icon name="check" size={14} /> Duyệt</button>
+                  {/* The API refuses to approve once the booked entry time has passed: only rejecting is left. */}
+                  {new Date(r.scheduledEntryAt).getTime() <= now
+                    ? <span className="badge bad" title="Không duyệt được lịch đã qua giờ vào dự kiến">Quá giờ hẹn</span>
+                    : <button className="btn primary sm" onClick={() => onReview(r, true)}><Icon name="check" size={14} /> Duyệt</button>}
                   <button className="btn outline sm" onClick={() => { setRejecting(r.visitRegistrationId); setNotes('') }}>Từ chối</button>
                 </span>
               )}
