@@ -305,7 +305,7 @@ export function AdminLayout() {
   return (
     <ConsoleLayout
       titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu',
-        '/admin/storage': 'Kho Lưu Trữ Hệ Thống', '/admin/customers': 'Khách Hàng & Hợp Đồng', '/admin': 'Tổng Quan Quản Lý' }}
+        '/admin/storage': 'Kho Lưu Trữ Hệ Thống', '/admin/customers': 'Khách Hàng & Hợp Đồng', '/admin/settings': 'Cài Đặt', '/admin': 'Tổng Quan Quản Lý' }}
       nav={[
         { icon: 'grid', label: 'Tổng Quan', to: '/admin', end: true },
         { icon: 'building', label: 'Kho Lưu Trữ', to: '/admin/storage' },
@@ -314,7 +314,7 @@ export function AdminLayout() {
         { icon: 'file', label: 'Hợp Đồng', to: '/admin/contracts' },
         { icon: 'chart', label: 'Doanh Thu', to: '/admin/revenue' },
         { icon: 'mail', label: 'Email Hệ Thống', to: '/admin/emails' },
-        { icon: 'settings', label: 'Cài Đặt' },
+        { icon: 'settings', label: 'Cài Đặt', to: '/admin/settings' },
       ]}
     />
   )
@@ -325,16 +325,16 @@ export function OpsLayout() {
   return (
     <ConsoleLayout
       titles={{ '/ops/facilities': 'Quản Lý Cơ Sở', '/ops/policies': 'Chính Sách & Giá', '/ops/revenue': 'Doanh Thu',
-        '/ops': 'Tổng Quan Vận Hành' }}
+        '/ops/storage': 'Vận Hành Kho', '/ops/settings': 'Cài Đặt', '/ops': 'Tổng Quan Vận Hành' }}
       nav={[
         { icon: 'grid', label: 'Tổng Quan', to: '/ops', end: true },
-        { icon: 'package', label: 'Vận Hành Kho' },
+        { icon: 'package', label: 'Vận Hành Kho', to: '/ops/storage' },
         { icon: 'users', label: 'Khách Hàng' },
         { icon: 'phone', label: 'Hỗ Trợ' },
         { icon: 'building', label: 'Cơ Sở', to: '/ops/facilities' },
         { icon: 'chart', label: 'Doanh Thu', to: '/ops/revenue' },
         { icon: 'file', label: 'Chính Sách', to: '/ops/policies' },
-        { icon: 'settings', label: 'Cài Đặt' },
+        { icon: 'settings', label: 'Cài Đặt', to: '/ops/settings' },
       ]}
     />
   )

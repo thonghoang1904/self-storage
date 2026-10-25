@@ -865,6 +865,7 @@ small.center { text-align: center; }
 .password-rules li.ok .icon { color: var(--ok); }
 
 /* ------------------------------------------------------------------ admin & operations: overview, storage, customers, settings */
+.page-title-row select { width: auto; min-width: 220px; }
 .nowrap { white-space: nowrap; }
 .date-chip { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 10px; background: #fff; border: 1px solid var(--border); font-weight: 600; font-size: 13.5px; color: var(--text-strong); }
 .overview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
@@ -911,7 +912,12 @@ small.center { text-align: center; }
 .summary-strip i.warn { background: #f5a524; }
 .summary-strip b { color: var(--text-strong); }
 .small-note { font-size: 12.5px; margin-top: -12px; }
+.unit-bar span.info.light, .unit-legend i.info.light { background: #8fd8e8; }
 
+.settings-page { max-width: 860px; }
+.settings-page .panel > .row.between + .row.between { padding-top: 16px; border-top: 1px solid var(--border); }
+.settings-profile { gap: 16px; align-items: center; }
+.avatar.lg { width: 64px; height: 64px; font-size: 22px; }
 
 @media (max-width: 1100px) { .unit-tiles { grid-template-columns: 1fr 1fr; } .overview-grid { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { .unit-tiles { grid-template-columns: 1fr; } .line-tip { display: none; } }
