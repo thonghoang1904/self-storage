@@ -192,11 +192,18 @@ export default function StaffContracts() {
                         {r.renewal && (
                           <>
                             <button className="btn primary sm" disabled={busyId !== null}
-                              onClick={() => act(c.contractId, () => api(`/api/contracts/renewals/${r.renewal!.renewalId}/confirm-payment`, { method: 'POST' }), `Đã gia hạn ${c.contractNumber} đến ${fmtDate(r.renewal!.newEndDate)}.`)}>
-                              Đã thu phí
+                              onClick={() => {
+                                // The API records this as a cash payment; bank transfers go through the billing page with their code.
+                                if (!window.confirm(`Xác nhận đã thu ${fmtMoney(r.amountDue)} TIỀN MẶT phí gia hạn ${c.contractNumber}?\nNếu khách chuyển khoản, hãy ghi nhận ở trang Hóa đơn & thu tiền để nhập mã giao dịch.`)) return
+                                act(c.contractId, () => api(`/api/contracts/renewals/${r.renewal!.renewalId}/confirm-payment`, { method: 'POST' }), `Đã gia hạn ${c.contractNumber} đến ${fmtDate(r.renewal!.newEndDate)}.`)
+                              }}>
+                              Đã thu tiền mặt
                             </button>
                             <button className="btn ghost sm danger-text" disabled={busyId !== null}
-                              onClick={() => act(c.contractId, () => api(`/api/contracts/renewals/${r.renewal!.renewalId}/reject`, { method: 'POST' }), `Đã từ chối yêu cầu gia hạn ${c.contractNumber}.`)}>
+                              onClick={() => {
+                                if (!window.confirm(`Từ chối yêu cầu gia hạn ${c.contractNumber}? Hóa đơn gia hạn chưa thanh toán sẽ bị hủy.`)) return
+                                act(c.contractId, () => api(`/api/contracts/renewals/${r.renewal!.renewalId}/reject`, { method: 'POST' }), `Đã từ chối yêu cầu gia hạn ${c.contractNumber}.`)
+                              }}>
                               Từ chối
                             </button>
                           </>

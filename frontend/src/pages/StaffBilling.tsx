@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
+import { depositDueAt, depositMissed } from '../components/appointment'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { Invoice, Reservation, StaffContract } from '../types'
@@ -129,20 +130,23 @@ export default function StaffBilling() {
             <tbody>
               {pageRows.map((inv) => {
                 const r = ref(inv)
-                const payable = inv.status === 'Unpaid' || inv.status === 'Overdue'
+                // A deposit can no longer be taken once its reservation is past the deposit time (the API refuses).
+                const reservation = inv.invoiceType === 'DEPOSIT' && inv.reservationId ? reservations.find((x) => x.reservationId === inv.reservationId) : undefined
+                const lateDeposit = !!reservation && depositMissed(reservation)
+                const payable = (inv.status === 'Unpaid' || inv.status === 'Overdue') && !lateDeposit
                 const paid = inv.payments.find((p) => p.status === 'Success')
                 return (
                   <tr key={inv.invoiceId}>
                     <td className="code">{inv.invoiceNumber}<br /><small className="muted">{typeLabel(inv.invoiceType)}</small></td>
                     <td><b>{r.customer}</b>{r.phone && <><br /><small className="muted">{r.phone}</small></>}</td>
                     <td>{inv.details[0]?.description ?? '—'}{r.target && <><br /><small className="muted">{r.target}</small></>}</td>
-                    <td>{fmtDate(inv.dueDate)}</td>
+                    <td>{reservation && reservation.status === 'PendingDeposit' ? fmtTime(depositDueAt(reservation)) : fmtDate(inv.dueDate)}</td>
                     <td className="money">{fmtMoney(inv.totalAmount)}</td>
                     <td><StatusBadge status={inv.status} />{paid && <><br /><small className="muted">{paid.paymentMethod === 'Cash' ? 'Tiền mặt' : paid.paymentMethod} · {fmtTime(paid.paymentDate)}</small></>}</td>
                     <td className="right">
                       {payable
                         ? <button className="btn primary sm" onClick={() => setOpenId(openId === inv.invoiceId ? null : inv.invoiceId)}><Icon name="wallet" size={14} /> Ghi nhận thu tiền</button>
-                        : <small className="muted">—</small>}
+                        : lateDeposit ? <small className="danger-text">Quá hạn cọc, khách cần đặt lại</small> : <small className="muted">—</small>}
                     </td>
                   </tr>
                 )

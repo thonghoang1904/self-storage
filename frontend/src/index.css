@@ -134,6 +134,7 @@ input:focus, select:focus { outline: none; border-color: var(--cyan); box-shadow
 .alert .icon { flex-shrink: 0; margin-top: 2px; }
 .alert.bad { background: var(--bad-bg); color: #b42318; }
 .alert.ok { background: var(--ok-bg); color: #0e7a3c; }
+.alert.info { background: var(--info-bg); color: var(--info); }
 .empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 28px 16px; color: var(--muted-2); font-size: 14px; text-align: center; }
 .eyebrow { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; background: var(--cyan-50); color: var(--cyan-600); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
 .eyebrow i { width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); }

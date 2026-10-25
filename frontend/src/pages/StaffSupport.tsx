@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, fmtTime } from '../api'
+import { useAuth } from '../auth'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import { SupportCategories, SupportPriorities, type SupportChecklistItem, type SupportRequest, type SupportUpdate } from '../types'
@@ -184,7 +185,10 @@ function TicketDetail({ ticket: t, onChanged }: { ticket: SupportRequest; onChan
   const p = SupportPriorities[t.priority] ?? { label: t.priority, tone: 'muted' as const }
   const doneCount = items.filter((i) => i.isCompleted).length
   const allDone = items.length > 0 && doneCount === items.length
-  const editable = t.status === 'InProgress'
+  // The API lets only the staff member who took the ticket update it; the list gives the name, not the id.
+  const { user } = useAuth()
+  const othersTicket = !!t.assignedStaffName && t.assignedStaffName !== user?.fullName
+  const editable = t.status === 'InProgress' && !othersTicket
 
   return (
     <section className="panel ticket-detail">
@@ -230,7 +234,10 @@ function TicketDetail({ ticket: t, onChanged }: { ticket: SupportRequest; onChan
       </div>
 
       <hr className="divider-line" />
-      {t.status !== 'Closed' && (
+      {othersTicket && t.status !== 'Closed' && (
+        <p className="alert info"><Icon name="user" size={16} />Ticket do {t.assignedStaffName} phụ trách, chỉ người phụ trách cập nhật được.</p>
+      )}
+      {t.status !== 'Closed' && !othersTicket && (
         <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={4000}
           placeholder={t.status === 'Open' ? 'Ghi chú gửi khách khi tiếp nhận (không bắt buộc)…' : 'Ghi chú tiến độ / kết quả gửi khách…'} />
       )}
@@ -242,7 +249,7 @@ function TicketDetail({ ticket: t, onChanged }: { ticket: SupportRequest; onChan
           <Icon name="user" size={15} /> Tiếp nhận ticket
         </button>
       )}
-      {t.status === 'InProgress' && (
+      {t.status === 'InProgress' && !othersTicket && (
         <>
           <div className="row wrap">
             <button className="btn outline" disabled={busy !== '' || !note.trim()} onClick={() => void setStatus('InProgress', '', 'Đã gửi cập nhật tiến độ cho khách.')}>
@@ -255,7 +262,7 @@ function TicketDetail({ ticket: t, onChanged }: { ticket: SupportRequest; onChan
           {!allDone && <small className="muted">Hoàn tất toàn bộ checklist để đánh dấu đã xử lý.</small>}
         </>
       )}
-      {t.status === 'Resolved' && (
+      {t.status === 'Resolved' && !othersTicket && (
         <button className="btn primary self-start" disabled={busy !== ''} onClick={() => void setStatus('Closed', 'Ticket đã được đóng.', `Đã đóng ${t.requestCode}.`)}>
           <Icon name="lock" size={15} /> Đóng ticket
         </button>
