@@ -3,6 +3,8 @@ import { api, fmtDate, fmtTime, IS_DEMO } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import { DenyReasons, type AccessRecord, type Person, type VisitCandidate, type VisitRegistration } from '../types'
+import { CITIZEN_ID_FILTER } from '../validation'
+import { FieldNote, useInputFilter } from '../components/form'
 
 const REFRESH_MS = 5000
 const hhmm = (iso: string) => iso.slice(11, 16)
@@ -262,8 +264,8 @@ function RegistrationsPanel({ facilityId, regs, onReview }: { facilityId: number
                 <span className={`badge ${live ? 'ok' : 'info'}`}>{live ? 'Đang trong giờ' : 'Sắp tới'}</span>
               ) : rejecting === r.visitRegistrationId ? (
                 <span className="row wrap">
-                  <input value={notes} placeholder="Lý do từ chối" onChange={(e) => setNotes(e.target.value)} />
-                  <button className="btn danger sm" onClick={() => { onReview(r, false, notes); setRejecting(null); setNotes('') }}>Từ chối</button>
+                  <input value={notes} maxLength={500} placeholder="Lý do từ chối" onChange={(e) => setNotes(e.target.value)} />
+                  <button className="btn danger sm" disabled={notes.trim().length < 3} title="Nhập lý do từ chối (ít nhất 3 ký tự)" onClick={() => { onReview(r, false, notes.trim()); setRejecting(null); setNotes('') }}>Từ chối</button>
                   <button className="btn ghost sm" onClick={() => setRejecting(null)}>Hủy</button>
                 </span>
               ) : (
@@ -361,6 +363,7 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
   const [personIdx, setPersonIdx] = useState(() =>
     Math.max(0, people.findIndex((p) => p.citizenId === query || p.phoneNumber === query)))
   const [citizenId, setCitizenId] = useState('')
+  const cid = useInputFilter(CITIZEN_ID_FILTER)
   const [purpose, setPurpose] = useState('')
   const [denyReason, setDenyReason] = useState(v.issues[0]?.code ?? 'IdentityMismatch')
   const [error, setError] = useState('')
@@ -447,13 +450,14 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
           <span>Số CCCD trên thẻ</span>
           <span className={`input-wrap ${typed ? (matches ? 'is-ok' : 'is-bad') : ''}`}>
             <Icon name="idCard" className="input-lead" />
-            <input value={citizenId} inputMode="numeric" placeholder="Gõ đủ số trên thẻ của khách" onChange={(e) => { setCitizenId(e.target.value); setError('') }} />
+            <input value={citizenId} inputMode="numeric" maxLength={12} placeholder="Gõ đủ 12 số trên thẻ của khách" onChange={(e) => { setCitizenId(cid.keep(e.target.value)); setError('') }} />
             {typed && <span className="match-flag">{matches ? <><Icon name="check" size={14} /> Khớp hồ sơ</> : <><Icon name="x" size={14} /> Chưa khớp</>}</span>}
           </span>
+          <FieldNote text={cid.hint} />
         </label>
         <label className="field">
           <span>Mục đích (không bắt buộc)</span>
-          <input value={purpose} placeholder={reg?.purpose ?? 'Gửi đồ, lấy đồ…'} onChange={(e) => setPurpose(e.target.value)} />
+          <input value={purpose} maxLength={255} placeholder={reg?.purpose ?? 'Gửi đồ, lấy đồ…'} onChange={(e) => setPurpose(e.target.value)} />
         </label>
         {reg
           ? <p className="reg-match ok"><Icon name="calendar" size={15} /> Lịch đã duyệt: {hhmm(reg.scheduledEntryAt)} – {hhmm(reg.scheduledExitAt)} · {reg.purpose}</p>

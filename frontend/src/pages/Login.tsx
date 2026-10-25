@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FocusEvent, type FormEvent, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, IS_DEMO } from '../api'
 import { useAuth } from '../auth'
 import { DemoBar } from '../components/layout'
 import { CorridorArt, Icon, Logo } from '../components/ui'
 import { homeFor } from '../types'
+import { FormField, PasswordChecklist, useValidatedForm } from '../components/form'
+import { CITIZEN_ID_FILTER, citizenIdError, confirmError, emailError, fullNameError, NAME_FILTER, normalizePhone, passwordError, PHONE_FILTER, phoneError, USERNAME_FILTER, usernameError } from '../validation'
 
 const DEMO_ACCOUNTS = [
   { username: 'customer1', label: 'Khách hàng', note: 'Đang thuê kho B-01' },
@@ -52,12 +54,15 @@ export function Field({ label, children }: { label: string; children: ReactNode 
   return <label className="field"><span>{label}</span>{children}</label>
 }
 
-export function PasswordInput({ value, onChange, placeholder, autoComplete }: { value: string; onChange: (v: string) => void; placeholder: string; autoComplete: string }) {
+export function PasswordInput({ value, onChange, placeholder, autoComplete, onBlur, invalid, inputRef }: {
+  value: string; onChange: (v: string) => void; placeholder: string; autoComplete: string; onBlur?: (e: FocusEvent<HTMLInputElement>) => void; invalid?: boolean
+  inputRef?: (el: HTMLInputElement | null) => void
+}) {
   const [show, setShow] = useState(false)
   return (
     <span className="input-wrap">
-      <input type={show ? 'text' : 'password'} value={value} placeholder={placeholder} autoComplete={autoComplete} required
-        onChange={(e) => onChange(e.target.value)} />
+      <input type={show ? 'text' : 'password'} value={value} placeholder={placeholder} autoComplete={autoComplete} required maxLength={100}
+        onChange={(e) => onChange(e.target.value)} onBlur={onBlur} aria-invalid={invalid || undefined} ref={inputRef} />
       <button type="button" className="input-icon-btn" aria-label={show ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'} onClick={() => setShow(!show)}>
         <Icon name={show ? 'eyeOff' : 'eye'} />
       </button>
@@ -209,18 +214,36 @@ export function Login() {
 export function Register() {
   const { login } = useAuth()
   const navigate = useNavigate()
-  const [form, setForm] = useState({ fullName: '', citizenId: '', phoneNumber: '', email: '', username: '', password: '' })
+  const form = useValidatedForm(
+    { fullName: '', citizenId: '', phoneNumber: '', email: '', username: '', password: '', confirm: '' },
+    {
+      fullName: fullNameError,
+      citizenId: (v) => citizenIdError(v),
+      phoneNumber: phoneError,
+      email: emailError,
+      username: usernameError,
+      password: passwordError,
+      confirm: (v, all) => confirmError(all.password, v),
+    },
+    { fullName: NAME_FILTER, citizenId: CITIZEN_ID_FILTER, phoneNumber: PHONE_FILTER, username: USERNAME_FILTER },
+  )
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const set = (key: keyof typeof form) => (e: { target: { value: string } }) => setForm({ ...form, [key]: e.target.value })
+  const v = form.values
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
+    if (!form.validateAll()) return
     setBusy(true)
     try {
-      await api('/api/auth/register', { body: form })
-      await login(form.username, form.password)
+      await api('/api/auth/register', {
+        body: {
+          fullName: v.fullName.trim(), citizenId: v.citizenId, phoneNumber: normalizePhone(v.phoneNumber),
+          email: v.email.trim(), username: v.username.trim(), password: v.password,
+        },
+      })
+      await login(v.username.trim(), v.password)
       navigate('/rent')
     } catch (err) {
       setError((err as Error).message)
@@ -231,16 +254,32 @@ export function Register() {
 
   return (
     <AuthShell title="Đăng Ký Tài Khoản" subtitle="Tạo tài khoản để đặt kho và quản lý hợp đồng của bạn.">
-      <form className="stack-lg" onSubmit={submit}>
+      <form className="stack-lg" onSubmit={submit} noValidate>
         <div className="form-grid">
-          <Field label="Họ và tên"><input value={form.fullName} onChange={set('fullName')} placeholder="Nguyễn Văn An" required autoFocus /></Field>
-          <Field label="Số CCCD"><input value={form.citizenId} onChange={set('citizenId')} placeholder="12 chữ số" inputMode="numeric" required /></Field>
-          <Field label="Số điện thoại"><input value={form.phoneNumber} onChange={set('phoneNumber')} placeholder="09xx xxx xxx" inputMode="tel" required /></Field>
-          <Field label="Email"><input type="email" value={form.email} onChange={set('email')} placeholder="ban@email.com" required /></Field>
-          <Field label="Tên đăng nhập"><input value={form.username} onChange={set('username')} placeholder="Ít nhất 3 ký tự" autoComplete="username" required /></Field>
-          <Field label="Mật khẩu">
-            <PasswordInput value={form.password} onChange={(v) => setForm({ ...form, password: v })} placeholder="Ít nhất 8 ký tự" autoComplete="new-password" />
-          </Field>
+          <FormField label="Họ và tên" error={form.error('fullName')}>
+            <input {...form.field('fullName')} placeholder="Nguyễn Văn An" maxLength={100} autoComplete="name" autoFocus />
+          </FormField>
+          <FormField label="Số CCCD" error={form.error('citizenId')} hint="12 chữ số trên thẻ căn cước">
+            <input {...form.field('citizenId')} placeholder="079200000123" inputMode="numeric" />
+          </FormField>
+          <FormField label="Số điện thoại" error={form.error('phoneNumber')}>
+            <input {...form.field('phoneNumber')} placeholder="0901234567" inputMode="tel" autoComplete="tel" />
+          </FormField>
+          <FormField label="Email" error={form.error('email')}>
+            <input {...form.field('email')} type="email" placeholder="ban@email.com" maxLength={100} autoComplete="email" />
+          </FormField>
+          <FormField label="Tên đăng nhập" error={form.error('username')} hint="Chữ không dấu, số, dấu chấm hoặc gạch dưới">
+            <input {...form.field('username')} placeholder="vd: nguyenvanan" maxLength={50} autoComplete="username" />
+          </FormField>
+          <FormField label="Mật khẩu" error={form.error('password')}>
+            <PasswordInput value={v.password} onChange={(x) => form.setValue('password', x)} onBlur={form.field('password').onBlur} inputRef={form.field('password').ref}
+              invalid={!!form.error('password')} placeholder="Ít nhất 8 ký tự, có chữ hoa, chữ thường, số" autoComplete="new-password" />
+            <PasswordChecklist value={v.password} />
+          </FormField>
+          <FormField label="Nhập lại mật khẩu" error={form.error('confirm')}>
+            <PasswordInput value={v.confirm} onChange={(x) => form.setValue('confirm', x)} onBlur={form.field('confirm').onBlur} inputRef={form.field('confirm').ref}
+              invalid={!!form.error('confirm')} placeholder="Nhập lại mật khẩu" autoComplete="new-password" />
+          </FormField>
         </div>
         <p className="hint"><Icon name="idCard" size={15} /> Số CCCD sẽ được nhân viên đối chiếu với thẻ của bạn mỗi lần vào kho.</p>
         {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}

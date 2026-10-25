@@ -3,6 +3,7 @@ import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { Invoice, Reservation, StaffContract } from '../types'
+import { transactionCodeError } from '../validation'
 
 /**
  * Staff billing: invoices of the facility (GET /api/invoices/facilities/{id}) and recording a cash or
@@ -198,6 +199,9 @@ function PaymentForm({ invoice: inv, customer, onCancel, onDone }: { invoice: In
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
+    // A bank transfer needs its reference to reconcile; cash may carry an optional receipt number.
+    const invalid = method === 'BankTransfer' || code.trim() ? transactionCodeError(code) : null
+    if (invalid) { setError(invalid); return }
     setBusy(true)
     try {
       await api(`/api/invoices/${inv.invoiceId}/payments`, {
@@ -223,10 +227,10 @@ function PaymentForm({ invoice: inv, customer, onCancel, onDone }: { invoice: In
           </select>
         </label>
         <label className="field"><span>Mã giao dịch {method === 'BankTransfer' ? '' : '(không bắt buộc)'}</span>
-          <input value={code} onChange={(e) => setCode(e.target.value)} required={method === 'BankTransfer'} placeholder={method === 'BankTransfer' ? 'Mã chuyển khoản ngân hàng' : ''} />
+          <input value={code} onChange={(e) => setCode(e.target.value.replace(/[^A-Za-z0-9-]/g, '').slice(0, 50))} required={method === 'BankTransfer'} placeholder={method === 'BankTransfer' ? 'Mã chuyển khoản ngân hàng' : ''} />
         </label>
       </div>
-      <label className="field"><span>Ghi chú</span><input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Không bắt buộc" /></label>
+      <label className="field"><span>Ghi chú</span><input value={notes} maxLength={255} onChange={(e) => setNotes(e.target.value)} placeholder="Không bắt buộc" /></label>
       <label className="check-row"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> Tôi đã nhận đủ {fmtMoney(inv.totalAmount)} từ khách</label>
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
       <div className="row">

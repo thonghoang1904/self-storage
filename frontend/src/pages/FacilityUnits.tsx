@@ -4,6 +4,8 @@ import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, splitTypeName, StatusBadge } from '../components/ui'
 import type { StorageUnit, UnitType } from '../types'
 import { Metric } from './FacilityOverview'
+import { CODE_FILTER, textError, unitCodeError } from '../validation'
+import { FieldNote, useInputFilter } from '../components/form'
 
 /**
  * Facility manager: the units of the facility (#43, Figma "storage-management").
@@ -24,6 +26,7 @@ export default function FacilityUnits() {
   const [status, setStatus] = useState('all')
   const [typeId, setTypeId] = useState(0)
   const [form, setForm] = useState<Form | null>(null)
+  const code = useInputFilter(CODE_FILTER)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -65,6 +68,10 @@ export default function FacilityUnits() {
     if (!form || !facilityId) return
     const type = types.find((t) => t.unitTypeId === form.unitTypeId) ?? types[0]
     if (!type) { setError('Vui lòng chọn loại kho'); return }
+    const invalid = unitCodeError(form.unitCode)
+      || ((!Number.isInteger(form.floorNumber) || form.floorNumber < 1 || form.floorNumber > 100) && 'Tầng phải là số nguyên từ 1 đến 100')
+      || textError(form.zoneArea, 'Khu vực', 1, 30, true)
+    if (invalid) { setError(invalid); return }
     const body = { unitTypeId: type.unitTypeId, unitCode: form.unitCode.trim(), floorNumber: form.floorNumber, zoneArea: form.zoneArea.trim() || null, monthlyPrice: type.baseMonthlyRate }
     const base = `/api/facility-management/facilities/${facilityId}/units`
     const ok = await run(
@@ -106,7 +113,8 @@ export default function FacilityUnits() {
           </div>
           <div className="form-grid four">
             <label className="field"><span>Mã kho</span>
-              <input value={form.unitCode} onChange={(e) => setForm({ ...form, unitCode: e.target.value.toUpperCase() })} placeholder="vd: B-04" maxLength={30} required autoFocus />
+              <input value={form.unitCode} onChange={(e) => setForm({ ...form, unitCode: code.keep(e.target.value) })} placeholder="vd: B-04" maxLength={30} required autoFocus />
+              <FieldNote text={code.hint} />
             </label>
             <label className="field"><span>Loại kho</span>
               <select value={form.unitTypeId} onChange={(e) => setForm({ ...form, unitTypeId: Number(e.target.value) })} required>

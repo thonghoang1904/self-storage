@@ -5,6 +5,8 @@ import { useAuth } from '../auth'
 import { AppointmentPicker } from '../components/appointment'
 import { Empty, Eyebrow, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
 import { DenyReasons, type AccessRecord, type Contract, type Facility, type Invoice, type Person, type Reservation } from '../types'
+import { FormField, useValidatedForm } from '../components/form'
+import { CITIZEN_ID_FILTER, citizenIdError, fullNameError, NAME_FILTER, normalizePhone, PHONE_FILTER, phoneError, relationshipError } from '../validation'
 
 const daysUntil = (iso: string) => Math.ceil((new Date(`${iso}T00:00:00`).getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000)
 
@@ -234,7 +236,17 @@ export default function MyUnits() {
 
 function AuthorizedPeople({ contractId }: { contractId: number }) {
   const [people, setPeople] = useState<Person[]>([])
-  const [form, setForm] = useState({ fullName: '', phoneNumber: '', citizenId: '', relationship: '' })
+  const form = useValidatedForm(
+    { fullName: '', citizenId: '', phoneNumber: '', relationship: '' },
+    {
+      fullName: fullNameError,
+      // The same person cannot be authorized twice on one contract.
+      citizenId: (v) => citizenIdError(v) ?? (people.some((p) => p.citizenId === v) ? 'Người có số CCCD này đã được ủy quyền' : null),
+      phoneNumber: phoneError,
+      relationship: relationshipError,
+    },
+    { fullName: NAME_FILTER, citizenId: CITIZEN_ID_FILTER, phoneNumber: PHONE_FILTER, relationship: NAME_FILTER },
+  )
   const [error, setError] = useState('')
   const [adding, setAdding] = useState(false)
   const [confirmId, setConfirmId] = useState<number | null>(null)
@@ -249,9 +261,13 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
   const add = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
+    if (!form.validateAll()) return
+    const f = form.values
     try {
-      await api(base, { body: { ...form, relationship: form.relationship || null } })
-      setForm({ fullName: '', phoneNumber: '', citizenId: '', relationship: '' })
+      await api(base, {
+        body: { fullName: f.fullName.trim(), citizenId: f.citizenId, phoneNumber: normalizePhone(f.phoneNumber), relationship: f.relationship.trim() || null },
+      })
+      form.reset()
       setAdding(false)
       void load()
     } catch (err) {
@@ -293,16 +309,16 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
         {people.length === 0 && <Empty icon="users">Chưa ủy quyền cho ai.</Empty>}
       </div>
       {adding ? (
-        <form onSubmit={add} className="add-person">
+        <form onSubmit={add} className="add-person" noValidate>
           <div className="form-grid">
-            <label className="field"><span>Họ tên</span><input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required autoFocus /></label>
-            <label className="field"><span>Số CCCD</span><input value={form.citizenId} inputMode="numeric" onChange={(e) => setForm({ ...form, citizenId: e.target.value })} required /></label>
-            <label className="field"><span>Số điện thoại</span><input value={form.phoneNumber} inputMode="tel" onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })} required /></label>
-            <label className="field"><span>Quan hệ</span><input value={form.relationship} placeholder="Vợ, con, nhân viên…" onChange={(e) => setForm({ ...form, relationship: e.target.value })} /></label>
+            <FormField label="Họ tên" error={form.error('fullName')}><input {...form.field('fullName')} maxLength={100} placeholder="Nguyễn Thị Bình" autoFocus /></FormField>
+            <FormField label="Số CCCD" error={form.error('citizenId')}><input {...form.field('citizenId')} inputMode="numeric" placeholder="12 chữ số" /></FormField>
+            <FormField label="Số điện thoại" error={form.error('phoneNumber')}><input {...form.field('phoneNumber')} inputMode="tel" placeholder="0912345678" /></FormField>
+            <FormField label="Quan hệ (không bắt buộc)" error={form.error('relationship')}><input {...form.field('relationship')} maxLength={50} placeholder="Vợ, con, nhân viên…" /></FormField>
           </div>
           <div className="row">
             <button className="btn primary sm" type="submit">Lưu người được ủy quyền</button>
-            <button className="btn ghost sm" type="button" onClick={() => setAdding(false)}>Hủy</button>
+            <button className="btn ghost sm" type="button" onClick={() => { setAdding(false); form.reset() }}>Hủy</button>
           </div>
         </form>
       ) : (

@@ -440,7 +440,7 @@ td select { height: 36px; width: auto; min-width: 120px; font-size: 13px; }
 .decision.blocked { background: #fff8eb; border-color: #fbe3b5; }
 .deny-row { display: flex; gap: 10px; }
 .deny-row select { flex: 1; height: 42px; }
-.segmented { display: inline-flex; padding: 4px; gap: 4px; border-radius: 10px; background: var(--bg-tint); }
+.segmented { display: inline-flex; flex-wrap: wrap; max-width: 100%; padding: 4px; gap: 4px; border-radius: 10px; background: var(--bg-tint); }
 .segmented button { border: 0; background: none; padding: 7px 14px; border-radius: 7px; font-weight: 700; font-size: 13px; color: var(--muted); cursor: pointer; }
 .segmented button.active { background: #fff; color: var(--cyan-600); box-shadow: 0 1px 3px rgba(11, 19, 43, 0.1); }
 
@@ -851,3 +851,15 @@ small.center { text-align: center; }
 .faq-item.open .faq-q .icon { transform: rotate(45deg); }
 .faq-a { padding: 0 20px 18px; color: var(--muted); font-size: 14px; }
 @media (max-width: 640px) { .pricing-grid { grid-template-columns: 1fr; } }
+
+/* field validation (components/form.tsx) */
+.field.has-error input, .field.has-error select, .field.has-error textarea { border-color: var(--bad); background: #fffafa; }
+.field.has-error input:focus, .field.has-error select:focus, .field.has-error textarea:focus { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15); }
+.field-error { display: flex; gap: 6px; align-items: flex-start; color: var(--bad); font-size: 12.5px; font-weight: 600; line-height: 1.4; }
+.field-error .icon { flex-shrink: 0; margin-top: 2px; }
+.field-hint { color: var(--muted); font-size: 12.5px; }
+.password-rules { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+.password-rules li { display: inline-flex; align-items: center; gap: 4px; }
+.password-rules li .icon { color: var(--bad); }
+.password-rules li.ok { color: var(--ok); }
+.password-rules li.ok .icon { color: var(--ok); }

@@ -3,6 +3,7 @@ import { api, fmtMoney, fmtTime } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon } from '../components/ui'
 import { CancellationStatuses, type CancellationRefund, type CancellationRequest, type Invoice } from '../types'
+import { amountError, transactionCodeError } from '../validation'
 
 /**
  * Reservation cancellations at the facility (#43): customers ask to cancel a reservation not yet handed over,
@@ -157,6 +158,10 @@ function RefundForm({ reservationId, max, onDone, onError }: { reservationId: nu
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
   const submit = async () => {
+    const invalid = (!Number.isInteger(amount) && 'Số tiền hoàn phải là số nguyên (đồng)')
+      || amountError(amount, 'Số tiền hoàn', 1, max)
+      || (method === 'BankTransfer' || code.trim() ? transactionCodeError(code) : null)
+    if (invalid) { onError(invalid); return }
     setBusy(true)
     try {
       onDone(await api<CancellationRefund>(`/api/reservations/${reservationId}/cancellation-refunds`, {
@@ -181,7 +186,7 @@ function RefundForm({ reservationId, max, onDone, onError }: { reservationId: nu
           </select>
         </label>
         <label className="field"><span>Mã giao dịch{method === 'BankTransfer' ? ' *' : ''}</span>
-          <input value={code} maxLength={100} onChange={(e) => setCode(e.target.value)} placeholder={method === 'BankTransfer' ? 'Bắt buộc khi chuyển khoản' : 'Không bắt buộc'} />
+          <input value={code} maxLength={50} onChange={(e) => setCode(e.target.value.replace(/[^A-Za-z0-9-]/g, '').slice(0, 50))} placeholder={method === 'BankTransfer' ? 'Bắt buộc khi chuyển khoản' : 'Không bắt buộc'} />
         </label>
         <label className="field"><span>Ghi chú</span>
           <input value={notes} maxLength={500} onChange={(e) => setNotes(e.target.value)} />
