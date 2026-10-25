@@ -198,7 +198,7 @@ export function StaffLayout() {
     <FacilityContext.Provider value={{ facilities, facilityId, setFacilityId, error }}>
       <div className="staff">
         <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
-          <div className="sidebar-brand"><Logo admin light /></div>
+          <div className="sidebar-brand"><Logo area="Facility" light /></div>
           <nav className="sidebar-nav">
             {isManager && (
               <>
@@ -258,7 +258,7 @@ export function StaffLayout() {
 /** A sidebar entry: a built screen has a route, the rest of the Figma menu shows greyed out. */
 interface ConsoleNavItem { icon: string; label: string; to?: string; end?: boolean }
 
-function ConsoleLayout({ nav, titles }: { nav: ConsoleNavItem[]; titles: Record<string, string> }) {
+function ConsoleLayout({ area, nav, titles }: { area: string; nav: ConsoleNavItem[]; titles: Record<string, string> }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
@@ -269,7 +269,7 @@ function ConsoleLayout({ nav, titles }: { nav: ConsoleNavItem[]; titles: Record<
   return (
     <div className="staff">
       <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
-        <div className="sidebar-brand"><Logo admin light /></div>
+        <div className="sidebar-brand"><Logo area={area} light /></div>
         <nav className="sidebar-nav">
           {nav.map((n) => n.to
             ? <NavLink key={n.label} to={n.to} end={n.end}><Icon name={n.icon} /> {n.label}</NavLink>
@@ -304,6 +304,7 @@ function ConsoleLayout({ nav, titles }: { nav: ConsoleNavItem[]; titles: Record<
 export function AdminLayout() {
   return (
     <ConsoleLayout
+      area="Admin"
       titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu',
         '/admin/storage': 'Kho Lưu Trữ Hệ Thống', '/admin/customers': 'Khách Hàng & Hợp Đồng', '/admin/settings': 'Cài Đặt', '/admin': 'Tổng Quan Quản Lý' }}
       nav={[
@@ -324,6 +325,7 @@ export function AdminLayout() {
 export function OpsLayout() {
   return (
     <ConsoleLayout
+      area="Operations"
       titles={{ '/ops/facilities': 'Quản Lý Cơ Sở', '/ops/policies': 'Chính Sách & Giá', '/ops/revenue': 'Doanh Thu',
         '/ops/storage': 'Vận Hành Kho', '/ops/settings': 'Cài Đặt', '/ops': 'Tổng Quan Vận Hành' }}
       nav={[
