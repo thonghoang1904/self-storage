@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { checkText, firstError, localToday } from '../validation'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
@@ -72,7 +73,7 @@ export default function StaffBilling() {
   const pageRows = shown.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE)
 
   const due = invoices.filter((i) => i.status === 'Unpaid' || i.status === 'Overdue')
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   const paidToday = invoices.flatMap((i) => i.payments).filter((p) => p.status === 'Success' && p.paymentDate.slice(0, 10) === today)
 
   return (
@@ -197,6 +198,12 @@ function PaymentForm({ invoice: inv, customer, onCancel, onDone }: { invoice: In
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    const problem = firstError(
+      method === 'BankTransfer' ? checkText(code, 'Mã giao dịch chuyển khoản', 100, false, 4) : checkText(code, 'Mã giao dịch', 100, true),
+      checkText(notes, 'Ghi chú', 255, true),
+      confirmed ? '' : `Vui lòng xác nhận đã nhận đủ ${fmtMoney(inv.totalAmount)}`,
+    )
+    if (problem) return setError(problem)
     setError('')
     setBusy(true)
     try {
@@ -223,10 +230,10 @@ function PaymentForm({ invoice: inv, customer, onCancel, onDone }: { invoice: In
           </select>
         </label>
         <label className="field"><span>Mã giao dịch {method === 'BankTransfer' ? '' : '(không bắt buộc)'}</span>
-          <input value={code} onChange={(e) => setCode(e.target.value)} required={method === 'BankTransfer'} placeholder={method === 'BankTransfer' ? 'Mã chuyển khoản ngân hàng' : ''} />
+          <input value={code} maxLength={100} onChange={(e) => setCode(e.target.value)} required={method === 'BankTransfer'} placeholder={method === 'BankTransfer' ? 'Mã chuyển khoản ngân hàng' : ''} />
         </label>
       </div>
-      <label className="field"><span>Ghi chú</span><input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Không bắt buộc" /></label>
+      <label className="field"><span>Ghi chú</span><input value={notes} maxLength={255} onChange={(e) => setNotes(e.target.value)} placeholder="Không bắt buộc" /></label>
       <label className="check-row"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> Tôi đã nhận đủ {fmtMoney(inv.totalAmount)} từ khách</label>
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
       <div className="row">

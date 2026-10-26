@@ -27,6 +27,7 @@ export default function OpsRevenue() {
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
+    if (!from || !to || from > to) { setError('Khoảng ngày không hợp lệ: "Từ ngày" phải trước hoặc bằng "Đến ngày"'); return }
     setError('')
     try {
       setReport(await api<OperationsReport>(`/api/operations/reports/facilities?fromDate=${from}&toDate=${to}`))
@@ -164,6 +165,7 @@ function ReportDetails({ from, to, facilities }: { from: string; to: string; fac
     return p
   }
   useEffect(() => {
+    if (!from || !to || from > to) return
     api<OperationsReportRow[]>(`/api/operations/reports/details?${params()}`).then((r) => { setRows(r); setError('') }).catch((e) => setError((e as Error).message))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from, to, facilityId, unitTypeId, contractStatus])

@@ -123,6 +123,9 @@ function ChargeForm({ contract: c, facilityId, onDone }: { contract: Contract; f
   const fee = ExtraChargeFees.find((f) => f.feeTypeId === feeTypeId)!
 
   const submit = async () => {
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 365) return setError('Số lượng từ 1 đến 365')
+    if (dueDate && dueDate < todayIso()) return setError('Hạn thanh toán không được ở quá khứ')
+    if (notes.trim().length > 255) return setError('Ghi chú tối đa 255 ký tự')
     setError('')
     setBusy(true)
     try {

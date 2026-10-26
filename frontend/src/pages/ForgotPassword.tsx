@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { checkEmail, checkPassword } from '../validation'
 import { api, ApiError, IS_DEMO } from '../api'
 import { Icon } from '../components/ui'
 import { AuthShell, Field, PasswordInput } from './Login'
@@ -49,6 +50,8 @@ export default function ForgotPassword() {
 
   const send = (e: FormEvent) => {
     e.preventDefault()
+    const bad = checkEmail(email)
+    if (bad) return setError(bad)
     void run(async () => {
       const res = await api<{ message: string; demoToken?: string }>('/api/auth/forgot-password', { body: { email: email.trim() } })
       setNotice(res.message)
@@ -64,8 +67,8 @@ export default function ForgotPassword() {
     const code = token.replace(/\s+/g, '')
     if (!code) return setError('Vui lòng nhập mã trong email')
     if (code.length > 100) return setError('Mã không hợp lệ, hãy copy lại đúng mã trong email')
-    if (password.length < 8) return setError('Mật khẩu mới cần ít nhất 8 ký tự')
-    if (password.length > 100) return setError('Mật khẩu mới tối đa 100 ký tự')
+    const weak = checkPassword(password)
+    if (weak) return setError(weak.replace('Mật khẩu', 'Mật khẩu mới'))
     if (password !== confirm) return setError('Mật khẩu nhập lại không khớp')
     void run(async () => {
       await api('/api/auth/reset-password', { body: { token: code, newPassword: password } })
@@ -111,7 +114,7 @@ export default function ForgotPassword() {
             <input value={token} onChange={(e) => setToken(e.target.value)} placeholder="Dán mã trong email" autoComplete="one-time-code" spellCheck={false} required />
           </Field>
           <Field label="Mật khẩu mới">
-            <PasswordInput value={password} onChange={setPassword} placeholder="Ít nhất 8 ký tự" autoComplete="new-password" />
+            <PasswordInput value={password} onChange={setPassword} placeholder="Ít nhất 8 ký tự, có chữ và số" autoComplete="new-password" />
           </Field>
           <Field label="Nhập lại mật khẩu mới">
             <PasswordInput value={confirm} onChange={setConfirm} placeholder="Nhập lại mật khẩu" autoComplete="new-password" />

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { checkCitizenId, checkPhone, digitsOnly, firstError } from '../validation'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { Empty, Icon, UnitArt } from '../components/ui'
@@ -116,7 +117,9 @@ export default function MoveInRegistration() {
 
   const [open, close] = openHours(facility?.operatingHours)
   const entrySlots: string[] = []
-  for (let t = Math.ceil(open / 30) * 30; t + 30 <= close; t += 30) entrySlots.push(toHHMM(t))
+  const nowMin = date === today ? new Date().getHours() * 60 + new Date().getMinutes() + 15 : 0
+  for (let t = Math.ceil(Math.max(open, nowMin) / 30) * 30; t + 30 <= close; t += 30) entrySlots.push(toHHMM(t))
+  useEffect(() => { if (entrySlots.length && !entrySlots.includes(entry)) setEntry(entrySlots[0]) }, [date, entrySlots.join()]) // eslint-disable-line react-hooks/exhaustive-deps
   const exitMin = Math.min(toMin(entry) + duration, close, date === c?.endDate ? 20 * 60 : close)
   const exit = toHHMM(exitMin)
 
@@ -148,13 +151,18 @@ export default function MoveInRegistration() {
     setError('')
     setNotice('')
     if (named.length === 0) return setError('Vui lòng khai báo ít nhất một món đồ')
+    const badItem = items.find((i) => i.name.trim() && [i.l, i.w, i.h].some((d) => d.trim() && (!num(d) || num(d) > 2000)))
+    if (badItem) return setError(`Kích thước "${badItem.name.trim()}" không hợp lệ (số cm từ 1 đến 2000)`)
+    const problem = firstError(checkCitizenId(citizenId, 'Số CCCD người áp tải'), checkPhone(phone, 'SĐT liên hệ', true))
+    if (problem) return setError(problem)
+    if (!entrySlots.includes(entry)) return setError('Giờ đến không còn hợp lệ, vui lòng chọn lại giờ')
     if (exitMin <= toMin(entry)) return setError('Giờ chuyển đồ vượt quá giờ đóng cửa của kho, vui lòng chọn giờ sớm hơn')
     if (!agree) return setError('Vui lòng xác nhận cam kết về đồ gửi trước khi gửi đăng ký')
     setBusy(true)
     try {
       const r = await api<VisitRegistration>(`/api/contracts/${id}/visit-registrations`, {
         body: {
-          citizenId: citizenId.trim(),
+          citizenId: digitsOnly(citizenId),
           authorizedPersonId: who,
           scheduledEntryAt: `${date}T${entry}:00+07:00`,
           scheduledExitAt: `${date}T${exit}:00+07:00`,

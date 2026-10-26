@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { localToday } from '../validation'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { AdminContract, Facility, ReturnUnitResult, StorageUnit } from '../types'
@@ -147,6 +148,10 @@ function ContractPanel({ contractId, onClose, onDone }: { contractId: number; on
 
   const save = async (e: FormEvent) => {
     e.preventDefault()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate)) return setError('Vui lòng chọn ngày kết thúc')
+    if (endDate <= c.startDate) return setError('Ngày kết thúc phải sau ngày bắt đầu')
+    if (endDate !== c.endDate && endDate < localToday()) return setError('Ngày kết thúc mới không được ở quá khứ')
+    if (terms.trim().length > 4000) return setError('Điều khoản tối đa 4000 ký tự')
     setBusy(true)
     setError('')
     try {
@@ -261,6 +266,9 @@ function CreateFromReservation({ facilities, onCancel, onDone }: { facilities: F
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    if (!Number(reservationId)) return setError('Vui lòng nhập mã đơn đặt kho')
+    if (!unitId) return setError('Vui lòng chọn kho trống để bàn giao')
+    if (notes.trim().length < 5) return setError('Vui lòng ghi tình trạng kho khi bàn giao (ít nhất 5 ký tự)')
     setBusy(true)
     setError('')
     try {

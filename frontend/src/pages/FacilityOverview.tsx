@@ -26,6 +26,7 @@ export default function FacilityOverview() {
 
   const loadKpi = useCallback(async () => {
     if (!facilityId) return
+    if (!from || !to || from > to) { setError('Khoảng ngày không hợp lệ: "Từ ngày" phải trước hoặc bằng "Đến ngày"'); return }
     setError('')
     try {
       setKpi(await api<FacilityDashboard>(`/api/facilities/${facilityId}/dashboard?fromDate=${from}&toDate=${to}`))
@@ -36,7 +37,7 @@ export default function FacilityOverview() {
   useEffect(() => { void loadKpi() }, [loadKpi])
 
   useEffect(() => {
-    if (!facilityId) return
+    if (!facilityId || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return
     api<FacilityWorkQueue>(`/api/facilities/${facilityId}/daily-operations?date=${day}`).then(setWork).catch((e) => setError((e as Error).message))
   }, [facilityId, day])
 

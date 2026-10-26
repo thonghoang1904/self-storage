@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { checkText, digitsOnly, firstError, localToday } from '../validation'
 import { api, fmtDate } from '../api'
 import { Badge, Empty, Icon } from '../components/ui'
 import type { Facility, FacilityReport, OperationsReport } from '../types'
@@ -89,7 +90,7 @@ export default function OpsFacilities() {
     const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }))
     const a = document.createElement('a')
     a.href = url
-    a.download = `co-so-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `co-so-${localToday()}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -223,11 +224,23 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    const hours = f.operatingHours.trim().match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/)
+    const problem = firstError(
+      checkText(f.facilityName, 'Tên cơ sở', 150, false, 3),
+      checkText(f.address, 'Địa chỉ', 255, false, 5),
+      checkText(f.district, 'Quận / huyện', 100),
+      checkText(f.city, 'Tỉnh / thành phố', 100),
+      /^(0\d{9,10}|1[89]00\d{4,6})$/.test(digitsOnly(f.hotline)) ? '' : 'Hotline không hợp lệ (vd: 028 1234 5678 hoặc 1900 1234)',
+      !hours ? 'Giờ hoạt động theo dạng HH:MM - HH:MM, vd: 06:00 - 22:00'
+        : Number(hours[1]) > 23 || Number(hours[3]) > 24 || Number(hours[2]) > 59 || Number(hours[4]) > 59 ? 'Giờ hoạt động không hợp lệ'
+        : Number(hours[1]) * 60 + Number(hours[2]) >= Number(hours[3]) * 60 + Number(hours[4]) ? 'Giờ đóng cửa phải sau giờ mở cửa' : '',
+    )
+    if (problem) return setError(problem)
     setError('')
     setBusy(true)
     const body = {
       facilityName: f.facilityName.trim(), address: f.address.trim(), district: f.district.trim(),
-      city: f.city.trim(), hotline: f.hotline.trim(), operatingHours: f.operatingHours.trim(),
+      city: f.city.trim(), hotline: digitsOnly(f.hotline), operatingHours: f.operatingHours.trim().replace(/\s*-\s*/, ' - '),
     }
     try {
       if (facility) {

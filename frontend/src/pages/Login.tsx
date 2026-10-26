@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, IS_DEMO } from '../api'
+import { checkCitizenId, checkEmail, checkPassword, checkPhone, checkText, checkUsername, digitsOnly, firstError } from '../validation'
 import { useAuth } from '../auth'
 import { DemoBar } from '../components/layout'
 import { CorridorArt, Icon, Logo } from '../components/ui'
@@ -154,7 +155,7 @@ export function Login() {
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    void signIn(username, password)
+    void signIn(username.trim(), password)
   }
 
   const signInWithGoogle = async (idToken: string) => {
@@ -216,11 +217,28 @@ export function Register() {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    const problem = firstError(
+      checkText(form.fullName, 'Họ và tên', 100, false, 2),
+      checkCitizenId(form.citizenId),
+      checkPhone(form.phoneNumber),
+      checkEmail(form.email),
+      checkUsername(form.username),
+      checkPassword(form.password),
+    )
+    if (problem) return setError(problem)
     setError('')
     setBusy(true)
+    const body = {
+      fullName: form.fullName.trim().replace(/\s+/g, ' '),
+      citizenId: digitsOnly(form.citizenId),
+      phoneNumber: digitsOnly(form.phoneNumber),
+      email: form.email.trim(),
+      username: form.username.trim(),
+      password: form.password,
+    }
     try {
-      await api('/api/auth/register', { body: form })
-      await login(form.username, form.password)
+      await api('/api/auth/register', { body })
+      await login(body.username, body.password)
       navigate('/rent')
     } catch (err) {
       setError((err as Error).message)
@@ -233,13 +251,13 @@ export function Register() {
     <AuthShell title="Đăng Ký Tài Khoản" subtitle="Tạo tài khoản để đặt kho và quản lý hợp đồng của bạn.">
       <form className="stack-lg" onSubmit={submit}>
         <div className="form-grid">
-          <Field label="Họ và tên"><input value={form.fullName} onChange={set('fullName')} placeholder="Nguyễn Văn An" required autoFocus /></Field>
-          <Field label="Số CCCD"><input value={form.citizenId} onChange={set('citizenId')} placeholder="12 chữ số" inputMode="numeric" required /></Field>
-          <Field label="Số điện thoại"><input value={form.phoneNumber} onChange={set('phoneNumber')} placeholder="09xx xxx xxx" inputMode="tel" required /></Field>
-          <Field label="Email"><input type="email" value={form.email} onChange={set('email')} placeholder="ban@email.com" required /></Field>
-          <Field label="Tên đăng nhập"><input value={form.username} onChange={set('username')} placeholder="Ít nhất 3 ký tự" autoComplete="username" required /></Field>
+          <Field label="Họ và tên"><input value={form.fullName} onChange={set('fullName')} placeholder="Nguyễn Văn An" maxLength={100} required autoFocus /></Field>
+          <Field label="Số CCCD"><input value={form.citizenId} onChange={set('citizenId')} placeholder="12 chữ số" inputMode="numeric" maxLength={15} required /></Field>
+          <Field label="Số điện thoại"><input value={form.phoneNumber} onChange={set('phoneNumber')} placeholder="09xx xxx xxx" inputMode="tel" maxLength={15} required /></Field>
+          <Field label="Email"><input type="email" value={form.email} onChange={set('email')} placeholder="ban@email.com" maxLength={100} required /></Field>
+          <Field label="Tên đăng nhập"><input value={form.username} onChange={set('username')} placeholder="3–50 ký tự, không dấu" autoComplete="username" maxLength={50} required /></Field>
           <Field label="Mật khẩu">
-            <PasswordInput value={form.password} onChange={(v) => setForm({ ...form, password: v })} placeholder="Ít nhất 8 ký tự" autoComplete="new-password" />
+            <PasswordInput value={form.password} onChange={(v) => setForm({ ...form, password: v })} placeholder="Ít nhất 8 ký tự, có chữ và số" autoComplete="new-password" />
           </Field>
         </div>
         <p className="hint"><Icon name="idCard" size={15} /> Số CCCD sẽ được nhân viên đối chiếu với thẻ của bạn mỗi lần vào kho.</p>

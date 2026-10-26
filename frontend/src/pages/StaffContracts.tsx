@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { localToday } from '../validation'
 import { api, fmtDate, fmtMoney } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
@@ -107,7 +108,7 @@ export default function StaffContracts() {
     const csv = '﻿' + [head, ...lines].map((l) => l.map((v) => `"${v.replaceAll('"', '""')}"`).join(',')).join('\r\n')
     const a = document.createElement('a')
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
-    a.download = `gia-han-qua-han-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `gia-han-qua-han-${localToday()}.csv`
     a.click()
     URL.revokeObjectURL(a.href)
   }

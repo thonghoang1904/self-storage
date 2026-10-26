@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { checkCitizenId, digitsOnly } from '../validation'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { Empty, Icon, UnitArt } from '../components/ui'
@@ -67,7 +68,10 @@ export default function VisitRegistrationPage() {
 
   const [open, close] = hours(facility?.operatingHours)
   const slots: string[] = []
-  for (let t = Math.ceil(open / 30) * 30; t <= close; t += 30) slots.push(toHHMM(t))
+  // Today: only times at least 15 minutes ahead (the API rejects a time in the past).
+  const nowMin = date === today ? new Date().getHours() * 60 + new Date().getMinutes() + 15 : 0
+  for (let t = Math.ceil(Math.max(open, nowMin) / 30) * 30; t <= close; t += 30) slots.push(toHHMM(t))
+  useEffect(() => { if (slots.length > 1 && !slots.slice(0, -1).includes(entry)) setEntry(slots[0]) }, [date, slots.join()]) // eslint-disable-line react-hooks/exhaustive-deps
   const exitSlots = slots.filter((s) => s > entry && (date !== c?.endDate || s < '20:00'))
   useEffect(() => { if (!exitSlots.includes(exit)) setExit(exitSlots[1] ?? exitSlots[0] ?? '') }, [entry, date, exitSlots.join()]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -92,13 +96,17 @@ export default function VisitRegistrationPage() {
     e.preventDefault()
     setError('')
     setNotice('')
+    const badId = checkCitizenId(citizenId, 'Số CCCD người đến kho')
+    if (badId) return setError(badId)
+    if (slots.length < 2 || !exit) return setError('Ngày này không còn khung giờ trống, vui lòng chọn ngày khác')
+    if (finalPurpose.length > 255) return setError('Mục đích tối đa 255 ký tự')
     if (!agree) return setError('Vui lòng xác nhận cam kết trước khi gửi đăng ký')
     if (!finalPurpose) return setError('Vui lòng nhập mục đích vào kho')
     setBusy(true)
     try {
       const r = await api<VisitRegistration>(`/api/contracts/${id}/visit-registrations`, {
         body: {
-          citizenId: citizenId.trim(),
+          citizenId: digitsOnly(citizenId),
           authorizedPersonId: who,
           scheduledEntryAt: `${date}T${entry}:00+07:00`,
           scheduledExitAt: `${date}T${exit}:00+07:00`,

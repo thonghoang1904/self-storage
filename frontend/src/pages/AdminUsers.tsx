@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { checkCitizenId, checkEmail, checkPassword, checkPhone, checkText, checkUsername, digitsOnly, firstError } from '../validation'
 import { api, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { Badge, Empty, Icon } from '../components/ui'
@@ -184,6 +185,15 @@ function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleIn
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
+    const problem = firstError(
+      checkText(f.fullName, 'Họ tên', 100, false, 2),
+      checkEmail(f.email),
+      checkPhone(f.phoneNumber),
+      f.citizenId.trim() ? checkCitizenId(f.citizenId) : '',
+      checkUsername(f.username),
+      checkPassword(f.password),
+    )
+    if (problem) { setError(problem); return }
     if (needsFacility && facilityIds.length === 0) { setError('Hãy chọn ít nhất một cơ sở cho nhân viên / quản lý cơ sở.'); return }
     setBusy(true)
     try {
@@ -193,8 +203,8 @@ function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleIn
           password: f.password,
           fullName: f.fullName.trim(),
           email: f.email.trim(),
-          phoneNumber: f.phoneNumber.trim(),
-          citizenId: f.citizenId.trim() || null,
+          phoneNumber: digitsOnly(f.phoneNumber),
+          citizenId: digitsOnly(f.citizenId) || null,
           roleId,
           // The API rejects an empty list; leave it out for roles without facilities.
           facilityIds: needsFacility ? facilityIds : undefined,
@@ -263,10 +273,16 @@ function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser
     setBusy(true)
     try {
       if (profileChanged) {
-        if (!profile.fullName.trim() || !profile.phoneNumber.trim()) throw new Error('Họ tên và số điện thoại không được để trống')
+        const problem = firstError(
+          checkText(profile.fullName, 'Họ tên', 100, false, 2),
+          checkEmail(profile.email),
+          checkPhone(profile.phoneNumber),
+          profile.citizenId.trim() ? checkCitizenId(profile.citizenId) : '',
+        )
+        if (problem) throw new Error(problem)
         await api(`/api/admin/users/${user.userId}/profile`, { method: 'PUT', body: {
-          fullName: profile.fullName.trim(), email: profile.email.trim(), phoneNumber: profile.phoneNumber.trim(),
-          citizenId: profile.citizenId.trim() || null } })
+          fullName: profile.fullName.trim(), email: profile.email.trim(), phoneNumber: digitsOnly(profile.phoneNumber),
+          citizenId: digitsOnly(profile.citizenId) || null } })
       }
       if (roleId !== user.roleId) await api(`/api/admin/users/${user.userId}/role`, { method: 'PUT', body: { roleId } })
       if (status !== user.status) await api(`/api/admin/users/${user.userId}/status`, { method: 'PUT', body: { status } })

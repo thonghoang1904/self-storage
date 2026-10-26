@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { checkText, firstError } from '../validation'
 import { api, fmtTime } from '../api'
 import { Badge, Empty, Eyebrow, Icon, StatusBadge } from '../components/ui'
 import { SupportCategories, SupportPriorities, type Contract, type SupportChecklistItem, type SupportRequest, type SupportUpdate } from '../types'
@@ -40,11 +41,17 @@ export default function Support() {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    setError('')
     setNotice('')
+    const problem = firstError(
+      form.contractId ? '' : 'Vui lòng chọn hợp đồng / kho cần hỗ trợ',
+      checkText(form.title, 'Tiêu đề', 200, false, 5),
+      checkText(form.description, 'Mô tả', 4000, false, 10),
+    )
+    if (problem) return setError(problem)
+    setError('')
     setBusy(true)
     try {
-      const r = await api<SupportRequest>('/api/support-requests', { body: form })
+      const r = await api<SupportRequest>('/api/support-requests', { body: { ...form, title: form.title.trim(), description: form.description.trim() } })
       setNotice(`Đã gửi yêu cầu ${r.requestCode}. Nhân viên cơ sở sẽ tiếp nhận và cập nhật tại đây.`)
       setForm({ ...EMPTY_FORM, contractId: form.contractId })
       setOpenId(r.requestId)

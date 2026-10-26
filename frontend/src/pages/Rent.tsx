@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { checkText, localToday } from '../validation'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
@@ -32,7 +33,8 @@ export default function Rent() {
   const [availability, setAvailability] = useState<Availability[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [startDate, setStartDate] = useState(todayIso)
+  // After 19:00 there is no time left to pay and pick up today: default to tomorrow.
+  const [startDate, setStartDate] = useState(() => { if (new Date().getHours() < 19) return todayIso(); const d = new Date(); d.setDate(d.getDate() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` })
   const [months, setMonths] = useState(6)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -88,6 +90,9 @@ export default function Rent() {
 
   const reserve = async () => {
     if (!facilityId || !selected) return
+    const dateProblem = checkStartDate(startDate)
+    if (dateProblem) { setError(dateProblem); return }
+    if (promoCode.trim() && !/^[A-Z0-9_-]{3,30}$/.test(promoCode.trim())) { setError('Mã khuyến mãi chỉ gồm chữ in hoa không dấu, số, - và _ (3–30 ký tự)'); return }
     if (signError) { setError(signError); return }
     setError('')
     setBusy(true)
@@ -327,12 +332,23 @@ export default function Rent() {
 }
 
 /** Reason form for POST /api/reservations/{id}/cancellation-requests. */
+/** Start date: today or later (and before 19:00 when it is today, so there is still time to pay and pick up), within a year. */
+function checkStartDate(iso: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return 'Vui lòng chọn ngày bắt đầu thuê'
+  const today = todayIso()
+  if (iso < today) return 'Ngày bắt đầu không được ở quá khứ'
+  if (iso === today && new Date().getHours() >= 19) return 'Đã quá giờ nhận kho hôm nay, vui lòng chọn từ ngày mai'
+  if (iso > localToday(365)) return 'Chỉ đặt trước tối đa 1 năm'
+  return ''
+}
+
 function CancelForm({ reservation: r, onDone }: { reservation: Reservation; onDone: (c: CancellationRequest | null) => void }) {
   const [reason, setReason] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const send = async () => {
-    if (!reason.trim()) { setError('Vui lòng nhập lý do hủy'); return }
+    const bad = checkText(reason, 'Lý do hủy', 1000, false, 5)
+    if (bad) { setError(bad); return }
     setError('')
     setBusy(true)
     try {

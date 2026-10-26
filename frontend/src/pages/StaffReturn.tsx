@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { checkMoney, checkText, firstError } from '../validation'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
@@ -141,6 +142,7 @@ function Inspection({ contract: c, overdue, onChanged }: { contract: StaffContra
   const allChecked = checked.every(Boolean)
 
   const complete = async () => {
+    if (!allChecked) return setError(`Vui lòng kiểm tra đủ ${CHECKLIST.length} mục trước khi hoàn tất trả kho`)
     setError('')
     setBusy(true)
     try {
@@ -210,7 +212,7 @@ function Inspection({ contract: c, overdue, onChanged }: { contract: StaffContra
           ))}
           <div className="damage-record">
             <b>Ghi nhận hư hỏng (nếu có)</b>
-            <textarea rows={3} value={damage} disabled={returned} onChange={(e) => setDamage(e.target.value)}
+            <textarea rows={3} maxLength={900} value={damage} disabled={returned} onChange={(e) => setDamage(e.target.value)}
               placeholder="Mô tả vị trí, mức độ hư hỏng… Để trống nếu kho bình thường." />
           </div>
         </section>
@@ -225,7 +227,7 @@ function Inspection({ contract: c, overdue, onChanged }: { contract: StaffContra
             <Info label="Hư hỏng">{damage.trim() ? 'Có ghi nhận' : 'Không'}</Info>
             <Info label="Phí quá hạn còn phải thu">{fmtMoney(stillOwed)}</Info>
             <label className="field"><span>Ghi chú nhân viên</span>
-              <textarea rows={2} value={staffNotes} disabled={returned} onChange={(e) => setStaffNotes(e.target.value)} placeholder="Không bắt buộc" />
+              <textarea rows={2} maxLength={500} value={staffNotes} disabled={returned} onChange={(e) => setStaffNotes(e.target.value)} placeholder="Không bắt buộc" />
             </label>
             {!returned && (
               <>
@@ -266,6 +268,13 @@ function RefundCard({ contract: c, returned, refundDue }: { contract: StaffContr
   const left = remaining ?? refundDue
   const refund = async (e: FormEvent) => {
     e.preventDefault()
+    const problem = firstError(
+      checkMoney(amount, 'Số tiền hoàn', 1, left),
+      method === 'BankTransfer' ? checkText(code, 'Mã giao dịch chuyển khoản', 100, false, 4) : '',
+      checkText(notes, 'Ghi chú', 255, true),
+      confirmed ? '' : 'Vui lòng xác nhận khách đã nhận đủ tiền hoàn cọc',
+    )
+    if (problem) return setError(problem.replace('quá lớn', `không được vượt số còn phải hoàn ${fmtMoney(left)}`))
     setError('')
     setBusy(true)
     try {
@@ -306,9 +315,9 @@ function RefundCard({ contract: c, returned, refundDue }: { contract: StaffContr
             </label>
           </div>
           {method === 'BankTransfer' && (
-            <label className="field"><span>Mã giao dịch</span><input value={code} onChange={(e) => setCode(e.target.value)} required placeholder="Mã chuyển khoản ngân hàng" /></label>
+            <label className="field"><span>Mã giao dịch</span><input value={code} maxLength={100} onChange={(e) => setCode(e.target.value)} required placeholder="Mã chuyển khoản ngân hàng" /></label>
           )}
-          <label className="field"><span>Ghi chú</span><input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Không bắt buộc" /></label>
+          <label className="field"><span>Ghi chú</span><input value={notes} maxLength={255} onChange={(e) => setNotes(e.target.value)} placeholder="Không bắt buộc" /></label>
           <label className="check-row"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> Khách đã nhận đủ số tiền hoàn cọc</label>
           <div className="row">
             <button className="btn primary grow" type="submit" disabled={busy || !confirmed}>{busy ? 'Đang ghi nhận…' : 'Xác nhận hoàn cọc'}</button>

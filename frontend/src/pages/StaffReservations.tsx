@@ -42,7 +42,11 @@ export default function StaffReservations() {
     return () => window.clearInterval(t)
   }, [load])
 
+  // One action at a time: a double click must not confirm or hand over twice.
+  const [busy, setBusy] = useState(false)
   const act = async (fn: () => Promise<unknown>, done: string) => {
+    if (busy) return
+    setBusy(true)
     setError('')
     setNotice('')
     try {
@@ -51,6 +55,8 @@ export default function StaffReservations() {
       await load()
     } catch (e) {
       setError((e as Error).message)
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -100,7 +106,7 @@ export default function StaffReservations() {
                   <td><StatusBadge status={r.status} /></td>
                   <td className="right">
                     {r.status === 'PendingDeposit' && (
-                      <button className="btn outline sm" onClick={() => act(() => api(`/api/reservations/${r.reservationId}/confirm-deposit`, { method: 'POST' }), `Đã xác nhận cọc cho đơn ${r.reservationCode}.`)}>
+                      <button className="btn outline sm" disabled={busy} onClick={() => act(() => api(`/api/reservations/${r.reservationId}/confirm-deposit`, { method: 'POST' }), `Đã xác nhận cọc cho đơn ${r.reservationCode}.`)}>
                         <Icon name="wallet" size={15} /> Đã nhận cọc
                       </button>
                     )}
@@ -112,6 +118,7 @@ export default function StaffReservations() {
                           : `Hẹn ${fmtTime(r.checkInAppointmentAt)} · có thể bàn giao sớm`}
                       </small>
                       <CheckIn
+                        busy={busy}
                         units={units.filter((u) => u.unitTypeName === r.unitTypeName)}
                         onCheckIn={(unit) => act(() => api(`/api/reservations/${r.reservationId}/check-in`, { body: { unitId: unit.unitId } }), `Đã bàn giao kho ${unit.unitCode} cho ${r.customerName} và tạo hợp đồng.`)}
                       />
@@ -129,7 +136,7 @@ export default function StaffReservations() {
   )
 }
 
-function CheckIn({ units, onCheckIn }: { units: StorageUnit[]; onCheckIn: (unit: StorageUnit) => void }) {
+function CheckIn({ units, onCheckIn, busy }: { units: StorageUnit[]; onCheckIn: (unit: StorageUnit) => void; busy: boolean }) {
   const [unitId, setUnitId] = useState<number | ''>(units[0]?.unitId ?? '')
   useEffect(() => {
     if (!units.some((u) => u.unitId === unitId)) setUnitId(units[0]?.unitId ?? '')
@@ -140,7 +147,7 @@ function CheckIn({ units, onCheckIn }: { units: StorageUnit[]; onCheckIn: (unit:
       <select value={unitId} onChange={(e) => setUnitId(Number(e.target.value))}>
         {units.map((u) => <option key={u.unitId} value={u.unitId}>{u.unitCode} · {u.zoneArea}</option>)}
       </select>
-      <button className="btn primary sm" onClick={() => { const u = units.find((x) => x.unitId === unitId); if (u) onCheckIn(u) }}>Bàn giao</button>
+      <button className="btn primary sm" disabled={busy} onClick={() => { const u = units.find((x) => x.unitId === unitId); if (u) onCheckIn(u) }}>Bàn giao</button>
     </span>
   )
 }

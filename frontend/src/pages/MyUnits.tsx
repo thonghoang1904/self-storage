@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { checkCitizenId, checkPhone, checkText, digitsOnly, firstError } from '../validation'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { AppointmentPicker } from '../components/appointment'
@@ -249,16 +250,35 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
     void load()
   }, [contractId])
 
+  const [busy, setBusy] = useState(false)
   const add = async (e: FormEvent) => {
     e.preventDefault()
+    if (busy) return
+    const problem = firstError(
+      checkText(form.fullName, 'Họ tên', 100, false, 2),
+      checkCitizenId(form.citizenId),
+      checkPhone(form.phoneNumber),
+      checkText(form.relationship, 'Quan hệ', 50, true),
+    )
+    if (problem) return setError(problem)
+    const cccd = digitsOnly(form.citizenId)
+    if (people.some((p) => p.citizenId === cccd)) return setError('Người có CCCD này đã được ủy quyền trên hợp đồng')
     setError('')
+    setBusy(true)
     try {
-      await api(base, { body: { ...form, relationship: form.relationship || null } })
+      await api(base, { body: {
+        fullName: form.fullName.trim().replace(/\s+/g, ' '),
+        citizenId: cccd,
+        phoneNumber: digitsOnly(form.phoneNumber),
+        relationship: form.relationship.trim() || null,
+      } })
       setForm({ fullName: '', phoneNumber: '', citizenId: '', relationship: '' })
       setAdding(false)
       void load()
     } catch (err) {
       setError((err as Error).message)
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -298,13 +318,13 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
       {adding ? (
         <form onSubmit={add} className="add-person">
           <div className="form-grid">
-            <label className="field"><span>Họ tên</span><input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required autoFocus /></label>
-            <label className="field"><span>Số CCCD</span><input value={form.citizenId} inputMode="numeric" onChange={(e) => setForm({ ...form, citizenId: e.target.value })} required /></label>
-            <label className="field"><span>Số điện thoại</span><input value={form.phoneNumber} inputMode="tel" onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })} required /></label>
-            <label className="field"><span>Quan hệ</span><input value={form.relationship} placeholder="Vợ, con, nhân viên…" onChange={(e) => setForm({ ...form, relationship: e.target.value })} /></label>
+            <label className="field"><span>Họ tên</span><input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} maxLength={100} required autoFocus /></label>
+            <label className="field"><span>Số CCCD</span><input value={form.citizenId} inputMode="numeric" maxLength={15} placeholder="12 chữ số" onChange={(e) => setForm({ ...form, citizenId: e.target.value })} required /></label>
+            <label className="field"><span>Số điện thoại</span><input value={form.phoneNumber} inputMode="tel" maxLength={15} placeholder="09xx xxx xxx" onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })} required /></label>
+            <label className="field"><span>Quan hệ</span><input value={form.relationship} maxLength={50} placeholder="Vợ, con, nhân viên…" onChange={(e) => setForm({ ...form, relationship: e.target.value })} /></label>
           </div>
           <div className="row">
-            <button className="btn primary sm" type="submit">Lưu người được ủy quyền</button>
+            <button className="btn primary sm" type="submit" disabled={busy}>{busy ? "Đang lưu…" : "Lưu người được ủy quyền"}</button>
             <button className="btn ghost sm" type="button" onClick={() => setAdding(false)}>Hủy</button>
           </div>
         </form>

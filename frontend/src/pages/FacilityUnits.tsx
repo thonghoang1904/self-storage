@@ -65,7 +65,11 @@ export default function FacilityUnits() {
     if (!form || !facilityId) return
     const type = types.find((t) => t.unitTypeId === form.unitTypeId) ?? types[0]
     if (!type) { setError('Vui lòng chọn loại kho'); return }
-    const body = { unitTypeId: type.unitTypeId, unitCode: form.unitCode.trim(), floorNumber: form.floorNumber, zoneArea: form.zoneArea.trim() || null, monthlyPrice: type.baseMonthlyRate }
+    const code = form.unitCode.trim().toUpperCase()
+    if (!/^[A-Z0-9][A-Z0-9-]{0,29}$/.test(code)) { setError('Mã kho chỉ gồm chữ in hoa không dấu, số và dấu -, vd: B-04'); return }
+    if (units.some((u) => u.unitCode.toUpperCase() === code && u.unitId !== form.unitId)) { setError(`Mã kho ${code} đã có trong cơ sở`); return }
+    if (!Number.isInteger(form.floorNumber) || form.floorNumber < 1 || form.floorNumber > 100) { setError('Tầng từ 1 đến 100'); return }
+    const body = { unitTypeId: type.unitTypeId, unitCode: code, floorNumber: form.floorNumber, zoneArea: form.zoneArea.trim() || null, monthlyPrice: type.baseMonthlyRate }
     const base = `/api/facility-management/facilities/${facilityId}/units`
     const ok = await run(
       () => form.unitId ? api(`${base}/${form.unitId}`, { method: 'PUT', body }) : api(base, { body }),
