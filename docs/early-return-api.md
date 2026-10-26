@@ -1,5 +1,7 @@
 # API trả kho sớm
 
+> **Đã làm ở backend** (`ContractsController`, bảng `EarlyReturnRequests` trong `database/14_early_return_requests.sql`, phí `EARLY_RETURN_FEE` = 200.000đ trong `FeeConfigurations`). Chạy backend ở Development thì migration tự áp dụng; database cũ chạy `database/upgrade_existing.sql` hoặc `scripts/RESET-DATABASE.bat`.
+
 Trang **Trả kho & Hoàn cọc** của nhân viên (`frontend/src/pages/StaffReturn.tsx`) và trang **chi tiết hợp đồng** của khách (`frontend/src/pages/ContractDetail.tsx`, nút "Trả kho sớm") đã có luồng trả kho sớm. Frontend gọi các API dưới đây; chế độ demo (`npm run dev:demo`) đã giả lập sẵn trong `frontend/src/mock/server.ts`.
 
 Quy tắc đề xuất: trả trước 20:00 ngày hết hạn là trả sớm. Không hoàn tiền thuê đã trả; thu phí trả sớm (phí cấu hình `EARLY_RETURN_FEE` trong `FeeConfigurations`, demo dùng 200.000đ) và trừ vào cọc trước; hủy các hóa đơn tiền thuê chưa thanh toán của kỳ sau ngày trả; ngày kết thúc hợp đồng đổi thành ngày trả thực tế.

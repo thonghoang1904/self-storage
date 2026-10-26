@@ -24,6 +24,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
     public DbSet<AuthorizedPerson> AuthorizedPersons => Set<AuthorizedPerson>();
     public DbSet<AccessRecord> AccessRecords => Set<AccessRecord>();
     public DbSet<VisitRegistration> VisitRegistrations => Set<VisitRegistration>();
+    public DbSet<EarlyReturnRequest> EarlyReturnRequests => Set<EarlyReturnRequest>();
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
     public DbSet<EmailOutboxMessage> EmailOutboxMessages => Set<EmailOutboxMessage>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
@@ -163,6 +164,20 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
             e.HasOne(x => x.AuthorizedPerson).WithMany().HasForeignKey(x => x.AuthorizedPersonId);
             e.HasOne(x => x.VerifiedByStaff).WithMany().HasForeignKey(x => x.VerifiedByStaffId);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.ExitConfirmedByStaffId);
+        });
+
+        b.Entity<EarlyReturnRequest>(e =>
+        {
+            e.ToTable("EarlyReturnRequests");
+            e.HasKey(x => x.RequestId);
+            e.Property(x => x.Reason).HasMaxLength(500);
+            e.Property(x => x.Status).HasMaxLength(20).IsUnicode(false);
+            e.Property(x => x.EarlyReturnFee).HasColumnType("decimal(18,2)");
+            e.Property(x => x.RequestedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.HasIndex(x => new { x.ContractId, x.Status });
+            e.HasOne(x => x.Contract).WithMany().HasForeignKey(x => x.ContractId);
+            e.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.CompletedByStaffId);
         });
 
         b.Entity<VisitRegistration>(e =>
