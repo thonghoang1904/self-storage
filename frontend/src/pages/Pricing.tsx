@@ -23,8 +23,8 @@ const FAQS = [
     a: 'Mỗi cơ sở có giờ hoạt động riêng (xem ở trang Liên hệ). Khi đến kho, bạn xuất trình CCCD tại cổng; nhân viên đối chiếu với hồ sơ hợp đồng rồi mới cho vào. Hệ thống không dùng mã PIN hay thẻ từ.',
   },
   {
-    q: 'Người nhà có vào kho thay tôi được không?',
-    a: 'Được. Bạn thêm người được ủy quyền trong mục "Kho của tôi". Người đó vào kho bằng CCCD của chính họ, và bạn xem được lịch sử ra vào của từng người.',
+    q: 'Người khác có vào kho thay tôi được không?',
+    a: 'Được, bạn ủy quyền cho bất kỳ ai: người nhà, bạn bè, nhân viên hay bên vận chuyển. Thêm họ trong mục "Kho của tôi"; người đó vào kho bằng CCCD của chính họ, và bạn xem được lịch sử ra vào của từng người.',
   },
   {
     q: 'Thủ tục đặt và nhận kho diễn ra thế nào?',

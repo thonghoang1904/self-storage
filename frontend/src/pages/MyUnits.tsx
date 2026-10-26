@@ -294,7 +294,7 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
 
   return (
     <div className="stack">
-      <p className="muted">Những người này được vào kho thay bạn khi xuất trình CCCD của chính họ cho nhân viên.</p>
+      <p className="muted">Bạn có thể ủy quyền cho bất kỳ ai (người nhà, bạn bè, nhân viên, bên vận chuyển). Họ vào kho thay bạn khi xuất trình CCCD của chính họ cho nhân viên.</p>
       <div className="person-list">
         {people.map((p) => (
           <div key={p.authorizedPersonId} className="person-row">
@@ -321,7 +321,7 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
             <label className="field"><span>Họ tên</span><input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} maxLength={100} required autoFocus /></label>
             <label className="field"><span>Số CCCD</span><input value={form.citizenId} inputMode="numeric" maxLength={15} placeholder="12 chữ số" onChange={(e) => setForm({ ...form, citizenId: e.target.value })} required /></label>
             <label className="field"><span>Số điện thoại</span><input value={form.phoneNumber} inputMode="tel" maxLength={15} placeholder="09xx xxx xxx" onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })} required /></label>
-            <label className="field"><span>Quan hệ</span><input value={form.relationship} maxLength={50} placeholder="Vợ, con, nhân viên…" onChange={(e) => setForm({ ...form, relationship: e.target.value })} /></label>
+            <label className="field"><span>Quan hệ</span><input value={form.relationship} maxLength={50} placeholder="vd: Người nhà, bạn bè, nhân viên, bên vận chuyển" onChange={(e) => setForm({ ...form, relationship: e.target.value })} /></label>
           </div>
           <div className="row">
             <button className="btn primary sm" type="submit" disabled={busy}>{busy ? "Đang lưu…" : "Lưu người được ủy quyền"}</button>

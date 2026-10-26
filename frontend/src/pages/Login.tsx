@@ -28,7 +28,7 @@ export function AuthShell({ title, subtitle, children }: { title: string; subtit
             <p>Bảo vệ tài sản cá nhân và doanh nghiệp của bạn với quy trình ra vào được xác thực bằng CCCD tại mọi cơ sở SafeKeep.</p>
             <ul className="check-list">
               <li><Icon name="check" size={12} />Nhân viên đối chiếu CCCD mỗi lượt vào kho</li>
-              <li><Icon name="check" size={12} />Ủy quyền cho người nhà ngay trên tài khoản</li>
+              <li><Icon name="check" size={12} />Ủy quyền cho bất kỳ ai ngay trên tài khoản</li>
               <li><Icon name="check" size={12} />Theo dõi lịch sử ra vào minh bạch</li>
             </ul>
           </div>

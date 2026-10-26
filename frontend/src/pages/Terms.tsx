@@ -49,7 +49,7 @@ export const TERMS: { title: string; icon: string; items: string[] }[] = [
     icon: 'door',
     items: [
       'Mỗi lượt vào kho phải đăng ký lịch trước và được nhân viên duyệt; tại cổng, nhân viên đối chiếu CCCD.',
-      'Chỉ chủ hợp đồng hoặc người được ủy quyền (dùng CCCD của chính họ) được vào kho. Không dùng mã PIN.',
+      'Chỉ chủ hợp đồng hoặc người được ủy quyền (dùng CCCD của chính họ) được vào kho. Chủ hợp đồng có thể ủy quyền cho bất kỳ ai, không bắt buộc là người nhà. Không dùng mã PIN.',
       'Kho bị khóa do quá hạn hoặc đang bảo trì thì không được vào cho đến khi xử lý xong.',
     ],
   },

@@ -218,7 +218,7 @@ export default function VisitRegistrationPage() {
                   )}
                   {purpose === 'Khác' && (
                     <label className="field"><span>Ghi rõ mục đích *</span>
-                      <input value={otherPurpose} maxLength={255} onChange={(e) => setOtherPurpose(e.target.value)} placeholder="vd: Bàn giao chìa khóa cho người nhà" required />
+                      <input value={otherPurpose} maxLength={255} onChange={(e) => setOtherPurpose(e.target.value)} placeholder="vd: Bàn giao chìa khóa cho người được ủy quyền" required />
                     </label>
                   )}
                 </section>
@@ -235,7 +235,7 @@ export default function VisitRegistrationPage() {
                       </button>
                     ))}
                   </div>
-                  {people.length === 0 && <p className="hint"><Icon name="users" size={15} /> Muốn người nhà vào thay bạn? <Link to={`/my-units?contract=${c.contractId}&tab=people`} className="link">Thêm người được ủy quyền</Link></p>}
+                  {people.length === 0 && <p className="hint"><Icon name="users" size={15} /> Muốn người khác vào thay bạn? <Link to={`/my-units?contract=${c.contractId}&tab=people`} className="link">Thêm người được ủy quyền</Link></p>}
                   <label className="field"><span>Số CCCD của người đến kho *</span>
                     <input value={citizenId} inputMode="numeric" maxLength={25} onChange={(e) => setCitizenId(e.target.value)} placeholder="Nhập đủ số trên thẻ CCCD" required />
                   </label>
