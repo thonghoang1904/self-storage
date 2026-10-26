@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type FocusEvent, type FormEvent, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, IS_DEMO } from '../api'
+import { CITIZEN_ID_FILTER, citizenIdError, confirmError, emailError, fullNameError, NAME_FILTER, normalizePhone, passwordError, PHONE_FILTER, phoneError, USERNAME_FILTER, usernameError } from '../validation'
 import { useAuth } from '../auth'
 import { DemoBar } from '../components/layout'
 import { CorridorArt, Icon, Logo } from '../components/ui'
 import { homeFor } from '../types'
 import { FormField, PasswordChecklist, useValidatedForm } from '../components/form'
-import { CITIZEN_ID_FILTER, citizenIdError, confirmError, emailError, fullNameError, NAME_FILTER, normalizePhone, passwordError, PHONE_FILTER, phoneError, USERNAME_FILTER, usernameError } from '../validation'
 
 const DEMO_ACCOUNTS = [
   { username: 'customer1', label: 'Khách hàng', note: 'Đang thuê kho B-01' },
@@ -29,7 +29,7 @@ export function AuthShell({ title, subtitle, children }: { title: string; subtit
             <p>Bảo vệ tài sản cá nhân và doanh nghiệp của bạn với quy trình ra vào được xác thực bằng CCCD tại mọi cơ sở SafeKeep.</p>
             <ul className="check-list">
               <li><Icon name="check" size={12} />Nhân viên đối chiếu CCCD mỗi lượt vào kho</li>
-              <li><Icon name="check" size={12} />Ủy quyền cho người nhà ngay trên tài khoản</li>
+              <li><Icon name="check" size={12} />Ủy quyền cho bất kỳ ai ngay trên tài khoản</li>
               <li><Icon name="check" size={12} />Theo dõi lịch sử ra vào minh bạch</li>
             </ul>
           </div>
@@ -159,7 +159,7 @@ export function Login() {
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    void signIn(username, password)
+    void signIn(username.trim(), password)
   }
 
   const signInWithGoogle = async (idToken: string) => {

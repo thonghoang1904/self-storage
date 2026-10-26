@@ -122,7 +122,7 @@ export default function AdminContracts() {
         </div>
       </section>
 
-      {openId && <ContractPanel key={openId} contractId={openId} onClose={() => setOpenId(null)} onDone={done} />}
+      {openId && <div id="contract-panel" className="scroll-target"><ContractPanel key={openId} contractId={openId} onClose={() => setOpenId(null)} onDone={done} /></div>}
     </div>
   )
 }
@@ -142,6 +142,11 @@ function ContractPanel({ contractId, onClose, onDone }: { contractId: number; on
       setTerms(x.termsConditions ?? '')
     }).catch((e) => setError((e as Error).message))
   }, [contractId])
+  // The contract opens under the table: bring it into view (again once loaded) so "Chi tiết" visibly opens it.
+  const loaded = c !== null
+  useEffect(() => {
+    document.getElementById('contract-panel')?.scrollIntoView({ block: 'start' })
+  }, [contractId, loaded])
 
   if (!c) return <section className="panel">{error ? <p className="alert bad"><Icon name="alert" size={16} />{error}</p> : <p className="muted">Đang tải hợp đồng…</p>}</section>
 
@@ -153,6 +158,7 @@ function ContractPanel({ contractId, onClose, onDone }: { contractId: number; on
 
   const save = async (e: FormEvent) => {
     e.preventDefault()
+    if (terms.trim().length > 4000) return setError('Điều khoản tối đa 4000 ký tự')
     setError('')
     if (!endDate || endDate < minEnd) { setError(`Ngày kết thúc mới phải từ ${fmtDate(minEnd)} trở đi (sau ngày bắt đầu, không ở quá khứ).`); return }
     setBusy(true)
@@ -268,6 +274,9 @@ function CreateFromReservation({ facilities, onCancel, onDone }: { facilities: F
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    if (!Number(reservationId)) return setError('Vui lòng nhập mã đơn đặt kho')
+    if (!unitId) return setError('Vui lòng chọn kho trống để bàn giao')
+    if (notes.trim().length < 5) return setError('Vui lòng ghi tình trạng kho khi bàn giao (ít nhất 5 ký tự)')
     setBusy(true)
     setError('')
     try {

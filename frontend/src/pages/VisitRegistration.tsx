@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { CITIZEN_ID_FILTER, citizenIdError, digitsOnly, textError } from '../validation'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { Empty, Icon, UnitArt } from '../components/ui'
 import { VisitPurposes, type ContractDetail, type Facility, type Person, type VisitRegistration } from '../types'
-import { CITIZEN_ID_FILTER, citizenIdError, textError } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
 
 /**
@@ -99,6 +99,8 @@ export default function VisitRegistrationPage() {
     e.preventDefault()
     setError('')
     setNotice('')
+    if (!entrySlots.includes(entry) || !exit) return setError('Ngày này không còn khung giờ trống, vui lòng chọn ngày khác')
+    if (finalPurpose.length > 255) return setError('Mục đích tối đa 255 ký tự')
     if (!agree) return setError('Vui lòng xác nhận cam kết trước khi gửi đăng ký')
     const invalid = textError(finalPurpose ?? '', 'Mục đích vào kho', 3, 255) || citizenIdError(citizenId)
     if (invalid) return setError(invalid)
@@ -106,7 +108,7 @@ export default function VisitRegistrationPage() {
     try {
       const r = await api<VisitRegistration>(`/api/contracts/${id}/visit-registrations`, {
         body: {
-          citizenId: citizenId.trim(),
+          citizenId: digitsOnly(citizenId),
           authorizedPersonId: who,
           scheduledEntryAt: `${date}T${entry}:00+07:00`,
           scheduledExitAt: `${date}T${exit}:00+07:00`,
@@ -166,7 +168,7 @@ export default function VisitRegistrationPage() {
         <ol className="journey">
           <li className="done"><span><Icon name="check" size={14} /></span>Hợp đồng đã ký</li>
           <li className="active"><span>1</span>Đăng ký vào kho</li>
-          <li className="later"><span>2</span>Khai báo đồ mang vào <small>(sắp có)</small></li>
+          <li className="later"><span>2</span><Link to={`/my-units/${c.contractId}/move-in`} className="link">Khai báo đồ mang vào</Link></li>
         </ol>
 
         {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
@@ -214,9 +216,12 @@ export default function VisitRegistrationPage() {
                       {VisitPurposes.map((p) => <option key={p}>{p}</option>)}
                     </select>
                   </label>
+                  {purpose === 'Gửi đồ vào kho' && (
+                    <p className="hint"><Icon name="package" size={15} /> Mang đồ vào kho? <Link to={`/my-units/${c.contractId}/move-in`} className="link">Dùng mẫu Đăng ký đưa đồ vào kho</Link> để khai báo danh sách đồ, phương tiện và người phụ.</p>
+                  )}
                   {purpose === 'Khác' && (
                     <label className="field"><span>Ghi rõ mục đích *</span>
-                      <input value={otherPurpose} maxLength={255} onChange={(e) => setOtherPurpose(e.target.value)} placeholder="vd: Bàn giao chìa khóa cho người nhà" required />
+                      <input value={otherPurpose} maxLength={255} onChange={(e) => setOtherPurpose(e.target.value)} placeholder="vd: Bàn giao chìa khóa cho người được ủy quyền" required />
                     </label>
                   )}
                 </section>
@@ -233,7 +238,7 @@ export default function VisitRegistrationPage() {
                       </button>
                     ))}
                   </div>
-                  {people.length === 0 && <p className="hint"><Icon name="users" size={15} /> Muốn người nhà vào thay bạn? <Link to={`/my-units?contract=${c.contractId}&tab=people`} className="link">Thêm người được ủy quyền</Link></p>}
+                  {people.length === 0 && <p className="hint"><Icon name="users" size={15} /> Muốn người khác vào thay bạn? <Link to={`/my-units?contract=${c.contractId}&tab=people`} className="link">Thêm người được ủy quyền</Link></p>}
                   <label className="field"><span>Số CCCD của người đến kho *</span>
                     <input value={citizenId} inputMode="numeric" maxLength={12} onChange={(e) => setCitizenId(cid.keep(e.target.value))} placeholder="Nhập đủ số trên thẻ CCCD" required />
                     <FieldNote text={cid.hint} />

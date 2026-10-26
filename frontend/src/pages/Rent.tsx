@@ -7,7 +7,7 @@ import { AppointmentPicker, depositDueAt, depositMissed, pickupMissed } from '..
 import { Empty, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
 import { TermsList, TERMS_VERSION } from './Terms'
 import { CancellationStatuses, type Availability, type CancellationRequest, type Facility, type Reservation, type UnitType } from '../types'
-import { CODE_FILTER, promoCodeError, textError } from '../validation'
+import { CODE_FILTER, localToday, promoCodeError, textError } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
 
 const DURATIONS = [1, 3, 6, 12]
@@ -34,7 +34,8 @@ export default function Rent() {
   const [availability, setAvailability] = useState<Availability[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [startDate, setStartDate] = useState(todayIso)
+  // After 19:00 there is no time left to pay and pick up today: default to tomorrow.
+  const [startDate, setStartDate] = useState(() => { if (new Date().getHours() < 19) return todayIso(); const d = new Date(); d.setDate(d.getDate() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` })
   const [months, setMonths] = useState(6)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -97,6 +98,10 @@ export default function Rent() {
 
   const reserve = async () => {
     if (!facilityId || !selected) return
+    const dateProblem = checkStartDate(startDate)
+    if (dateProblem) { setError(dateProblem); return }
+    const promoProblem = promoCodeError(promoCode)
+    if (promoProblem) { setError(promoProblem); return }
     if (signError) { setError(signError); return }
     setError('')
     setBusy(true)
@@ -339,6 +344,16 @@ export default function Rent() {
 }
 
 /** Reason form for POST /api/reservations/{id}/cancellation-requests. */
+/** Start date: today or later (and before 19:00 when it is today, so there is still time to pay and pick up), within a year. */
+function checkStartDate(iso: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return 'Vui lòng chọn ngày bắt đầu thuê'
+  const today = todayIso()
+  if (iso < today) return 'Ngày bắt đầu không được ở quá khứ'
+  if (iso === today && new Date().getHours() >= 19) return 'Đã quá giờ nhận kho hôm nay, vui lòng chọn từ ngày mai'
+  if (iso > localToday(365)) return 'Chỉ đặt trước tối đa 1 năm'
+  return ''
+}
+
 function CancelForm({ reservation: r, onDone }: { reservation: Reservation; onDone: (c: CancellationRequest | null) => void }) {
   const [reason, setReason] = useState('')
   const [error, setError] = useState('')

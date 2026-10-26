@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, fmtDate, fmtTime, IS_DEMO } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
@@ -87,7 +87,12 @@ export default function Gate() {
     void refresh()
   }
 
+  // Ignore repeated clicks while a review or exit is being saved.
+  const inFlight = useRef(new Set<string>())
   const review = async (r: VisitRegistration, approve: boolean, notes?: string) => {
+    const key = `r${r.visitRegistrationId}`
+    if (inFlight.current.has(key)) return
+    inFlight.current.add(key)
     setError('')
     try {
       await api(`/api/gate/facilities/${facilityId}/visit-registrations/${r.visitRegistrationId}/review`, { body: { approve, notes: notes || null } })
@@ -95,16 +100,23 @@ export default function Gate() {
       void refresh()
     } catch (e) {
       setError((e as Error).message)
+    } finally {
+      inFlight.current.delete(key)
     }
   }
 
   const confirmExit = async (r: AccessRecord) => {
+    const key = `x${r.accessRecordId}`
+    if (inFlight.current.has(key)) return
+    inFlight.current.add(key)
     try {
       await api(`/api/gate/access-records/${r.accessRecordId}/exit`, { method: 'POST' })
       setNotice({ tone: 'ok', text: `${r.visitorName} đã ra khỏi kho ${r.unitCode}.` })
       void refresh()
     } catch (e) {
       setError((e as Error).message)
+    } finally {
+      inFlight.current.delete(key)
     }
   }
 
@@ -264,8 +276,9 @@ function RegistrationsPanel({ facilityId, regs, onReview }: { facilityId: number
                 <span className={`badge ${live ? 'ok' : 'info'}`}>{live ? 'Đang trong giờ' : 'Sắp tới'}</span>
               ) : rejecting === r.visitRegistrationId ? (
                 <span className="row wrap">
-                  <input value={notes} maxLength={500} placeholder="Lý do từ chối" onChange={(e) => setNotes(e.target.value)} />
-                  <button className="btn danger sm" disabled={notes.trim().length < 3} title="Nhập lý do từ chối (ít nhất 3 ký tự)" onClick={() => { onReview(r, false, notes.trim()); setRejecting(null); setNotes('') }}>Từ chối</button>
+                  <input value={notes} maxLength={500} placeholder="Lý do từ chối (bắt buộc)" onChange={(e) => setNotes(e.target.value)} aria-label="Lý do từ chối" />
+                  <button className="btn danger sm" disabled={notes.trim().length < 5} title={notes.trim().length < 5 ? 'Nhập lý do ít nhất 5 ký tự để khách biết vì sao bị từ chối' : undefined}
+                    onClick={() => { onReview(r, false, notes.trim()); setRejecting(null); setNotes('') }}>Từ chối</button>
                   <button className="btn ghost sm" onClick={() => setRejecting(null)}>Hủy</button>
                 </span>
               ) : (

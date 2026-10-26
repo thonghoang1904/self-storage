@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { checkText, firstError, localToday, transactionCodeError } from '../validation'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { depositDueAt, depositMissed } from '../components/appointment'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { Invoice, Reservation, StaffContract } from '../types'
-import { transactionCodeError } from '../validation'
 
 /**
  * Staff billing: invoices of the facility (GET /api/invoices/facilities/{id}) and recording a cash or
@@ -74,7 +74,7 @@ export default function StaffBilling() {
   const pageRows = shown.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE)
 
   const due = invoices.filter((i) => i.status === 'Unpaid' || i.status === 'Overdue')
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   const paidToday = invoices.flatMap((i) => i.payments).filter((p) => p.status === 'Success' && p.paymentDate.slice(0, 10) === today)
 
   return (
@@ -175,7 +175,7 @@ export default function StaffBilling() {
       <div className="panel collection-note">
         <div>
           <b>Sau khi ghi nhận</b>
-          <p className="muted">Hóa đơn cọc đã thu → đơn đặt kho chuyển "Đã nhận cọc", sẵn sàng bàn giao. Hóa đơn gia hạn đã thu → hợp đồng tự gia hạn đến ngày mới.</p>
+          <p className="muted">Hóa đơn cọc đã thu → đơn đặt kho chuyển "Chờ bàn giao kho". Hóa đơn gia hạn đã thu → hợp đồng tự gia hạn đến ngày mới.</p>
         </div>
       </div>
     </div>
@@ -202,6 +202,11 @@ function PaymentForm({ invoice: inv, customer, onCancel, onDone }: { invoice: In
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    const problem = firstError(
+      checkText(notes, 'Ghi chú', 255, true),
+      confirmed ? '' : `Vui lòng xác nhận đã nhận đủ ${fmtMoney(inv.totalAmount)}`,
+    )
+    if (problem) return setError(problem)
     setError('')
     // A bank transfer needs its reference to reconcile; cash may carry an optional receipt number.
     const invalid = method === 'BankTransfer' || code.trim() ? transactionCodeError(code) : null

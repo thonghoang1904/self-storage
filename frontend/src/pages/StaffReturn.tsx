@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { amountError, checkMoney, checkText, firstError, textError, transactionCodeError } from '../validation'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { FormField } from '../components/form'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { EarlyReturnQuote, EarlyReturnRequest, OverdueSummary, ReturnUnitResult, StaffContract } from '../types'
-import { amountError, textError, transactionCodeError } from '../validation'
 
 /**
  * Figma "storage-return-inspection": find a contract, check its return schedule and deposit,
@@ -188,6 +188,7 @@ function Inspection({ contract: c, overdue, request, onChanged }: {
   const ready = allChecked && confirmed && (!early || informed)
 
   const complete = async () => {
+    if (!allChecked) return setError(`Vui lòng kiểm tra đủ ${CHECKLIST.length} mục trước khi hoàn tất trả kho`)
     setError('')
     setShowErrors(true)
     if (Object.values(errors).some(Boolean)) return
@@ -335,6 +336,13 @@ function RefundCard({ contract: c, returned, refundDue }: { contract: StaffContr
   const left = remaining ?? refundDue
   const refund = async (e: FormEvent) => {
     e.preventDefault()
+    const problem = firstError(
+      checkMoney(amount, 'Số tiền hoàn', 1, left),
+      method === 'BankTransfer' ? checkText(code, 'Mã giao dịch chuyển khoản', 100, false, 4) : '',
+      checkText(notes, 'Ghi chú', 255, true),
+      confirmed ? '' : 'Vui lòng xác nhận khách đã nhận đủ tiền hoàn cọc',
+    )
+    if (problem) return setError(problem.replace('quá lớn', `không được vượt số còn phải hoàn ${fmtMoney(left)}`))
     setError('')
     const value = Number(amount)
     const invalid = (!Number.isInteger(value) && 'Số tiền hoàn phải là số nguyên (đồng)')

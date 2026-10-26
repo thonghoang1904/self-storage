@@ -12,7 +12,7 @@ export const Roles = {
 export const GATE_ROLES: string[] = [Roles.Staff, Roles.Manager]
 
 export const homeFor = (role: string) =>
-  role === Roles.Manager ? '/facility' : GATE_ROLES.includes(role) ? '/gate' : role === Roles.Customer ? '/my-units' : role === Roles.Admin ? '/admin/users' : role === Roles.OpsManager ? '/ops/facilities' : '/'
+  role === Roles.Manager ? '/facility' : GATE_ROLES.includes(role) ? '/gate' : role === Roles.Customer ? '/my-units' : role === Roles.Admin ? '/admin' : role === Roles.OpsManager ? '/ops/facilities' : '/'
 
 export const RoleLabels: Record<string, string> = {
   [Roles.Customer]: 'Khách hàng',
@@ -327,6 +327,8 @@ export interface Renewal {
   renewalFee: number
   status: string
   requestedAt: string
+  /** Renewal invoice to pay (RenewalDto.InvoiceId). */
+  invoiceId?: number | null
 }
 
 /** A contract in the staff list of one facility. */
@@ -520,7 +522,7 @@ export const StatusLabels: Record<string, { label: string; tone: 'ok' | 'warn' |
   Liquidated: { label: 'Đã thanh lý', tone: 'muted' },
   // reservations
   PendingDeposit: { label: 'Chờ đặt cọc', tone: 'warn' },
-  Confirmed: { label: 'Đã nhận cọc', tone: 'info' },
+  Confirmed: { label: 'Chờ bàn giao kho', tone: 'info' },
   CheckedIn: { label: 'Đã bàn giao', tone: 'ok' },
   Cancelled: { label: 'Đã hủy', tone: 'muted' },
   Expired: { label: 'Hết hạn cọc', tone: 'muted' },
@@ -682,4 +684,68 @@ export interface OperationsReportRow {
   renewedContracts: number
   liquidatedContracts: number
   netRevenue: number
+}
+
+// ---- awaiting backend (spec in docs/API-cho-backend.md): contract suspension and account security
+
+/** Customer asks to pause a contract for a while (no access, holding fee instead of rent, end date pushed back). */
+export interface ContractSuspension {
+  suspensionId: number
+  contractId: number
+  startDate: string
+  endDate: string
+  days: number
+  reason: string
+  notes: string | null
+  /** Pending | Approved | Rejected | Cancelled | Active | Completed */
+  status: string
+  holdingFee: number
+  newEndDate: string
+  requestedAt: string
+  reviewNotes: string | null
+}
+export const SuspensionStatuses: Record<string, { label: string; tone: 'ok' | 'warn' | 'bad' | 'info' | 'muted' }> = {
+  Pending: { label: 'Chờ duyệt', tone: 'warn' },
+  Approved: { label: 'Đã duyệt', tone: 'ok' },
+  Active: { label: 'Đang tạm ngưng', tone: 'info' },
+  Completed: { label: 'Đã kết thúc', tone: 'muted' },
+  Rejected: { label: 'Bị từ chối', tone: 'bad' },
+  Cancelled: { label: 'Đã hủy', tone: 'muted' },
+}
+
+export interface SecuritySettings {
+  accessAlerts: boolean
+  newDeviceAlerts: boolean
+  paymentEmails: boolean
+}
+export interface AccountProfile {
+  userId: number
+  username: string
+  fullName: string
+  email: string
+  phoneNumber: string
+  citizenId: string | null
+  /** GET /api/auth/profile also returns these. */
+  address?: string | null
+  role?: string
+  status?: string
+  createdAt: string
+}
+export interface LoginSession {
+  sessionId: string
+  device: string
+  location: string | null
+  lastActiveAt: string
+  current: boolean
+}
+export interface AccountActivity {
+  logId: number
+  /** Login | Password | Settings | Session | Contract */
+  category: string
+  action: string
+  details: string | null
+  ipAddress: string | null
+  createdAt: string
+  /** Success | Warning | Failed */
+  result: string
 }

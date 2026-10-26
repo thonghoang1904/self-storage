@@ -4,6 +4,7 @@ import { api, ApiError, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { FormField } from '../components/form'
 import { Badge, Empty, Icon, StatusBadge, UnitArt, splitTypeName } from '../components/ui'
+import { readPolicyAcks } from './ContractPolicy'
 import type { AccessRecord, ContractDetail as Detail, EarlyReturnQuote, EarlyReturnRequest, Facility, Invoice, Person, Renewal, StorageUnit, UnitType } from '../types'
 import { textError } from '../validation'
 
@@ -81,7 +82,6 @@ export default function ContractDetail() {
   const [people, setPeople] = useState<Person[]>([])
   const [lastVisit, setLastVisit] = useState<AccessRecord | null>(null)
   const [showRenew, setShowRenew] = useState(wantRenew)
-  const [showPolicy, setShowPolicy] = useState(false)
   const [showEarly, setShowEarly] = useState(wantEarly)
   const [error, setError] = useState('')
 
@@ -128,7 +128,6 @@ export default function ContractDetail() {
   const area = type ? Math.round(type.lengthMeters * type.widthMeters * 100) / 100 : null
   // Until the day before the end date the customer can ask to hand the unit back early; on the end date it is a normal return.
   const canReturnEarly = c.status === 'Active' && left > 0
-  const noticeDays = Math.round((asLocal(c.endDate).getTime() - new Date(c.renewalAvailableFrom).setHours(0, 0, 0, 0)) / DAY)
 
   return (
     <>
@@ -201,30 +200,28 @@ export default function ContractDetail() {
               <div className="info-row"><span className="muted">Số dư cọc</span><b>{fmtMoney(c.depositBalance)}</b></div>
             </>}
             {!ended && (
-              <button className="btn primary self-start" onClick={() => setShowRenew(!showRenew)}>
-                <Icon name="calendar" size={15} /> {pending ? 'Xem yêu cầu gia hạn' : 'Gia hạn hợp đồng'}
-              </button>
+              <div className="row wrap">
+                <Link to={`/my-units/${c.contractId}/renew`} className="btn primary"><Icon name="calendar" size={15} /> {pending ? 'Xem yêu cầu gia hạn' : 'Gia hạn hợp đồng'}</Link>
+                <button className="btn ghost sm" onClick={() => setShowRenew(!showRenew)}>{showRenew ? 'Ẩn gia hạn nhanh' : 'Gia hạn nhanh'}</button>
+              </div>
             )}
             {showRenew && <RenewalPanel contract={c} renewals={renewals} onChanged={load} />}
             <div className="action-grid">
+              {!ended && <Link to={`/my-units/${c.contractId}/move-in`} className="btn soft sm"><Icon name="package" size={14} /> Đưa đồ vào kho</Link>}
               {!ended && <Link to={`/support?contract=${c.contractId}`} className="btn soft sm"><Icon name="alert" size={14} /> Báo sự cố</Link>}
               {canReturnEarly
                 ? <button type="button" className={`btn soft sm ${showEarly ? 'active' : ''}`} onClick={() => setShowEarly(!showEarly)}><Icon name="logout" size={14} /> Trả kho sớm</button>
                 : !ended && <Link to={`/support?contract=${c.contractId}&topic=return`} className="btn soft sm"><Icon name="logout" size={14} /> Yêu cầu trả kho</Link>}
-              <button type="button" className={`btn soft sm ${showPolicy ? 'active' : ''}`} onClick={() => setShowPolicy(!showPolicy)}><Icon name="clipboard" size={14} /> Xem policy hợp đồng</button>
-              <Link to={`/my-units?contract=${c.contractId}&tab=history`} className="btn soft sm"><Icon name="shield" size={14} /> Bảo mật & nhật ký</Link>
+              {!ended && <Link to={`/my-units/${c.contractId}/suspend`} className="btn soft sm"><Icon name="clock" size={14} /> Tạm ngưng hợp đồng</Link>}
+              <Link to={`/my-units/${c.contractId}/policy`} className="btn soft sm"><Icon name="clipboard" size={14} /> Xem policy hợp đồng</Link>
+              <Link to="/account/security" className="btn soft sm"><Icon name="shield" size={14} /> Bảo mật & nhật ký</Link>
             </div>
             {showEarly && canReturnEarly && <EarlyReturnPanel contract={c} facility={facility} />}
-            {showPolicy && (
-              <ul className="policy-list">
-                <li>Phí thuê {fmtMoney(c.monthlyRentFee)}/tháng, hóa đơn phát hành theo từng kỳ một tháng kể từ ngày bắt đầu.</li>
-                <li>Tiền cọc {fmtMoney(c.depositPaid)}, hoàn lại sau khi trả kho và nhân viên kiểm tra kho đạt.</li>
-                <li>Gửi yêu cầu gia hạn trong {noticeDays} ngày trước ngày hết hạn, từ {fmtDate(c.renewalAvailableFrom)}.</li>
-                <li>Trả kho trước 20:00 ngày {fmtDate(c.endDate)}. Quá 24 giờ, kho bị khóa và tính phí lưu kho mỗi ngày bằng phí tháng / 30, cấn trừ vào tiền cọc.</li>
-                <li>Muốn trả kho trước hạn: gửi yêu cầu trả kho sớm. Tiền thuê đã trả không được hoàn, phí trả sớm trừ vào tiền cọc.</li>
-                <li>Ra vào kho bằng CCCD của chủ hợp đồng hoặc người được ủy quyền, nhân viên cổng đối chiếu mỗi lượt.</li>
-                <li><Link to="/terms" className="link">Xem toàn bộ điều khoản & chính sách hợp đồng</Link></li>
-              </ul>
+            {!readPolicyAcks()[c.contractNumber] && !ended && (
+              <div className="notice warn-notice">
+                <span className="notice-icon warn"><Icon name="clipboard" size={16} /></span>
+                <div className="grow"><b>Bạn chưa xác nhận policy hợp đồng</b><p>Xem lại điều khoản đang áp dụng và tích xác nhận, không cần ký. <Link to={`/my-units/${c.contractId}/policy`} className="link">Xem & xác nhận</Link></p></div>
+              </div>
             )}
           </section>
 
@@ -286,7 +283,7 @@ export default function ContractDetail() {
 
 const MONTH_CHOICES = [1, 3, 6, 12]
 
-/** Request a renewal (open from the facility's notice period before the end date until 20:00 on the end date). */
+/** Request a renewal: open for the whole term (early renewal) until 20:00 on the end date; the new term continues from the current end date. */
 function RenewalPanel({ contract: c, renewals, onChanged }: { contract: Detail; renewals: Renewal[]; onChanged: () => Promise<void> }) {
   const [months, setMonths] = useState(3)
   const [busy, setBusy] = useState(false)
@@ -328,6 +325,7 @@ function RenewalPanel({ contract: c, renewals, onChanged }: { contract: Detail; 
       ) : windowOpen ? (
         <div className="stack">
           <b>Chọn thời gian gia hạn</b>
+          <small className="muted">Gia hạn sớm không mất ngày nào: thời hạn mới được cộng tiếp từ ngày hết hạn hiện tại.</small>
           <div className="segmented self-start">
             {MONTH_CHOICES.map((m) => (
               <button key={m} className={months === m ? 'active' : ''} onClick={() => setMonths(m)}>{m} tháng</button>
@@ -454,6 +452,13 @@ function EarlyReturnPanel({ contract: c, facility }: { contract: Detail; facilit
       ) : (
         <form className="stack" onSubmit={submit} noValidate>
           <b>Trả kho trước ngày hết hạn {fmtDate(c.endDate)}</b>
+          <ul className="policy-list early-policy">
+            <li>Tiền thuê đã trả không được hoàn; hóa đơn tiền thuê chưa thanh toán của các kỳ sau ngày trả kho được hủy.</li>
+            <li>Phí trả kho sớm trừ vào tiền cọc {fmtMoney(c.depositPaid)}, phần cọc còn lại hoàn sau khi nhân viên kiểm tra kho đạt.</li>
+            <li>Đến trả kho đúng ngày đã hẹn, trước 20:00, mang CCCD của chủ hợp đồng; dọn hết đồ ra khỏi kho.</li>
+            <li>Có thể hủy yêu cầu khi nhân viên chưa nhận trả kho.</li>
+            <li><Link to={`/my-units/${c.contractId}/policy`} className="link">Xem toàn bộ điều khoản & chính sách hợp đồng</Link></li>
+          </ul>
           <FormField label="Ngày bạn đến trả kho" error={tried ? errors.date : null}>
             <input type="date" value={date} min={today} max={lastDay} onChange={(e) => setDate(e.target.value)} aria-invalid={tried && errors.date ? true : undefined} />
           </FormField>

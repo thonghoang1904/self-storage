@@ -52,6 +52,7 @@ export function PortalHeader() {
               <NavLink to="/invoices">Thanh Toán</NavLink>
               <NavLink to="/support">Hỗ Trợ</NavLink>
               <NavLink to="/rent">Thuê Kho</NavLink>
+              <NavLink to="/account/security">Tài Khoản</NavLink>
             </>
           ) : (
             <>
@@ -61,15 +62,15 @@ export function PortalHeader() {
             </>
           )}
           {isStaff && <NavLink to={user.role === Roles.Manager ? '/facility' : '/gate'}>{user.role === Roles.Manager ? 'Màn hình quản lý' : 'Màn hình nhân viên'}</NavLink>}
-          {user?.role === Roles.Admin && <NavLink to="/admin/users">Màn hình quản trị</NavLink>}
+          {user?.role === Roles.Admin && <NavLink to="/admin">Màn hình quản trị</NavLink>}
           {user?.role === Roles.OpsManager && <NavLink to="/ops/facilities">Màn hình vận hành</NavLink>}
           <div className="portal-nav-actions">
             {user ? (
               <>
-                <span className="user-chip">
+                <Link to="/account/profile" className="user-chip" title="Sửa thông tin tài khoản">
                   <span className="avatar">{initials(user.fullName)}</span>
                   <span className="user-chip-text"><b>{user.fullName}</b><small>{user.username}</small></span>
-                </span>
+                </Link>
                 <button className="btn outline sm" onClick={() => { logout(); navigate('/') }}>Đăng Xuất</button>
               </>
             ) : (
@@ -221,11 +222,13 @@ export function StaffLayout() {
           </nav>
           {user && (
             <div className="sidebar-user">
-              <span className="avatar">{initials(user.fullName)}</span>
+              <Link to="/account/profile" className="sidebar-user-link" title="Sửa thông tin tài khoản">
+                <span className="avatar">{initials(user.fullName)}</span>
               <span className="grow">
                 <b>{user.fullName}</b>
                 <small>{roleLabel(user.role)}</small>
               </span>
+              </Link>
               <button className="icon-btn" title="Đăng xuất" onClick={() => { logout(); navigate('/login') }}><Icon name="logout" /></button>
             </div>
           )}
@@ -264,7 +267,8 @@ function ConsoleLayout({ area, nav, titles }: { area: string; nav: ConsoleNavIte
   const { pathname } = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
   useEffect(() => setMenuOpen(false), [pathname])
-  const title = Object.entries(titles).find(([path]) => pathname.startsWith(path))?.[1] ?? ''
+  // Longest matching prefix, so /admin/units is not titled by /admin.
+  const title = Object.entries(titles).filter(([path]) => pathname === path || pathname.startsWith(`${path}/`)).sort((a, b) => b[0].length - a[0].length)[0]?.[1] ?? ''
 
   return (
     <div className="staff">
@@ -278,11 +282,13 @@ function ConsoleLayout({ area, nav, titles }: { area: string; nav: ConsoleNavIte
         </nav>
         {user && (
           <div className="sidebar-user">
-            <span className="avatar">{initials(user.fullName)}</span>
+            <Link to="/account/profile" className="sidebar-user-link" title="Sửa thông tin tài khoản">
+              <span className="avatar">{initials(user.fullName)}</span>
             <span className="grow">
               <b>{user.fullName}</b>
               <small>{roleLabel(user.role)}</small>
             </span>
+            </Link>
             <button className="icon-btn" title="Đăng xuất" onClick={() => { logout(); navigate('/login') }}><Icon name="logout" /></button>
           </div>
         )}
@@ -306,7 +312,8 @@ export function AdminLayout() {
     <ConsoleLayout
       area="Admin"
       titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu',
-        '/admin/storage': 'Kho Lưu Trữ Hệ Thống', '/admin/customers': 'Khách Hàng & Hợp Đồng', '/admin/settings': 'Cài Đặt', '/admin': 'Tổng Quan Quản Lý' }}
+        '/admin/storage': 'Kho Lưu Trữ Hệ Thống', '/admin/units': 'Kho Từng Cơ Sở', '/admin/facilities': 'Quản Lý Cơ Sở', '/admin/customers': 'Khách Hàng & Hợp Đồng',
+        '/admin/policies': 'Giá & Chính Sách', '/admin/settings': 'Cài Đặt', '/admin': 'Tổng Quan Quản Lý' }}
       nav={[
         { icon: 'grid', label: 'Tổng Quan', to: '/admin', end: true },
         { icon: 'building', label: 'Kho Lưu Trữ', to: '/admin/storage' },
@@ -315,6 +322,7 @@ export function AdminLayout() {
         { icon: 'file', label: 'Hợp Đồng', to: '/admin/contracts' },
         { icon: 'chart', label: 'Doanh Thu', to: '/admin/revenue' },
         { icon: 'mail', label: 'Email Hệ Thống', to: '/admin/emails' },
+        { icon: 'clipboard', label: 'Giá & Chính Sách', to: '/admin/policies' },
         { icon: 'settings', label: 'Cài Đặt', to: '/admin/settings' },
       ]}
     />
