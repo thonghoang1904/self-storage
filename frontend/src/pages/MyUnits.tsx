@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
-import { AppointmentPicker } from '../components/appointment'
+import { AppointmentPicker, depositDueAt, depositMissed, pickupMissed } from '../components/appointment'
 import { Empty, Eyebrow, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
 import { DenyReasons, type AccessRecord, type Contract, type Facility, type Invoice, type Person, type Reservation } from '../types'
 import { FormField, useValidatedForm } from '../components/form'
@@ -106,11 +106,14 @@ export default function MyUnits() {
                       <li><Icon name="card" size={14} /> Chi phí: <b className="cyan">{fmtMoney(c.monthlyRentFee)}/tháng</b></li>
                     </ul>
                     <div className="row">
-                      <Link to={`/my-units/${c.contractId}?renew=1`} className="btn primary sm grow">Gia Hạn</Link>
+                      {c.status === 'Active' && <Link to={`/my-units/${c.contractId}?renew=1`} className="btn primary sm grow">Gia Hạn</Link>}
                       <Link to={`/my-units/${c.contractId}`} className="btn outline sm grow">Chi Tiết</Link>
                     </div>
                     {(c.status === 'Active' || c.status === 'Renewed') && (
                       <Link to={`/my-units/${c.contractId}/visit`} className="btn ghost sm block"><Icon name="calendar" size={14} /> Đăng Ký Ra Vào Kho</Link>
+                    )}
+                    {c.status === 'Active' && left > 0 && (
+                      <Link to={`/my-units/${c.contractId}?return=early`} className="btn ghost sm block"><Icon name="logout" size={14} /> Trả Kho Sớm</Link>
                     )}
                   </div>
                 </article>
@@ -202,14 +205,16 @@ export default function MyUnits() {
                 <div key={`r${r.reservationId}`} className="notice">
                   <span className="notice-icon warn"><Icon name="calendar" size={16} /></span>
                   <div className="grow">
-                    <div className="notice-head"><b>{r.status === 'PendingDeposit' ? 'Chờ đặt cọc' : r.checkInAppointmentAt ? 'Đã hẹn nhận kho' : 'Đặt lịch nhận kho'}</b><small>Nhận kho {fmtDate(r.expectedStartDate)}</small></div>
+                    <div className="notice-head"><b>{depositMissed(r) ? 'Quá hạn đặt cọc' : pickupMissed(r) ? 'Quá hạn nhận kho' : r.status === 'PendingDeposit' ? 'Chờ đặt cọc' : r.checkInAppointmentAt ? 'Đã hẹn nhận kho' : 'Đặt lịch nhận kho'}</b><small>Nhận kho {fmtDate(r.expectedStartDate)}</small></div>
                     <p>
                       Đơn {r.reservationCode} ({splitTypeName(r.unitTypeName).name}, {r.facilityName})
-                      {r.status === 'PendingDeposit' ? ` cần đặt cọc ${fmtMoney(r.depositAmount)} trước ${fmtTime(r.depositDeadline)}.`
+                      {depositMissed(r) ? ' không được đặt cọc kịp nên sẽ tự hủy. Bạn có thể đặt kho lại.'
+                        : pickupMissed(r) ? ` đã quá 20:00 ngày ${fmtDate(r.expectedStartDate)} mà chưa nhận kho nên sẽ tự hủy; tiền cọc được hoàn sau khi trừ phí hủy.`
+                        : r.status === 'PendingDeposit' ? ` cần đặt cọc ${fmtMoney(r.depositAmount)} trước ${fmtTime(depositDueAt(r))}.`
                         : r.checkInAppointmentAt ? ` — đến cơ sở đúng giờ hẹn để nhân viên bàn giao kho.`
                         : ` đã nhận cọc. Chọn giờ đến nhận kho trong ngày ${fmtDate(r.expectedStartDate)}, nhân viên chỉ bàn giao từ giờ hẹn.`}
                     </p>
-                    {r.status === 'Confirmed' && (
+                    {r.status === 'Confirmed' && !pickupMissed(r) && (
                       <AppointmentPicker reservation={r} operatingHours={facilities.find((f) => f.facilityName === r.facilityName)?.operatingHours}
                         onSaved={(u) => setReservations((rs) => rs.map((x) => (x.reservationId === u.reservationId ? u : x)))} />
                     )}
@@ -221,7 +226,7 @@ export default function MyUnits() {
                   <span className="notice-icon bad"><Icon name="alert" size={16} /></span>
                   <div className="grow">
                     <div className="notice-head"><b>Cảnh báo hết hạn hợp đồng</b><small>Còn {daysUntil(c.endDate)} ngày</small></div>
-                    <p>Kho {c.unitCode} của bạn sắp kết thúc thời hạn thuê vào ngày {fmtDate(c.endDate)}. <Link to={`/my-units/${c.contractId}?renew=1`} className="link">Gửi yêu cầu gia hạn</Link></p>
+                    <p>Kho {c.unitCode} của bạn sắp kết thúc thời hạn thuê vào ngày {fmtDate(c.endDate)}. <Link to={`/my-units/${c.contractId}?renew=1`} className="link">Xem cách gia hạn</Link></p>
                   </div>
                 </div>
               ))}

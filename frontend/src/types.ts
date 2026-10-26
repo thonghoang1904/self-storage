@@ -373,6 +373,45 @@ export interface ReturnUnitResult {
   depositRefundDue: number
   lateFeesStillOwed: number
   returnedAt: string
+  /** Early returns only: the early-return fee. It is included in lateFeesDeducted / lateFeesStillOwed. */
+  earlyReturnFee?: number
+}
+
+/**
+ * GET /api/contracts/{id}/early-return-quote: what returning before the end date costs, so staff can tell the
+ * customer before completing. Rent already paid is not refunded; the fee comes out of the deposit first.
+ */
+export interface EarlyReturnQuote {
+  contractId: number
+  endDate: string
+  daysEarly: number
+  earlyReturnFee: number
+  lateFees: number
+  depositPaid: number
+  depositDeducted: number
+  depositRefundDue: number
+  amountStillOwed: number
+  /** Unpaid rent invoices for months after the return that will be cancelled. */
+  invoicesCancelled: number
+}
+
+/**
+ * A customer's request to hand the unit back before the end date (POST /api/contracts/{id}/early-return-requests).
+ * Staff complete it at the facility with the early return; the customer can cancel it while it is Pending.
+ */
+export interface EarlyReturnRequest {
+  requestId: number
+  contractId: number
+  contractNumber: string
+  unitCode: string
+  customerName: string
+  /** The day the customer plans to come and empty the unit. */
+  returnDate: string
+  reason: string
+  earlyReturnFee: number
+  /** Pending | Completed | Cancelled */
+  status: string
+  requestedAt: string
 }
 
 export interface SupportRequest {
