@@ -83,36 +83,7 @@ public sealed class BillingService(SelfStorageDbContext db, AccessService access
             throw AppException.Conflict("Mã giao dịch đã được ghi nhận");
 
         var now = clock.GetLocalNow().DateTime;
-        if (invoice.InvoiceType == "DEPOSIT")
-        {
-            if (invoice.ReservationId is not int reservationId)
-                throw AppException.Conflict("Hóa đơn cọc không liên kết với đơn đặt kho");
-            var reservation = await db.Reservations.FirstOrDefaultAsync(r => r.ReservationId == reservationId, ct)
-                ?? throw AppException.NotFound("Không tìm thấy đơn đặt kho");
-            if (reservation.Status != ReservationStatus.PendingDeposit || reservation.DepositDeadline <= now
-                || invoice.TotalAmount != reservation.DepositAmount)
-                throw AppException.Conflict("Đơn đặt kho đã hết hạn hoặc số tiền cọc không còn hợp lệ");
-            reservation.Status = ReservationStatus.Confirmed;
-        }
-        else if (invoice.InvoiceType == "RENEWAL")
-        {
-            var renewal = await db.ContractRenewals.FirstOrDefaultAsync(r => r.InvoiceId == invoiceId, ct)
-                ?? throw AppException.Conflict("Hóa đơn không liên kết với yêu cầu gia hạn");
-            var contract = await db.Contracts.Include(c => c.Unit)
-                .FirstOrDefaultAsync(c => c.ContractId == renewal.ContractId, ct)
-                ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
-            if (renewal.Status != "Pending" || contract.Status != ContractStatus.Active
-                || contract.EndDate != renewal.OldEndDate
-                || now >= renewal.OldEndDate.ToDateTime(new TimeOnly(20, 0))
-                || invoice.TotalAmount != renewal.RenewalFee)
-                throw AppException.Conflict("Yêu cầu gia hạn đã hết hạn hoặc không còn hợp lệ");
-
-            renewal.Status = "Paid";
-            renewal.ApprovedByStaffId = staffId;
-            renewal.ProcessedAt = now;
-            contract.EndDate = renewal.NewEndDate;
-            contract.Unit.Status = UnitStatus.Rented;
-        }
+        await ApplyPaidInvoiceAsync(invoice, staffId, now, ct);
 
         invoice.Status = "Paid";
         var payment = new Payment
@@ -175,6 +146,26 @@ public sealed class BillingService(SelfStorageDbContext db, AccessService access
             throw AppException.Conflict("Hóa đơn không còn chờ thanh toán hoặc số tiền không khớp");
 
         var now = clock.GetLocalNow().DateTime;
+        await ApplyPaidInvoiceAsync(invoice, null, now, ct);
+
+        invoice.Status = "Paid";
+        payment.Status = "Success";
+        payment.PaymentDate = now;
+        payment.PaymentNotes = string.IsNullOrWhiteSpace(providerTransactionId)
+            ? "Thanh toán trực tuyến đã được xác nhận."
+            : $"Thanh toán trực tuyến đã được xác nhận. Mã giao dịch cổng: {providerTransactionId}";
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return true;
+    }
+
+    /// <summary>
+    /// What a paid invoice unlocks; shared by staff payments and VNPay/MoMo callbacks.
+    /// DEPOSIT confirms the reservation. RENEWAL extends the contract (paid early at any time while it is active).
+    /// OVERDUE_FINE settles the late fees left after the deposit was used up at return.
+    /// </summary>
+    private async Task ApplyPaidInvoiceAsync(Invoice invoice, int? staffId, DateTime now, CancellationToken ct)
+    {
         if (invoice.InvoiceType == "DEPOSIT")
         {
             if (invoice.ReservationId is not int reservationId)
@@ -194,27 +185,35 @@ public sealed class BillingService(SelfStorageDbContext db, AccessService access
             var contract = await db.Contracts.Include(c => c.Unit)
                 .FirstOrDefaultAsync(c => c.ContractId == renewal.ContractId, ct)
                 ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
+            // Paying early is allowed; only a contract that got locked for overdue (or was returned) can no longer renew.
             if (renewal.Status != "Pending" || contract.Status != ContractStatus.Active
                 || contract.EndDate != renewal.OldEndDate
-                || now >= renewal.OldEndDate.ToDateTime(new TimeOnly(20, 0))
                 || invoice.TotalAmount != renewal.RenewalFee)
                 throw AppException.Conflict("Yêu cầu gia hạn đã hết hạn hoặc không còn hợp lệ");
 
             renewal.Status = "Paid";
+            renewal.ApprovedByStaffId = staffId;
             renewal.ProcessedAt = now;
             contract.EndDate = renewal.NewEndDate;
-            contract.Unit.Status = UnitStatus.Rented;
+            // Only lift an overdue lock; a unit under maintenance stays under maintenance.
+            if (contract.Unit.Status == UnitStatus.OverdueLocked) contract.Unit.Status = UnitStatus.Rented;
         }
-
-        invoice.Status = "Paid";
-        payment.Status = "Success";
-        payment.PaymentDate = now;
-        payment.PaymentNotes = string.IsNullOrWhiteSpace(providerTransactionId)
-            ? "Thanh toán trực tuyến đã được xác nhận."
-            : $"Thanh toán trực tuyến đã được xác nhận. Mã giao dịch cổng: {providerTransactionId}";
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-        return true;
+        else if (invoice.InvoiceType == "OVERDUE_FINE" && invoice.ContractId is int contractId)
+        {
+            var overdue = await db.OverdueRecords
+                .Where(o => o.ContractId == contractId && o.ResolvedDate == null)
+                .OrderByDescending(o => o.OverdueId)
+                .FirstOrDefaultAsync(ct);
+            var returned = await db.Contracts.AnyAsync(c => c.ContractId == contractId
+                && c.Status == ContractStatus.Terminated, ct);
+            if (overdue is not null && returned)
+            {
+                overdue.ActionTaken = "Resolved";
+                overdue.ResolvedDate = now;
+                overdue.HandledByStaffId = staffId ?? overdue.HandledByStaffId;
+                overdue.Notes = $"{overdue.Notes} Đã thu đủ phí quá hạn còn lại ({invoice.TotalAmount:N0}đ, hóa đơn {invoice.InvoiceNumber}).".Trim();
+            }
+        }
     }
 
     public async Task EnsureStaffOwnsInvoiceAsync(Invoice invoice, int staffId, CancellationToken ct)

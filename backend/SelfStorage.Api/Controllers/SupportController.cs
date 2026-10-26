@@ -215,8 +215,21 @@ public class SupportController(SelfStorageDbContext db, AccessService access, Ti
                       ?? throw AppException.NotFound("Không tìm thấy yêu cầu hỗ trợ");
         var staffId = User.GetUserId();
         await access.EnsureAssignedAsync(staffId, request.FacilityId, ct);
-        if (request.AssignedStaffId is not null && request.AssignedStaffId != staffId)
+        // The facility manager may take over a request or hand it to another staff member (AssignToStaffId).
+        var isManager = User.IsInRole(AppRoles.Manager);
+        if (req.AssignToStaffId is not null && !isManager)
+            throw AppException.Forbidden("Chỉ quản lý cơ sở mới được giao yêu cầu cho nhân viên khác");
+        if (request.AssignedStaffId is not null && request.AssignedStaffId != staffId && !isManager)
             throw AppException.Conflict("Yêu cầu đã được nhân viên khác tiếp nhận");
+        var assignee = staffId;
+        if (req.AssignToStaffId is int target && target != staffId)
+        {
+            var targetWorksHere = await db.FacilityStaffAssignments.AnyAsync(a => a.StaffId == target
+                && a.FacilityId == request.FacilityId && a.Status == "Active"
+                && (a.Staff.Role.RoleName == AppRoles.Staff || a.Staff.Role.RoleName == AppRoles.Manager), ct);
+            if (!targetWorksHere) throw AppException.BadRequest("Nhân viên được giao không làm việc tại cơ sở này");
+            assignee = target;
+        }
         if (request.Status == "Closed" || (request.Status == "Resolved" && req.Status != "Closed"))
             throw AppException.Conflict("Yêu cầu đã kết thúc xử lý");
         var validTransition = request.Status switch
@@ -233,7 +246,7 @@ public class SupportController(SelfStorageDbContext db, AccessService access, Ti
             throw AppException.Conflict("Cần hoàn tất toàn bộ checklist trước khi đánh dấu ticket đã xử lý");
 
         var previousStatus = request.Status;
-        request.AssignedStaffId = staffId;
+        request.AssignedStaffId = assignee;
         request.Status = req.Status;
         request.ResolvedAt = req.Status is "Resolved" or "Closed" ? clock.GetLocalNow().DateTime : null;
         db.SupportUpdates.Add(new SupportUpdate

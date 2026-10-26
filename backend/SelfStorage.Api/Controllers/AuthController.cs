@@ -35,19 +35,24 @@ public class AuthController(
     [AllowAnonymous]
     public async Task<ActionResult<UserDto>> Register(RegisterRequest req, CancellationToken ct)
     {
-        if (await db.Users.AnyAsync(u => u.Username == req.Username || u.Email == req.Email || u.CitizenId == req.CitizenId, ct))
-            throw AppException.Conflict("Tên đăng nhập, email hoặc CCCD đã được sử dụng");
+        var username = req.Username.Trim();
+        var email = Contact.NormalizeEmail(req.Email);
+        var citizenId = Contact.NormalizeCitizenId(req.CitizenId);
+        if (await db.Users.AnyAsync(u => u.Username == username, ct))
+            throw AppException.Conflict("Tên đăng nhập đã được sử dụng");
+        await EnsureEmailFreeAsync(email, null, ct);
+        await EnsureCitizenIdFreeAsync(citizenId, null, ct);
 
         var role = await db.Roles.SingleAsync(r => r.RoleName == AppRoles.Customer, ct);
         var user = new User
         {
             RoleId = role.RoleId,
             Role = role,
-            Username = req.Username,
-            FullName = req.FullName,
-            Email = req.Email,
-            PhoneNumber = req.PhoneNumber,
-            CitizenId = req.CitizenId,
+            Username = username,
+            FullName = req.FullName.Trim(),
+            Email = email,
+            PhoneNumber = Contact.NormalizePhone(req.PhoneNumber),
+            CitizenId = citizenId,
         };
         user.PasswordHash = hasher.HashPassword(user, req.Password);
         db.Users.Add(user);
@@ -59,7 +64,8 @@ public class AuthController(
     [AllowAnonymous]
     public async Task<ActionResult<LoginResponse>> Login(LoginRequest req, CancellationToken ct)
     {
-        var user = await db.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Username == req.Username, ct);
+        var username = req.Username.Trim();
+        var user = await db.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Username == username, ct);
         if (user is null || user.Status != "Active" ||
             hasher.VerifyHashedPassword(user, user.PasswordHash, req.Password) == PasswordVerificationResult.Failed)
             throw new AppException(StatusCodes.Status401Unauthorized, "Sai tên đăng nhập hoặc mật khẩu");
@@ -97,8 +103,9 @@ public class AuthController(
             .FirstOrDefaultAsync(u => u.GoogleSubject == payload.Subject, ct);
         if (user is null)
         {
+            var googleEmail = Contact.NormalizeEmail(payload.Email);
             user = await db.Users.Include(u => u.Role)
-                .FirstOrDefaultAsync(u => u.Email == payload.Email && u.Status == "Active", ct);
+                .FirstOrDefaultAsync(u => u.Email == googleEmail && u.Status == "Active", ct);
             if (user is null || (user.GoogleSubject is not null && user.GoogleSubject != payload.Subject))
                 throw new AppException(StatusCodes.Status401Unauthorized, "Tài khoản Google không thể đăng nhập.");
 
@@ -141,7 +148,7 @@ public class AuthController(
                 "Dịch vụ email chưa được cấu hình đầy đủ.");
         }
 
-        var email = req.Email.Trim();
+        var email = Contact.NormalizeEmail(req.Email);
         var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email && u.Status == "Active", ct);
         if (user is null) return Ok(genericResponse);
 
@@ -241,7 +248,60 @@ public class AuthController(
         return ToDto(user);
     }
 
+    /// <summary>Own contact details (email, phone, CCCD, address).</summary>
+    [HttpGet("profile")]
+    [Authorize]
+    public async Task<ProfileDto> Profile(CancellationToken ct)
+    {
+        var id = User.GetUserId();
+        var user = await db.Users.Include(u => u.Role).SingleAsync(u => u.UserId == id, ct);
+        return ToProfileDto(user);
+    }
+
+    /// <summary>Update own contact details. A CCCD on file is fixed; an empty one can be filled in once.</summary>
+    [HttpPut("profile")]
+    [Authorize]
+    public async Task<ProfileDto> UpdateProfile(UpdateProfileRequest req, CancellationToken ct)
+    {
+        var id = User.GetUserId();
+        var user = await db.Users.Include(u => u.Role).SingleAsync(u => u.UserId == id, ct);
+        var email = Contact.NormalizeEmail(req.Email);
+        await EnsureEmailFreeAsync(email, id, ct);
+
+        if (!string.IsNullOrWhiteSpace(req.CitizenId))
+        {
+            var citizenId = Contact.NormalizeCitizenId(req.CitizenId);
+            if (user.CitizenId is not null && Contact.NormalizeCitizenId(user.CitizenId) != citizenId)
+                throw AppException.Conflict("Số CCCD đã lưu không thể tự thay đổi. Vui lòng mang CCCD đến cơ sở để nhân viên cập nhật.");
+            await EnsureCitizenIdFreeAsync(citizenId, id, ct);
+            user.CitizenId = citizenId;
+        }
+
+        user.FullName = req.FullName.Trim();
+        user.Email = email;
+        user.PhoneNumber = Contact.NormalizePhone(req.PhoneNumber);
+        user.Address = string.IsNullOrWhiteSpace(req.Address) ? null : req.Address.Trim();
+        user.UpdatedAt = clock.GetLocalNow().DateTime;
+        await db.SaveChangesAsync(ct);
+        return ToProfileDto(user);
+    }
+
+    private async Task EnsureEmailFreeAsync(string email, int? exceptUserId, CancellationToken ct)
+    {
+        if (await db.Users.AnyAsync(u => u.Email == email && u.UserId != exceptUserId, ct))
+            throw AppException.Conflict("Email đã được sử dụng");
+    }
+
+    private async Task EnsureCitizenIdFreeAsync(string citizenId, int? exceptUserId, CancellationToken ct)
+    {
+        if (await db.Users.AnyAsync(u => u.CitizenId == citizenId && u.UserId != exceptUserId, ct))
+            throw AppException.Conflict("Số CCCD đã được đăng ký cho tài khoản khác");
+    }
+
     private static UserDto ToDto(User u) => new(u.UserId, u.Username, u.FullName, u.Role.RoleName);
+
+    private static ProfileDto ToProfileDto(User u) =>
+        new(u.UserId, u.Username, u.FullName, u.Role.RoleName, u.Email, u.PhoneNumber, u.CitizenId, u.Address);
 
     private Task<int> InvalidateResetTokenAsync(int userId, string details, CancellationToken ct) =>
         db.ActivityLogs

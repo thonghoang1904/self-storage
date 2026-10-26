@@ -34,37 +34,52 @@ public class ContractsController(
         return db.Contracts.Where(c => c.CustomerId == me).OrderByDescending(c => c.StartDate).Select(ToDto).ToListAsync(ct);
     }
 
+    /// <summary>Contract with deposit balance and late fees (customer: own contracts; staff: their facility).</summary>
     [HttpGet("{id:int}")]
-    [Authorize(Roles = AppRoles.Customer)]
+    [Authorize(Roles = AppRoles.Customer + "," + AppRoles.GateRoles)]
     public async Task<ContractDetailDto> Detail(int id, CancellationToken ct)
     {
         var contract = await db.Contracts.Include(c => c.Unit).ThenInclude(u => u.Facility)
-            .FirstOrDefaultAsync(c => c.ContractId == id && c.CustomerId == User.GetUserId(), ct)
+            .Include(c => c.Customer)
+            .FirstOrDefaultAsync(c => c.ContractId == id, ct)
             ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
+        if (User.IsInRole(AppRoles.Customer))
+        {
+            if (contract.CustomerId != User.GetUserId()) throw AppException.NotFound("Không tìm thấy hợp đồng");
+        }
+        else
+        {
+            await access.EnsureAssignedAsync(User.GetUserId(), contract.Unit.FacilityId, ct);
+        }
         var policy = await rentalPolicies.ForFacilityAsync(contract.Unit.FacilityId, ct);
-        var overdue = await db.OverdueRecords.Where(r => r.ContractId == id)
+        // Only fees still owed: a resolved overdue record (paid or settled at return) no longer counts.
+        var overdue = await db.OverdueRecords.Where(r => r.ContractId == id && r.ResolvedDate == null)
             .OrderByDescending(r => r.OverdueId).FirstOrDefaultAsync(ct);
         var accrued = overdue?.AccumulatedLateFee ?? 0m;
+        var hasPendingRenewal = await db.ContractRenewals.AnyAsync(r => r.ContractId == id && r.Status == "Pending", ct);
         return new ContractDetailDto(contract.ContractId, contract.ContractNumber, contract.Unit.FacilityId,
             contract.Unit.Facility.FacilityName, contract.UnitId, contract.Unit.UnitCode, contract.Unit.Status,
             contract.StartDate, contract.EndDate, contract.Status, contract.MonthlyRentFee, contract.DepositPaid,
             accrued, Math.Max(0m, contract.DepositPaid - accrued), Math.Max(0m, accrued - contract.DepositPaid),
-            contract.EndDate.AddDays(-policy.RenewalNoticeDays).ToDateTime(TimeOnly.MinValue));
+            contract.EndDate.AddDays(-policy.RenewalNoticeDays).ToDateTime(TimeOnly.MinValue),
+            contract.Customer.FullName, ContractSchedule.ExpiresAt(contract.EndDate), hasPendingRenewal);
     }
 
+    /// <summary>
+    /// Ask for a renewal (and pay it early) at any time while the contract is active, also after it expired
+    /// at 20:00 as long as the unit has not been locked for overdue yet. RenewalNoticeDays is only a reminder.
+    /// </summary>
     [HttpPost("{id:int}/renewals")]
     [Authorize(Roles = AppRoles.Customer)]
     public async Task<RenewalDto> RequestRenewal(int id, RequestRenewalRequest req, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
-        var now = clock.GetLocalNow().DateTime;
-        var today = DateOnly.FromDateTime(now);
         var contract = await db.Contracts.Include(c => c.Unit).FirstOrDefaultAsync(c => c.ContractId == id
             && c.CustomerId == User.GetUserId(), ct) ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
-        var policy = await rentalPolicies.ForFacilityAsync(contract.Unit.FacilityId, ct);
-        if (contract.Status != ContractStatus.Active || today < contract.EndDate.AddDays(-policy.RenewalNoticeDays)
-            || now >= contract.EndDate.ToDateTime(new TimeOnly(20, 0)))
-            throw AppException.Conflict($"Chỉ có thể yêu cầu gia hạn trong {policy.RenewalNoticeDays} ngày trước ngày hết hạn, khi hợp đồng còn hiệu lực");
+        if (contract.Status != ContractStatus.Active)
+            throw AppException.Conflict(contract.Status == ContractStatus.Overdue
+                ? "Hợp đồng đã quá hạn và kho đang bị khóa; vui lòng liên hệ nhân viên để trả kho"
+                : "Chỉ có thể gia hạn hợp đồng đang hiệu lực");
         if (await db.ContractRenewals.AnyAsync(r => r.ContractId == id && r.Status == "Pending", ct))
             throw AppException.Conflict("Hợp đồng đã có yêu cầu gia hạn đang chờ xử lý");
 
@@ -157,6 +172,10 @@ public class ContractsController(
         return NoContent();
     }
 
+    /// <summary>
+    /// Take the unit back at any hour (24/7), also before the end date. Late fees are deducted from the deposit;
+    /// pending renewals are cancelled together with their unpaid invoices.
+    /// </summary>
     [HttpPost("{id:int}/return")]
     [Authorize(Roles = AppRoles.GateRoles)]
     public async Task<ReturnUnitDto> ReturnUnit(int id, ReturnUnitRequest req, CancellationToken ct)
@@ -167,9 +186,7 @@ public class ContractsController(
         var staffId = User.GetUserId();
         await access.EnsureAssignedAsync(staffId, contract.Unit.FacilityId, ct);
         var now = clock.GetLocalNow().DateTime;
-        var returnAppointment = contract.EndDate.ToDateTime(new TimeOnly(20, 0));
-        if (now < returnAppointment)
-            throw AppException.Conflict($"Lịch trả kho là 20:00 ngày {contract.EndDate:dd/MM/yyyy}");
+        var early = now < ContractSchedule.ExpiresAt(contract.EndDate);
         if (!req.AllItemsRemoved)
             throw AppException.BadRequest("Nhân viên cần xác nhận kho đã được dọn sạch trước khi hoàn tất trả kho");
         if (contract.Status is not (ContractStatus.Active or ContractStatus.Overdue))
@@ -190,10 +207,24 @@ public class ContractsController(
             StaffId = staffId,
             HandoverType = "CHECK_OUT",
             HandoverDateTime = now,
-            UnitConditionNotes = $"Đã xác nhận dọn sạch kho. {req.UnitConditionNotes}",
+            UnitConditionNotes = $"Đã xác nhận dọn sạch kho{(early ? " (trả kho trước hạn)" : "")}. {req.UnitConditionNotes}",
             CustomerSignatureConfirmed = true,
             StaffNotes = req.StaffNotes,
         });
+        var pendingRenewals = await db.ContractRenewals
+            .Where(r => r.ContractId == id && r.Status == "Pending").ToListAsync(ct);
+        var renewalInvoiceIds = pendingRenewals.Where(r => r.InvoiceId != null).Select(r => r.InvoiceId!.Value).ToList();
+        if (renewalInvoiceIds.Count > 0
+            && await db.Payments.AnyAsync(p => renewalInvoiceIds.Contains(p.InvoiceId) && p.Status == "Pending", ct))
+            throw AppException.Conflict("Khách đang có giao dịch gia hạn trực tuyến chờ xác nhận; hãy chờ giao dịch hoàn tất rồi trả kho");
+        foreach (var renewal in pendingRenewals)
+        {
+            renewal.Status = "Rejected";
+            renewal.ApprovedByStaffId = staffId;
+            renewal.ProcessedAt = now;
+        }
+        await db.Invoices.Where(i => renewalInvoiceIds.Contains(i.InvoiceId) && i.Status == "Unpaid")
+            .ForEachAsync(i => i.Status = "Cancelled", ct);
         contract.Status = ContractStatus.Terminated;
         contract.Unit.Status = UnitStatus.Available;
         if (overdue is not null)
@@ -285,16 +316,42 @@ public class ContractsController(
                       join unit in db.StorageUnits on contract.UnitId equals unit.UnitId
                       join customer in db.Users on contract.CustomerId equals customer.UserId
                       where unit.FacilityId == facilityId && overdue.ResolvedDate == null
-                      orderby overdue.LockAppliedDate
+                      let returned = contract.Status == ContractStatus.Terminated
+                      // Still holding the unit first, then returned units that still owe late fees.
+                      orderby returned, overdue.LockAppliedDate
                       select new OverdueSummaryDto(overdue.OverdueId, contract.ContractId,
                           contract.ContractNumber, customer.FullName, unit.UnitCode, contract.EndDate,
                           contract.Status, unit.Status, overdue.DaysOverdue, overdue.AccumulatedLateFee,
-                          contract.DepositPaid > overdue.AccumulatedLateFee
+                          !returned && contract.DepositPaid > overdue.AccumulatedLateFee
                               ? contract.DepositPaid - overdue.AccumulatedLateFee : 0m,
                           overdue.AccumulatedLateFee > contract.DepositPaid
                               ? overdue.AccumulatedLateFee - contract.DepositPaid : 0m,
-                          overdue.LockAppliedDate))
+                          overdue.LockAppliedDate, returned))
             .ToListAsync(ct);
+    }
+
+    /// <summary>Contracts to follow up: expiring within <paramref name="days"/> days, expired or overdue, not returned yet.</summary>
+    [HttpGet("facilities/{facilityId:int}/due")]
+    [Authorize(Roles = AppRoles.GateRoles)]
+    public async Task<List<DueContractDto>> DueContracts(int facilityId, [FromQuery] int days = 7,
+        CancellationToken ct = default)
+    {
+        await access.EnsureAssignedAsync(User.GetUserId(), facilityId, ct);
+        var until = DateOnly.FromDateTime(clock.GetLocalNow().DateTime).AddDays(Math.Clamp(days, 0, 90));
+        var rows = await db.Contracts
+            .Where(c => c.Unit.FacilityId == facilityId && c.EndDate <= until
+                && (c.Status == ContractStatus.Active || c.Status == ContractStatus.Overdue))
+            .OrderBy(c => c.EndDate)
+            .Select(c => new
+            {
+                c.ContractId, c.ContractNumber, c.Customer.FullName, c.Customer.PhoneNumber, c.Unit.UnitCode,
+                c.EndDate, c.Status, UnitStatus = c.Unit.Status,
+                HasPendingRenewal = db.ContractRenewals.Any(r => r.ContractId == c.ContractId && r.Status == "Pending"),
+            })
+            .ToListAsync(ct);
+        return rows.Select(c => new DueContractDto(c.ContractId, c.ContractNumber, c.FullName, c.PhoneNumber,
+            c.UnitCode, c.EndDate, ContractSchedule.ExpiresAt(c.EndDate), c.Status, c.UnitStatus,
+            c.HasPendingRenewal)).ToList();
     }
 
     [HttpGet("{id:int}/authorized-persons")]
@@ -311,11 +368,19 @@ public class ContractsController(
     [Authorize(Roles = AppRoles.Customer)]
     public async Task<PersonDto> AddAuthorizedPerson(int id, AddAuthorizedPersonRequest req, CancellationToken ct)
     {
-        await LoadOwnAsync(id, ct);
-        var person = await db.AuthorizedPersons.FirstOrDefaultAsync(p => p.ContractId == id && p.CitizenId == req.CitizenId, ct);
+        var contract = await LoadOwnAsync(id, ct);
+        if (contract.Status is ContractStatus.Terminated or ContractStatus.Liquidated)
+            throw AppException.Conflict("Hợp đồng đã kết thúc, không thể thêm người được ủy quyền");
+        var citizenId = Contact.NormalizeCitizenId(req.CitizenId);
+        var ownerCitizenId = await db.Users.Where(u => u.UserId == contract.CustomerId)
+            .Select(u => u.CitizenId).SingleAsync(ct);
+        if (ownerCitizenId is not null && Contact.NormalizeCitizenId(ownerCitizenId) == citizenId)
+            throw AppException.BadRequest("Đây là CCCD của chủ hợp đồng; chủ hợp đồng không cần thêm vào danh sách ủy quyền");
+
+        var person = await db.AuthorizedPersons.FirstOrDefaultAsync(p => p.ContractId == id && p.CitizenId == citizenId, ct);
         if (person is null)
         {
-            person = new AuthorizedPerson { ContractId = id, CitizenId = req.CitizenId };
+            person = new AuthorizedPerson { ContractId = id, CitizenId = citizenId };
             db.AuthorizedPersons.Add(person);
         }
         else if (person.Status == "Active")
@@ -323,9 +388,9 @@ public class ContractsController(
             throw AppException.Conflict("Người này đã có trong danh sách");
         }
         // Re-adding a revoked person reactivates the same row (ContractID + CitizenID is unique).
-        person.FullName = req.FullName;
-        person.PhoneNumber = req.PhoneNumber;
-        person.Relationship = req.Relationship;
+        person.FullName = req.FullName.Trim();
+        person.PhoneNumber = Contact.NormalizePhone(req.PhoneNumber);
+        person.Relationship = string.IsNullOrWhiteSpace(req.Relationship) ? null : req.Relationship.Trim();
         person.Status = "Active";
         person.RevokedAt = null;
         await db.SaveChangesAsync(ct);

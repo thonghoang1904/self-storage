@@ -24,6 +24,8 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
         await EnsureAssignedAsync(staffId, facilityId, ct);
         var q = query.Trim();
         if (q.Length < 2) throw AppException.BadRequest("Nhập ít nhất 2 ký tự để tìm");
+        // CCCD / phone are stored normalized; staff may type them with spaces, dots or +84.
+        var people = new[] { q, Contact.NormalizeCitizenId(q), Contact.NormalizePhone(q) }.Distinct().ToList();
 
         var contracts = await db.Contracts
             .Include(c => c.Unit)
@@ -31,8 +33,9 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
             .Include(c => c.AuthorizedPersons)
             .Where(c => c.Unit.FacilityId == facilityId)
             .Where(c => c.Unit.UnitCode == q || c.ContractNumber == q
-                        || c.Customer.CitizenId == q || c.Customer.PhoneNumber == q
-                        || c.AuthorizedPersons.Any(p => p.Status == "Active" && (p.CitizenId == q || p.PhoneNumber == q)))
+                        || people.Contains(c.Customer.CitizenId!) || people.Contains(c.Customer.PhoneNumber)
+                        || c.AuthorizedPersons.Any(p => p.Status == "Active"
+                            && (people.Contains(p.CitizenId) || people.Contains(p.PhoneNumber))))
             .OrderByDescending(c => c.EndDate)
             .Take(10)
             .ToListAsync(ct);
@@ -58,7 +61,8 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
                     .ToList(),
                 inside.Where(i => i.ContractId == c.ContractId).Select(i => i.Name).ToList(),
                 issues,
-                issues.Count == 0);
+                issues.Count == 0,
+                CanMoveOut(issues));
         }).ToList();
     }
 
@@ -70,17 +74,20 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
         var contract = await LoadContractAsync(facilityId, req.ContractId, ct);
 
         var issues = FindIssues(contract);
-        if (issues.Count > 0)
-            throw AppException.Conflict($"Không thể cho vào: {issues[0].Message}. Hãy ghi nhận từ chối với lý do {issues[0].Code}.");
+        if (issues.Count > 0 && !(req.MoveOut && CanMoveOut(issues)))
+        {
+            var blocking = issues.FirstOrDefault(i => !i.MoveOutAllowed) ?? issues[0];
+            var hint = CanMoveOut(issues) ? " Nếu khách đến dọn kho để trả kho, hãy chọn \"Cho vào dọn kho\"." : "";
+            throw AppException.Conflict(
+                $"Không thể cho vào: {blocking.Message}. Hãy ghi nhận từ chối với lý do {blocking.Code}.{hint}");
+        }
 
         var expectedCitizenId = ResolveVisitor(contract, req.AuthorizedPersonId);
 
         // Staff types the number printed on the visitor's CCCD; it must match what we have on file.
         if (string.IsNullOrWhiteSpace(expectedCitizenId))
             throw AppException.BadRequest("Người này chưa có số CCCD trong hồ sơ, không thể xác thực. Hãy từ chối với lý do IdentityMismatch.");
-        if (string.IsNullOrWhiteSpace(req.CitizenId))
-            throw AppException.BadRequest("Vui lòng nhập số CCCD trên thẻ của khách");
-        if (!string.Equals(req.CitizenId.Trim(), expectedCitizenId.Trim(), StringComparison.OrdinalIgnoreCase))
+        if (Contact.NormalizeCitizenId(req.CitizenId) != Contact.NormalizeCitizenId(expectedCitizenId))
             throw AppException.BadRequest("Số CCCD không khớp với hồ sơ. Hãy kiểm tra lại hoặc từ chối với lý do IdentityMismatch.");
 
         var entryTime = req.EntryTime ?? Now;
@@ -105,7 +112,9 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
             VerifiedByStaffId = staffId,
             VerificationMethod = VerificationMethods.CitizenId,
             Result = AccessResult.Granted,
-            Purpose = req.Purpose,
+            Purpose = issues.Count > 0
+                ? $"Dọn kho để trả kho. {req.Purpose}".Trim()
+                : req.Purpose,
             CompanionCount = req.CompanionCount,
             EntryTime = entryTime,
             Notes = req.Notes,
@@ -201,24 +210,32 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
         if (!assigned) throw AppException.Forbidden("Bạn không được phân công tại cơ sở này");
     }
 
-    /// <summary>Reasons the contract's unit cannot be opened right now; codes match AccessRecords.DenyReason.</summary>
+    /// <summary>
+    /// Reasons the contract's unit cannot be opened right now; codes match AccessRecords.DenyReason.
+    /// An expired or overdue-locked contract that was not returned yet still lets the visitor in to empty the unit.
+    /// </summary>
     private List<AccessIssueDto> FindIssues(Contract c)
     {
         var today = DateOnly.FromDateTime(Now);
         var issues = new List<AccessIssueDto>();
 
-        if (c.Status is ContractStatus.Terminated or ContractStatus.Liquidated
-            || Now >= c.EndDate.ToDateTime(new TimeOnly(20, 0)))
+        if (c.Status is ContractStatus.Terminated or ContractStatus.Liquidated)
             issues.Add(new("ContractEnded", "Hợp đồng đã kết thúc"));
+        else if (Now >= ContractSchedule.ExpiresAt(c.EndDate))
+            issues.Add(new("ContractEnded", "Hợp đồng đã hết hạn, chưa gia hạn hoặc trả kho", MoveOutAllowed: true));
         else if (c.StartDate > today)
             issues.Add(new("ContractEnded", $"Hợp đồng chưa bắt đầu (từ {c.StartDate:dd/MM/yyyy})"));
 
         if (c.Status == ContractStatus.Overdue || c.Unit.Status == UnitStatus.OverdueLocked)
-            issues.Add(new("OverdueLocked", "Hợp đồng quá hạn thanh toán, kho đang bị khóa"));
+            issues.Add(new("OverdueLocked", "Hợp đồng quá hạn thanh toán, kho đang bị khóa",
+                MoveOutAllowed: c.Status is ContractStatus.Active or ContractStatus.Overdue));
         if (c.Unit.Status == UnitStatus.UnderMaintenance)
             issues.Add(new("UnitUnderMaintenance", "Kho đang bảo trì"));
         return issues;
     }
+
+    private static bool CanMoveOut(List<AccessIssueDto> issues) =>
+        issues.Count > 0 && issues.All(i => i.MoveOutAllowed);
 
     private async Task<Contract> LoadContractAsync(int facilityId, int contractId, CancellationToken ct) =>
         await db.Contracts

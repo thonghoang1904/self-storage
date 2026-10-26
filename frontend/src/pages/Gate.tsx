@@ -176,7 +176,7 @@ function VisitCard({ facilityId, visit: v, query, onRecorded }: {
     }
   }
 
-  const grant = () =>
+  const grant = (moveOut = false) =>
     run(() =>
       api<AccessRecord>(`/api/gate/facilities/${facilityId}/entries`, {
         body: {
@@ -185,6 +185,7 @@ function VisitCard({ facilityId, visit: v, query, onRecorded }: {
           citizenId: citizenId.trim(),
           purpose: purpose || null,
           companionCount,
+          moveOut,
         },
       }),
     )
@@ -236,7 +237,14 @@ function VisitCard({ facilityId, visit: v, query, onRecorded }: {
       />
       {error && <p className="error">{error}</p>}
 
-      <button className="btn primary" disabled={busy || !v.canEnter || !citizenId.trim()} onClick={grant}>Xác nhận đúng người, cho vào</button>
+      {v.canEnter || !v.canEnterForMoveOut ? (
+        <button className="btn primary" disabled={busy || !v.canEnter || !citizenId.trim()} onClick={() => grant()}>Xác nhận đúng người, cho vào</button>
+      ) : (
+        <>
+          <p className="muted">Hợp đồng đã hết hạn hoặc quá hạn nhưng chưa trả kho: chỉ cho vào để dọn đồ trả kho.</p>
+          <button className="btn primary" disabled={busy || !citizenId.trim()} onClick={() => grant(true)}>Xác nhận đúng người, cho vào dọn kho</button>
+        </>
+      )}
       <div className="row">
         <select className="grow" value={denyReason} onChange={(e) => setDenyReason(e.target.value)}>
           {Object.entries(DenyReasons).map(([k, label]) => <option key={k} value={k}>{label}</option>)}

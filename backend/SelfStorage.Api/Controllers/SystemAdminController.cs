@@ -54,7 +54,8 @@ public sealed class SystemAdminController(
     {
         var role = await db.Roles.FindAsync([req.RoleId], ct)
             ?? throw AppException.NotFound("Không tìm thấy vai trò");
-        await ValidateAccountAsync(req.Username, req.Email, req.CitizenId, null, ct);
+        var citizenId = Normalize(req.CitizenId) is string cid ? Contact.NormalizeCitizenId(cid) : null;
+        await ValidateAccountAsync(req.Username, req.Email, citizenId, null, ct);
         var facilityIds = req.FacilityIds?.Distinct().ToArray() ?? [];
         ValidateFacilityAssignments(role.RoleName, facilityIds);
         if (facilityIds.Length > 0 && await db.Facilities.CountAsync(f => facilityIds.Contains(f.FacilityId), ct)
@@ -68,9 +69,9 @@ public sealed class SystemAdminController(
             Role = role,
             Username = req.Username.Trim(),
             FullName = req.FullName.Trim(),
-            Email = req.Email.Trim(),
-            PhoneNumber = req.PhoneNumber.Trim(),
-            CitizenId = Normalize(req.CitizenId),
+            Email = Contact.NormalizeEmail(req.Email),
+            PhoneNumber = Contact.NormalizePhone(req.PhoneNumber),
+            CitizenId = citizenId,
             Status = "Active",
         };
         user.PasswordHash = hasher.HashPassword(user, req.Password);
@@ -155,12 +156,14 @@ public sealed class SystemAdminController(
         string username, string email, string? citizenId, int? excludeUserId, CancellationToken ct)
     {
         var normalizedUsername = username.Trim();
-        var normalizedEmail = email.Trim();
-        var duplicate = await db.Users.AnyAsync(u => (excludeUserId == null || u.UserId != excludeUserId.Value)
-            && (u.Username == normalizedUsername || u.Email == normalizedEmail
-                || (citizenId != null && u.CitizenId == citizenId)), ct);
-        if (duplicate)
-            throw AppException.Conflict("Tên đăng nhập, email hoặc CCCD đã được sử dụng");
+        var normalizedEmail = Contact.NormalizeEmail(email);
+        var others = db.Users.Where(u => excludeUserId == null || u.UserId != excludeUserId.Value);
+        if (await others.AnyAsync(u => u.Username == normalizedUsername, ct))
+            throw AppException.Conflict("Tên đăng nhập đã được sử dụng");
+        if (await others.AnyAsync(u => u.Email == normalizedEmail, ct))
+            throw AppException.Conflict("Email đã được sử dụng");
+        if (citizenId != null && await others.AnyAsync(u => u.CitizenId == citizenId, ct))
+            throw AppException.Conflict("Số CCCD đã được đăng ký cho tài khoản khác");
     }
 
     private static void ValidateFacilityAssignments(string roleName, IReadOnlyCollection<int> facilityIds)

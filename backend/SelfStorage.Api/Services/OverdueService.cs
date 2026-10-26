@@ -48,8 +48,7 @@ public sealed class OverdueService(
         foreach (var contract in contracts)
         {
             var policy = await policies.ForFacilityAsync(contract.Unit.FacilityId, ct);
-            var lockAt = contract.EndDate.ToDateTime(new TimeOnly(20, 0))
-                .AddDays(policy.MaxOverdueDaysBeforeLock);
+            var lockAt = ContractSchedule.LocksAt(contract.EndDate, policy.MaxOverdueDaysBeforeLock);
             if (now < lockAt) continue;
 
             var daysOverdue = 1 + (int)(now - lockAt).TotalDays;
@@ -81,7 +80,8 @@ public sealed class OverdueService(
             overdue.LockAppliedDate = lockAt;
             overdue.Notes = $"Phí lưu kho quá hạn {dailyRate:N2}đ/ngày, cấn trừ tự động vào tiền cọc.";
             contract.Status = ContractStatus.Overdue;
-            contract.Unit.Status = UnitStatus.OverdueLocked;
+            // A unit under maintenance keeps that status; the contract status alone blocks entry.
+            if (contract.Unit.Status == UnitStatus.Rented) contract.Unit.Status = UnitStatus.OverdueLocked;
         }
 
         if (contracts.Count > 0 || expiredReservations.Count > 0)

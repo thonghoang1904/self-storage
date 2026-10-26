@@ -1,17 +1,48 @@
 using System.ComponentModel.DataAnnotations;
+using SelfStorage.Api.Infrastructure;
 
 namespace SelfStorage.Api.Dtos;
 
 // ---- Auth ----
 
 public record RegisterRequest(
-    [Required, StringLength(50, MinimumLength = 3)] string Username,
-    [Required, StringLength(100, MinimumLength = 8)] string Password,
-    [Required, StringLength(100)] string FullName,
-    [Required, EmailAddress, StringLength(100)] string Email,
-    [Required, StringLength(20)] string PhoneNumber,
+    [Required(ErrorMessage = "Vui lòng nhập tên đăng nhập")]
+    [StringLength(50, MinimumLength = 3, ErrorMessage = "Tên đăng nhập dài từ 3 đến 50 ký tự")]
+    [RegularExpression(@"^[A-Za-z0-9._\-]+$", ErrorMessage = "Tên đăng nhập chỉ gồm chữ không dấu, số và . _ -")]
+    string Username,
+    [Required(ErrorMessage = "Vui lòng nhập mật khẩu")]
+    [StringLength(100, MinimumLength = 8, ErrorMessage = "Mật khẩu dài từ 8 đến 100 ký tự")]
+    string Password,
+    [Required(ErrorMessage = "Vui lòng nhập họ tên")]
+    [StringLength(100, ErrorMessage = "Họ tên tối đa 100 ký tự")]
+    string FullName,
+    [Required(ErrorMessage = "Vui lòng nhập email")]
+    [StrictEmail]
+    string Email,
+    [Required(ErrorMessage = "Vui lòng nhập số điện thoại")]
+    [VnPhone]
+    string PhoneNumber,
     // Needed so staff can check the customer's ID card at the gate.
-    [Required, StringLength(25)] string CitizenId);
+    [Required(ErrorMessage = "Vui lòng nhập số CCCD")]
+    [CitizenId]
+    string CitizenId);
+
+/// <summary>A CCCD already on file cannot be changed here (staff must re-verify the card); an empty one can be filled in.</summary>
+public record UpdateProfileRequest(
+    [Required(ErrorMessage = "Vui lòng nhập họ tên")]
+    [StringLength(100, ErrorMessage = "Họ tên tối đa 100 ký tự")]
+    string FullName,
+    [Required(ErrorMessage = "Vui lòng nhập email")]
+    [StrictEmail]
+    string Email,
+    [Required(ErrorMessage = "Vui lòng nhập số điện thoại")]
+    [VnPhone]
+    string PhoneNumber,
+    [CitizenId] string? CitizenId,
+    [StringLength(255, ErrorMessage = "Địa chỉ tối đa 255 ký tự")] string? Address);
+
+public record ProfileDto(int UserId, string Username, string FullName, string Role, string Email,
+    string PhoneNumber, string? CitizenId, string? Address);
 
 public record LoginRequest([Required] string Username, [Required] string Password);
 
@@ -32,9 +63,9 @@ public record CreateUserByAdminRequest(
     [Required, StringLength(50, MinimumLength = 3)] string Username,
     [Required, StringLength(100, MinimumLength = 8)] string Password,
     [Required, StringLength(100)] string FullName,
-    [Required, EmailAddress, StringLength(100)] string Email,
-    [Required, StringLength(20)] string PhoneNumber,
-    [StringLength(25)] string? CitizenId,
+    [Required, StrictEmail] string Email,
+    [Required, VnPhone] string PhoneNumber,
+    [CitizenId] string? CitizenId,
     [Required] int RoleId,
     [MinLength(1)] IReadOnlyList<int>? FacilityIds = null);
 public record ChangeUserRoleRequest([Required] int RoleId);
@@ -157,10 +188,16 @@ public record ContractDto(int ContractId, string ContractNumber, int FacilityId,
     DateOnly StartDate, DateOnly EndDate, decimal MonthlyRentFee, string Status);
 
 public record AddAuthorizedPersonRequest(
-    [Required, StringLength(100)] string FullName,
-    [Required, StringLength(20)] string PhoneNumber,
-    [Required, StringLength(25)] string CitizenId,
-    [StringLength(50)] string? Relationship);
+    [Required(ErrorMessage = "Vui lòng nhập họ tên")]
+    [StringLength(100, ErrorMessage = "Họ tên tối đa 100 ký tự")]
+    string FullName,
+    [Required(ErrorMessage = "Vui lòng nhập số điện thoại")]
+    [VnPhone]
+    string PhoneNumber,
+    [Required(ErrorMessage = "Vui lòng nhập số CCCD")]
+    [CitizenId]
+    string CitizenId,
+    [StringLength(50, ErrorMessage = "Quan hệ tối đa 50 ký tự")] string? Relationship);
 
 public record ContractDetailDto(
     int ContractId,
@@ -178,7 +215,15 @@ public record ContractDetailDto(
     decimal AccumulatedLateFee,
     decimal DepositBalance,
     decimal OutstandingLateFee,
-    DateTime RenewalAvailableFrom);
+    // Renewal can be requested (and paid) any time while the contract is active; this is the reminder date.
+    DateTime RenewalAvailableFrom,
+    string CustomerName,
+    DateTime ExpiresAt,
+    bool HasPendingRenewal);
+
+/// <summary>Contracts staff should follow up: expiring soon, expired or overdue, not returned yet.</summary>
+public record DueContractDto(int ContractId, string ContractNumber, string CustomerName, string CustomerPhone,
+    string UnitCode, DateOnly EndDate, DateTime ExpiresAt, string Status, string UnitStatus, bool HasPendingRenewal);
 
 public record RequestRenewalRequest([Range(1, 60)] int ExtensionMonths);
 public record RenewalDto(int RenewalId, int ContractId, DateOnly OldEndDate, DateOnly NewEndDate,
@@ -190,7 +235,9 @@ public record ReturnUnitDto(int ContractId, string Status, string UnitStatus, de
     decimal LateFeesDeducted, decimal DepositRefundDue, decimal LateFeesStillOwed, DateTime ReturnedAt);
 public record OverdueSummaryDto(int OverdueId, int ContractId, string ContractNumber, string CustomerName,
     string UnitCode, DateOnly EndDate, string ContractStatus, string UnitStatus, int DaysOverdue,
-    decimal AccumulatedLateFee, decimal DepositBalance, decimal OutstandingLateFee, DateTime? LockAppliedAt);
+    decimal AccumulatedLateFee, decimal DepositBalance, decimal OutstandingLateFee, DateTime? LockAppliedAt,
+    // Unit already returned; late fees above the deposit are still to be collected (OVERDUE_FINE invoice).
+    bool ReturnedWithDebt);
 public record FacilityWorkQueueDto(DateOnly Date, IReadOnlyList<ReservationDto> CheckIns,
     IReadOnlyList<FacilityTaskContractDto> Returns, IReadOnlyList<SupportRequestDto> SupportRequests);
 public record FacilityTaskContractDto(int ContractId, string ContractNumber, string CustomerName, string UnitCode,
@@ -240,7 +287,9 @@ public record ExtraChargeInvoiceDto(int InvoiceId, string InvoiceNumber, string 
     decimal TotalAmount, DateOnly DueDate, string Status, int ContractId);
 public record DepositRefundDto(int ContractId, decimal RefundedAmount, decimal RemainingRefund,
     string PaymentMethod, string? TransactionCode, DateTime RefundedAt);
-public record UpdateSupportRequest([Required] string Status, [Required, StringLength(4000)] string ActionMessage);
+// AssignToStaffId: facility manager hands the request to another staff member of the facility.
+public record UpdateSupportRequest([Required] string Status, [Required, StringLength(4000)] string ActionMessage,
+    int? AssignToStaffId = null);
 public record UpdateSupportChecklistItemRequest(bool IsCompleted, [StringLength(1000)] string? Notes);
 public record SupportChecklistItemDto(int ChecklistItemId, int SortOrder, string Description, bool IsCompleted,
     DateTime? CompletedAt, string? CompletedByStaff, string? Notes);

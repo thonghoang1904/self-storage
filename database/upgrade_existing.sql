@@ -8,3 +8,4 @@
 :r database\08_check_in_appointments.sql
 :r database\09_cancellation_and_promotions.sql
 :r database\10_access_companions.sql
+:r database\11_normalize_contacts.sql

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
-import { DenyReasons, type AccessRecord, type Contract, type Person } from '../types'
+import { DenyReasons, InputRules, type AccessRecord, type Contract, type Person } from '../types'
 
 /** Customer: rented units, authorized persons and entry history. */
 export default function MyUnits() {
@@ -89,10 +89,10 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
         </tbody>
       </table>
       <form onSubmit={add} className="row wrap">
-        <input placeholder="Họ tên" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required />
-        <input placeholder="Số CCCD" value={form.citizenId} onChange={(e) => setForm({ ...form, citizenId: e.target.value })} required />
-        <input placeholder="Số điện thoại" value={form.phoneNumber} onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })} required />
-        <input placeholder="Quan hệ" value={form.relationship} onChange={(e) => setForm({ ...form, relationship: e.target.value })} />
+        <input placeholder="Họ tên" maxLength={100} value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required />
+        <input placeholder="Số CCCD (12 số)" {...InputRules.citizenId} value={form.citizenId} onChange={(e) => setForm({ ...form, citizenId: e.target.value })} required />
+        <input placeholder="Số điện thoại" {...InputRules.phone} value={form.phoneNumber} onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })} required />
+        <input placeholder="Quan hệ" maxLength={50} value={form.relationship} onChange={(e) => setForm({ ...form, relationship: e.target.value })} />
         <button className="btn primary" type="submit">Thêm</button>
       </form>
       {error && <p className="error">{error}</p>}

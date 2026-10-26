@@ -19,7 +19,42 @@ export interface UserDto {
   username: string
   fullName: string
   role: string
+  email: string
+  phoneNumber: string
+  citizenId: string | null
+  address: string | null
 }
+
+/**
+ * HTML form rules matching the API's checks (the API also accepts spaces, dots and +84, and normalizes them).
+ * Spread onto an <input>: <input {...InputRules.citizenId} />
+ */
+export const InputRules = {
+  citizenId: {
+    inputMode: 'numeric',
+    maxLength: 12,
+    pattern: '[0-9]{12}',
+    title: 'Số CCCD gồm đúng 12 chữ số',
+  },
+  phone: {
+    type: 'tel',
+    inputMode: 'tel',
+    maxLength: 12,
+    pattern: '(\\+84|84|0)[35789][0-9]{8}',
+    title: 'Số di động Việt Nam, ví dụ 0912345678 hoặc +84912345678',
+  },
+  email: {
+    type: 'email',
+    maxLength: 100,
+    title: 'Email hợp lệ, ví dụ ten@gmail.com',
+  },
+  username: {
+    minLength: 3,
+    maxLength: 50,
+    pattern: '[A-Za-z0-9._\\-]+',
+    title: 'Từ 3 đến 50 ký tự: chữ không dấu, số và . _ -',
+  },
+} as const
 
 export interface LoginResponse {
   token: string
@@ -127,6 +162,8 @@ export interface Person {
 export interface AccessIssue {
   code: string
   message: string
+  /** The visitor may still come in to empty the unit before returning it. */
+  moveOutAllowed: boolean
 }
 
 /** A contract the visitor may be coming for, found by the staff lookup at the gate. */
@@ -143,6 +180,8 @@ export interface VisitCandidate {
   peopleInside: string[]
   issues: AccessIssue[]
   canEnter: boolean
+  /** Expired or overdue but not returned: entry only to empty the unit. */
+  canEnterForMoveOut: boolean
 }
 
 export interface AccessRecord {

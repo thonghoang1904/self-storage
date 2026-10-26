@@ -41,13 +41,13 @@ Quy tắc chính:
 
 | Nhóm | Endpoint | Ai dùng |
 |---|---|---|
-| Tài khoản | `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/forgot-password`, `POST /api/auth/reset-password` | Mọi người |
+| Tài khoản | `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`, `GET/PUT /api/auth/profile`, `POST /api/auth/forgot-password`, `POST /api/auth/reset-password` | Mọi người |
 | Danh mục | `GET /api/facilities`, `GET /api/unit-types`, `GET /api/facilities/{id}/availability`, `GET /api/facilities/{id}/units` | Công khai |
 | Đặt kho | `POST /api/reservations`, `GET /api/reservations/my` | Khách |
 | Nhận kho | `GET /api/facilities/{id}/reservations`, `POST /api/reservations/{id}/confirm-deposit`, `POST /api/reservations/{id}/check-in` | Nhân viên, quản lý cơ sở |
-| Hợp đồng | `GET /api/contracts/my`, `GET /api/contracts/{id}`, `POST /api/contracts/{id}/renewals`, `GET /api/contracts/{id}/renewals`, `GET/POST/DELETE /api/contracts/{id}/authorized-persons`, `GET /api/contracts/{id}/access-history` | Khách |
+| Hợp đồng | `GET /api/contracts/my`, `GET /api/contracts/{id}`, `POST /api/contracts/{id}/renewals`, `GET /api/contracts/{id}/renewals`, `GET/POST/DELETE /api/contracts/{id}/authorized-persons`, `GET /api/contracts/{id}/access-history` | Khách (chi tiết và lịch sử: cả nhân viên cơ sở) |
 | Gia hạn | `GET /api/contracts/facilities/{facilityId}/renewals`, `POST /api/contracts/renewals/{renewalId}/confirm-payment`, `POST /api/contracts/renewals/{renewalId}/reject` | Nhân viên, quản lý cơ sở |
-| Trả kho/quá hạn | `POST /api/contracts/{id}/return`, `GET /api/contracts/facilities/{facilityId}/overdue` | Nhân viên, quản lý cơ sở |
+| Trả kho/quá hạn | `POST /api/contracts/{id}/return`, `GET /api/contracts/facilities/{facilityId}/overdue`, `GET /api/contracts/facilities/{facilityId}/due?days=7` | Nhân viên, quản lý cơ sở |
 | Hóa đơn/thanh toán | `GET /api/invoices/my`, `GET /api/invoices/{id}`, `POST /api/invoices/{id}/checkout/vnpay`, `POST /api/invoices/{id}/checkout/momo` | Khách |
 | Thu tiền tại cơ sở | `GET /api/invoices/facilities/{facilityId}`, `POST /api/invoices/{id}/payments` | Nhân viên, quản lý cơ sở |
 | Hoàn cọc | `POST /api/contracts/{id}/deposit-refunds` | Nhân viên, quản lý cơ sở |
@@ -55,7 +55,15 @@ Quy tắc chính:
 | Hỗ trợ | `POST /api/support-requests`, `GET /api/support-requests/my`, `GET /api/support-requests/{requestId}/updates`, `GET /api/support-requests/{requestId}/checklist`, `PUT /api/support-requests/{requestId}/checklist/{itemId}`, `GET /api/support-requests/facilities/{facilityId}`, `PUT /api/support-requests/{requestId}` | Khách; nhân viên, quản lý cơ sở |
 | Cổng | `GET /api/gate/my-facilities`, `GET /api/gate/facilities/{id}/lookup?q=`, `POST /api/gate/facilities/{id}/entries`, `POST /api/gate/facilities/{id}/denials`, `GET /api/gate/facilities/{id}/inside`, `GET /api/gate/facilities/{id}/today`, `POST /api/gate/access-records/{id}/exit` | Nhân viên, quản lý cơ sở |
 
-Quy tắc hợp đồng: cọc ban đầu bằng một tháng tiền thuê; khách gửi yêu cầu gia hạn trong 7 ngày trước ngày hết hạn, nhân viên xác nhận đã thu phí để kích hoạt; lịch trả kho từ 20:00 ngày hết hạn. Nếu chưa trả sau 24 giờ, dịch vụ nền khóa kho và tính phí mỗi ngày theo `MonthlyRentFee / 30`, cấn trừ vào cọc; chi tiết hợp đồng trả về số dư cọc và khoản phí còn phải thu. Bàn giao/trả kho và yêu cầu hỗ trợ được ghi nhận để nhân viên xử lý tại cơ sở được phân công.
+Quy tắc hợp đồng: cọc theo `RentalPolicies.DepositPercent`. Hợp đồng hết hạn lúc 20:00 ngày kết thúc; quá `MaxOverdueDaysBeforeLock` ngày mà chưa gia hạn/trả kho thì dịch vụ nền khóa kho và tính phí theo `LATE_FEE_DAILY`, cấn trừ vào cọc; chi tiết hợp đồng trả về số dư cọc và khoản phí còn phải thu. Bàn giao/trả kho và yêu cầu hỗ trợ được ghi nhận để nhân viên xử lý tại cơ sở được phân công.
+
+- **Bàn giao 24/7:** nhận kho và trả kho làm được bất kỳ giờ nào. Lịch hẹn nhận kho chỉ để sắp xếp, không chặn bàn giao; khách đến trước ngày dự kiến thì hợp đồng tính từ hôm nay. Trả kho trước hạn được phép (ghi chú "trả kho trước hạn"); khi trả kho, yêu cầu gia hạn đang chờ và hóa đơn gia hạn chưa trả bị hủy.
+- **Thanh toán sớm:** khách gửi yêu cầu gia hạn và trả hóa đơn gia hạn bất kỳ lúc nào khi hợp đồng còn hiệu lực (kể cả sau 20:00 ngày hết hạn, miễn kho chưa bị khóa). `RenewalNoticeDays` chỉ còn là mốc nhắc gia hạn.
+- **Dọn kho khi hết hạn:** hợp đồng hết hạn hoặc bị khóa quá hạn nhưng chưa trả kho, nhân viên vẫn có thể "Cho vào dọn kho" (`moveOut: true`).
+- Trả hóa đơn `OVERDUE_FINE` (phí vượt cọc sau trả kho) sẽ đóng hồ sơ quá hạn; danh sách quá hạn có cờ `returnedWithDebt`.
+- Quản lý cơ sở có thể giao lại yêu cầu hỗ trợ (`assignToStaffId`).
+
+Quy tắc dữ liệu liên hệ: CCCD đúng 12 chữ số (3 số đầu là mã tỉnh 001–096), SĐT di động Việt Nam (`0[35789]` + 8 số, chấp nhận `+84`), email hợp lệ. Backend tự bỏ dấu cách/chấm/gạch, đổi `+84` thành `0`, chuyển email về chữ thường trước khi lưu và so sánh; trùng dữ liệu trả 409 kèm tên trường. Dữ liệu cũ được chuẩn hóa bởi `database/11_normalize_contacts.sql`.
 
 Checklist ticket được tạo theo loại sự cố khi khách gửi yêu cầu. Khách và nhân viên cơ sở được phân công xem checklist; nhân viên tiếp nhận ticket trước khi cập nhật từng mục qua `PUT /api/support-requests/{requestId}/checklist/{itemId}`. API chuyển ticket sang `Resolved` chỉ thành công khi tất cả mục đã hoàn tất; mọi cập nhật checklist được lưu vào lịch sử ticket.
 
@@ -93,7 +101,7 @@ sqlcmd -S .\SQLEXPRESS -U sa -C -I -f 65001 -b -i database/setup_fresh.sql
 sqlcmd -S .\SQLEXPRESS -U sa -C -I -f 65001 -b -d SelfStorageDB -i database/upgrade_existing.sql
 ```
 
-`upgrade_existing.sql` chạy các migration `02`–`09` theo đúng thứ tự; có thể chạy lại nếu cần. Nếu chạy bằng SSMS, bật **SQLCMD Mode** rồi mở script tổng tương ứng. Giữ các file migration riêng để kiểm tra thay đổi và dùng trong quy trình deploy có kiểm soát. Tự động cập nhật database hiện chỉ bật cho môi trường Development; trước khi deploy môi trường thật, cần có quy trình backup và migrate phù hợp, không reset database.
+`upgrade_existing.sql` chạy các migration `02`–`11` theo đúng thứ tự; có thể chạy lại nếu cần. Nếu chạy bằng SSMS, bật **SQLCMD Mode** rồi mở script tổng tương ứng. Giữ các file migration riêng để kiểm tra thay đổi và dùng trong quy trình deploy có kiểm soát. Tự động cập nhật database hiện chỉ bật cho môi trường Development; trước khi deploy môi trường thật, cần có quy trình backup và migrate phù hợp, không reset database.
 
 **Backend.** Chuỗi kết nối mặc định trong `appsettings.json` dùng Windows Authentication. Để dùng SQL Authentication cho môi trường Development, lưu chuỗi kết nối bằng User Secrets (không ghi mật khẩu vào file trong repo):
 

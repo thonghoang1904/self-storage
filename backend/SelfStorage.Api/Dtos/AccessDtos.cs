@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using SelfStorage.Api.Infrastructure;
 
 namespace SelfStorage.Api.Dtos;
 
@@ -7,7 +8,8 @@ namespace SelfStorage.Api.Dtos;
 public record PersonDto(int? AuthorizedPersonId, string FullName, string? CitizenId, string? PhoneNumber, string? Relationship);
 
 // Code is one of the DenyReason values in the schema, so staff can deny with it directly.
-public record AccessIssueDto(string Code, string Message);
+// MoveOutAllowed: the visitor may still come in to empty the unit before returning it.
+public record AccessIssueDto(string Code, string Message, bool MoveOutAllowed = false);
 
 // One contract the visitor may be coming for, found by the staff lookup.
 public record VisitCandidateDto(
@@ -22,20 +24,25 @@ public record VisitCandidateDto(
     IReadOnlyList<PersonDto> AuthorizedPersons,
     IReadOnlyList<string> PeopleInside,
     IReadOnlyList<AccessIssueDto> Issues,
-    bool CanEnter);
+    bool CanEnter,
+    bool CanEnterForMoveOut);
 
 public record GrantEntryRequest(
     [Required] int ContractId,
     // Null = the contract's customer came in person.
     int? AuthorizedPersonId,
     // CCCD number read off the visitor's card, compared with the one on file.
-    [Required, StringLength(25)] string CitizenId,
-    [StringLength(255)] string? Purpose,
+    [Required(ErrorMessage = "Vui lòng nhập số CCCD trên thẻ của khách")]
+    [CitizenId]
+    string CitizenId,
+    [StringLength(200)] string? Purpose,
     [StringLength(500)] string? Notes,
     // People entering with the visitor, not counting the visitor.
     [Range(0, 50)] int CompanionCount = 0,
     // Null = now. Lets staff record an entry a little after the fact; never in the future.
-    DateTime? EntryTime = null);
+    DateTime? EntryTime = null,
+    // Contract expired or overdue-locked: let the visitor in only to empty the unit for the return.
+    bool MoveOut = false);
 
 public record DenyEntryRequest(
     [Required] int ContractId,

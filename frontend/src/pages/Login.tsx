@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
-import { homeFor } from '../types'
+import { homeFor, InputRules } from '../types'
 
 export function Login() {
   const { login } = useAuth()
@@ -39,8 +39,8 @@ export function Register() {
   const navigate = useNavigate()
   const [form, setForm] = useState({ username: '', password: '', fullName: '', email: '', phoneNumber: '', citizenId: '' })
   const [error, setError] = useState('')
-  const field = (key: keyof typeof form, placeholder: string, type = 'text') => (
-    <input placeholder={placeholder} type={type} value={form[key]} required
+  const field = (key: keyof typeof form, placeholder: string, rules: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
+    <input placeholder={placeholder} value={form[key]} required {...rules}
       onChange={(e) => setForm({ ...form, [key]: e.target.value })} />
   )
 
@@ -59,12 +59,12 @@ export function Register() {
   return (
     <form className="auth card stack" onSubmit={submit}>
       <h2>Đăng ký thuê kho</h2>
-      {field('fullName', 'Họ tên')}
-      {field('citizenId', 'Số CCCD (nhân viên sẽ đối chiếu khi bạn vào kho)')}
-      {field('phoneNumber', 'Số điện thoại')}
-      {field('email', 'Email', 'email')}
-      {field('username', 'Tên đăng nhập')}
-      {field('password', 'Mật khẩu (ít nhất 8 ký tự)', 'password')}
+      {field('fullName', 'Họ tên', { maxLength: 100 })}
+      {field('citizenId', 'Số CCCD, 12 chữ số (nhân viên sẽ đối chiếu khi bạn vào kho)', InputRules.citizenId)}
+      {field('phoneNumber', 'Số điện thoại di động', InputRules.phone)}
+      {field('email', 'Email', InputRules.email)}
+      {field('username', 'Tên đăng nhập', InputRules.username)}
+      {field('password', 'Mật khẩu (ít nhất 8 ký tự)', { type: 'password', minLength: 8, maxLength: 100 })}
       {error && <p className="error">{error}</p>}
       <button className="btn primary" type="submit">Đăng ký</button>
     </form>
