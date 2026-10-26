@@ -1150,3 +1150,10 @@ a.user-chip:hover { background: var(--bg-tint); }
   .portal-nav > a { white-space: nowrap; padding: 8px 10px; }
   .user-chip-text b { display: block; white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
 }
+.early-rules { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.early-rules li { display: flex; gap: 12px; align-items: flex-start; }
+.early-rules b { color: var(--text-strong); font-size: 14.5px; }
+.early-rules p { margin: 2px 0 0; color: var(--text); font-size: 13.5px; line-height: 1.55; }
+.movein-grid .span-2 { grid-column: 1 / -1; }
+.panel .check-list { margin-top: 4px; gap: 10px; }
+.panel .check-list li { font-size: 13.5px; }

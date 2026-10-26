@@ -28,6 +28,7 @@ import InvoiceDetail from './pages/InvoiceDetail'
 import MoveInRegistration from './pages/MoveInRegistration'
 import ContractPolicy, { ContractPolicyDone } from './pages/ContractPolicy'
 import ContractRenew from './pages/ContractRenew'
+import ContractEarlyReturn from './pages/ContractEarlyReturn'
 import ContractSuspend from './pages/ContractSuspend'
 import AccountSecurity from './pages/AccountSecurity'
 import AccountProfile from './pages/AccountProfile'
@@ -75,6 +76,7 @@ export default function App() {
             <Route path="/my-units/:id/visit" element={<RequireRole roles={[Roles.Customer]}><VisitRegistrationPage /></RequireRole>} />
             <Route path="/my-units/:id/move-in" element={<RequireRole roles={[Roles.Customer]}><MoveInRegistration /></RequireRole>} />
             <Route path="/my-units/:id/policy" element={<RequireRole roles={[Roles.Customer]}><ContractPolicy /></RequireRole>} />
+            <Route path="/my-units/:id/early-return" element={<RequireRole roles={[Roles.Customer]}><ContractEarlyReturn /></RequireRole>} />
             <Route path="/my-units/:id/renew" element={<RequireRole roles={[Roles.Customer]}><ContractRenew /></RequireRole>} />
             <Route path="/my-units/:id/suspend" element={<RequireRole roles={[Roles.Customer]}><ContractSuspend /></RequireRole>} />
             <Route path="/account/profile" element={<RequireRole roles={Object.values(Roles)}><AccountProfile /></RequireRole>} />

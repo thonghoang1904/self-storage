@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { Link, useLocation, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, ApiError, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { FormField } from '../components/form'
@@ -372,6 +372,7 @@ const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padSt
  * left before sending. While the request is pending it can be cancelled; staff finish it at the facility.
  */
 function EarlyReturnPanel({ contract: c, facility }: { contract: Detail; facility: Facility | null }) {
+  const navigate = useNavigate()
   const today = isoDay(new Date())
   const lastDay = isoDay(new Date(asLocal(c.endDate).getTime() - DAY))
   const [requests, setRequests] = useState<EarlyReturnRequest[] | null>(null)
@@ -409,11 +410,9 @@ function EarlyReturnPanel({ contract: c, facility }: { contract: Detail; facilit
     setBusy(true)
     try {
       await api(`/api/contracts/${c.contractId}/early-return-requests`, { body: { returnDate: date, reason: reason.trim() } })
-      setNotice(`Đã gửi yêu cầu. Vui lòng đến ${c.facilityName} ngày ${fmtDate(date)} để nhân viên kiểm tra kho và hoàn cọc.`)
-      setReason('')
-      setAgreed(false)
-      setTried(false)
-      await loadRequests()
+      // Open the request page: the contract, the early-return policy and the expected refund.
+      navigate(`/my-units/${c.contractId}/early-return`)
+      return
     } catch (err) {
       // 404/405: the server does not offer early-return requests yet.
       setError(err instanceof ApiError && (err.status === 404 || err.status === 405)
@@ -446,7 +445,10 @@ function EarlyReturnPanel({ contract: c, facility }: { contract: Detail; facilit
             <b>Yêu cầu trả kho sớm ngày {fmtDate(pending.returnDate)} đang chờ</b>
             <p>Mang CCCD đến {c.facilityName}{facility ? ` (${facility.operatingHours})` : ''} đúng ngày hẹn. Nhân viên kiểm tra kho cùng bạn rồi hoàn cọc sau khi trừ phí trả sớm {fmtMoney(pending.earlyReturnFee)}.</p>
             <p className="muted">Lý do: {pending.reason}</p>
-            <button type="button" className="btn outline sm" onClick={() => void cancel(pending)}>Hủy yêu cầu</button>
+            <div className="row wrap">
+              <Link to={`/my-units/${c.contractId}/early-return`} className="btn primary sm"><Icon name="file" size={14} /> Xem chi tiết yêu cầu</Link>
+              <button type="button" className="btn outline sm" onClick={() => void cancel(pending)}>Hủy yêu cầu</button>
+            </div>
           </div>
         </div>
       ) : (
