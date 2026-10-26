@@ -104,13 +104,18 @@ export default function StaffReservations() {
                         <Icon name="wallet" size={15} /> Đã nhận cọc
                       </button>
                     )}
-                    {r.status === 'Confirmed' && !r.checkInAppointmentAt && <span className="muted">Chờ khách đặt lịch nhận kho</span>}
-                    {r.status === 'Confirmed' && r.checkInAppointmentAt && !appointmentReached(r) && <span className="muted">Bàn giao từ {fmtTime(r.checkInAppointmentAt)}</span>}
-                    {r.status === 'Confirmed' && appointmentReached(r) && (
+                    {r.status === 'Confirmed' && (
+                      <>
+                      <small className={`handover-hint ${appointmentReached(r) ? 'ok-text' : 'muted'}`}>
+                        {!r.checkInAppointmentAt ? 'Khách chưa hẹn giờ · có thể bàn giao ngay'
+                          : appointmentReached(r) ? `Đã tới giờ hẹn ${fmtTime(r.checkInAppointmentAt)}`
+                          : `Hẹn ${fmtTime(r.checkInAppointmentAt)} · có thể bàn giao sớm`}
+                      </small>
                       <CheckIn
                         units={units.filter((u) => u.unitTypeName === r.unitTypeName)}
                         onCheckIn={(unit) => act(() => api(`/api/reservations/${r.reservationId}/check-in`, { body: { unitId: unit.unitId } }), `Đã bàn giao kho ${unit.unitCode} cho ${r.customerName} và tạo hợp đồng.`)}
                       />
+                      </>
                     )}
                   </td>
                 </tr>

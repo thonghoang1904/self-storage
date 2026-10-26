@@ -849,12 +849,11 @@ const routes: [string, RegExp, Handler][] = [
     if (!r) throw notFound('Không tìm thấy đơn đặt kho')
     if (me.role !== Roles.Admin) ensureAssigned(me.userId, r.facilityId)
     if (r.status !== 'Confirmed') throw conflict('Đơn chưa được xác nhận cọc')
-    if (!r.checkInAppointmentAt) throw conflict('Khách hàng chưa đặt lịch nhận kho')
-    if (new Date() < new Date(r.checkInAppointmentAt)) throw conflict('Chưa đến thời gian hẹn nhận kho')
+    // Early hand-over allowed (ReservationsController.CheckIn): no need to wait for the pick-up time or start date.
     const unit = db.units.find((u) => u.unitId === Number(body.unitId))
     if (!unit || unit.facilityId !== r.facilityId || unit.unitTypeId !== r.unitTypeId) throw bad('Kho không đúng cơ sở hoặc loại kho đã đặt')
     if (unit.status !== 'Available') throw conflict('Kho này không còn trống')
-    const start = r.expectedStartDate < today() ? today() : r.expectedStartDate
+    const start = today()
     const c: Ctr = {
       contractId: nextId(),
       contractNumber: `HD-${start.replaceAll('-', '')}-${r.reservationId}`,

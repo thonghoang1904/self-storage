@@ -971,3 +971,4 @@ small.center { text-align: center; }
 .handover-cta .appt-time { font-size: 15px; }
 .handover-panel { display: flex; flex-direction: column; gap: 8px; border-top: 4px solid var(--cyan); }
 .handover-panel .handover-icon { background: var(--cyan-50); }
+.handover-hint { display: block; margin-bottom: 6px; text-align: right; }

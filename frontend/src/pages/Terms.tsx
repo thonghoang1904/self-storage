@@ -23,7 +23,7 @@ export const TERMS: { title: string; icon: string; items: string[] }[] = [
     title: 'Nhận kho & thanh toán hằng tháng',
     icon: 'key',
     items: [
-      'Sau khi cọc được xác nhận, khách đặt lịch nhận kho trước 20:00 ngày bắt đầu. Nhân viên chỉ bàn giao kho từ giờ hẹn.',
+      'Sau khi cọc được xác nhận, khách đặt lịch nhận kho trước 20:00 ngày bắt đầu. Khách đến sớm hơn giờ hẹn vẫn được bàn giao nếu kho đã sẵn sàng; hợp đồng tính từ ngày bàn giao.',
       'Hợp đồng được lập khi bàn giao kho. Tiền thuê phát hành hóa đơn theo từng kỳ một tháng kể từ ngày bắt đầu.',
     ],
   },
