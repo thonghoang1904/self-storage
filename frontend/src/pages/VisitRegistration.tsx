@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { CITIZEN_ID_FILTER, citizenIdError, digitsOnly, textError } from '../validation'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { Empty, Icon, UnitArt } from '../components/ui'
-import { VisitPurposes, type ContractDetail, type Facility, type Person, type VisitRegistration } from '../types'
+import { VisitPurposes, type Contract, type ContractDetail, type Facility, type Person, type VisitRegistration } from '../types'
 import { FieldNote, useInputFilter } from '../components/form'
 
 /**
@@ -33,8 +33,48 @@ const VISIT_STATE: Record<string, { label: string; tone: string; icon: string }>
   Cancelled: { label: 'Đã hủy', tone: 'muted', icon: 'x' },
 }
 
-export default function VisitRegistrationPage() {
-  const id = Number(useParams().id)
+/**
+ * "Đăng Ký Vào Kho" in the customer menu (/visit): pick one of your contracts that can be visited, then the same
+ * registration form as /my-units/:id/visit. With one usable contract it opens straight away.
+ */
+export function VisitHub() {
+  const [contracts, setContracts] = useState<Contract[] | null>(null)
+  const [error, setError] = useState('')
+  const [params] = useSearchParams()
+  const [chosen, setChosen] = useState<number | null>(() => Number(params.get('contract')) || null)
+  useEffect(() => {
+    api<Contract[]>('/api/contracts/my').then(setContracts).catch((e) => setError((e as Error).message))
+  }, [])
+  if (!contracts) {
+    return <div className="container page-body">{error ? <p className="alert bad"><Icon name="alert" size={16} />{error}</p> : <p className="muted">Đang tải hợp đồng…</p>}</div>
+  }
+  const usable = contracts.filter((c) => c.status === 'Active' || c.status === 'Renewed')
+  if (usable.length === 0) {
+    return (
+      <div className="container page-body stack">
+        <h1>Đăng ký vào kho</h1>
+        <Empty icon="package">Bạn chưa có hợp đồng đang hoạt động để đăng ký vào kho.</Empty>
+        <Link to="/rent" className="btn primary self-start"><Icon name="plus" size={15} /> Thuê kho</Link>
+      </div>
+    )
+  }
+  const current = usable.find((c) => c.contractId === chosen) ?? usable[0]
+  const picker = usable.length > 1 && (
+    <div className="contract-picker" role="radiogroup" aria-label="Chọn kho muốn vào">
+      {usable.map((c) => (
+        <button key={c.contractId} type="button" role="radio" aria-checked={c.contractId === current.contractId}
+          className={c.contractId === current.contractId ? 'active' : ''} onClick={() => setChosen(c.contractId)}>
+          <b>Kho {c.unitCode}</b><small>{c.facilityName} · {c.contractNumber}</small>
+        </button>
+      ))}
+    </div>
+  )
+  return <VisitRegistrationPage key={current.contractId} contractId={current.contractId} picker={picker || null} />
+}
+
+export default function VisitRegistrationPage({ contractId, picker }: { contractId?: number; picker?: ReactNode } = {}) {
+  const routeId = Number(useParams().id)
+  const id = contractId ?? routeId
   const { user } = useAuth()
   const [c, setC] = useState<ContractDetail | null>(null)
   const [facility, setFacility] = useState<Facility | null>(null)
@@ -158,6 +198,7 @@ export default function VisitRegistrationPage() {
           </div>
         </div>
       </section>
+      {picker && <div className="container picker-row"><span className="muted">Chọn kho muốn vào:</span>{picker}</div>}
 
       <div className="container page-body">
         <div className="row between wrap">

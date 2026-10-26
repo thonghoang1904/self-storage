@@ -43,7 +43,7 @@ import StaffReservations from './pages/StaffReservations'
 import StaffSupport from './pages/StaffSupport'
 import Support from './pages/Support'
 import TermsPage from './pages/Terms'
-import VisitRegistrationPage from './pages/VisitRegistration'
+import VisitRegistrationPage, { VisitHub } from './pages/VisitRegistration'
 import { GATE_ROLES, homeFor, Roles } from './types'
 
 // The demo build is served as a static page, so it keeps the route in the URL hash.
@@ -71,6 +71,7 @@ export default function App() {
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/my-units" element={<RequireRole roles={[Roles.Customer]}><MyUnits /></RequireRole>} />
             <Route path="/my-units/:id" element={<RequireRole roles={[Roles.Customer]}><ContractDetail /></RequireRole>} />
+            <Route path="/visit" element={<RequireRole roles={[Roles.Customer]}><VisitHub /></RequireRole>} />
             <Route path="/my-units/:id/visit" element={<RequireRole roles={[Roles.Customer]}><VisitRegistrationPage /></RequireRole>} />
             <Route path="/my-units/:id/move-in" element={<RequireRole roles={[Roles.Customer]}><MoveInRegistration /></RequireRole>} />
             <Route path="/my-units/:id/policy" element={<RequireRole roles={[Roles.Customer]}><ContractPolicy /></RequireRole>} />

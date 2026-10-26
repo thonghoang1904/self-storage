@@ -1140,3 +1140,13 @@ a.user-chip { color: inherit; text-decoration: none; border-radius: 999px; paddi
 a.user-chip:hover { background: var(--bg-tint); }
 .sidebar-user-link { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; color: inherit; text-decoration: none; border-radius: 10px; padding: 4px; }
 .sidebar-user-link:hover { background: rgba(255,255,255,.06); }
+.picker-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 20px; }
+.contract-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+.contract-picker button { display: grid; gap: 2px; text-align: left; padding: 8px 14px; border: 1px solid var(--border); border-radius: 10px; background: #fff; cursor: pointer; font: inherit; }
+.contract-picker button small { color: var(--muted, #64748b); font-size: 12px; }
+.contract-picker button.active { border-color: var(--cyan, #06b6d4); box-shadow: 0 0 0 2px rgba(6,182,212,.18); }
+@media (min-width: 901px) {
+  .portal-nav { margin-left: 16px; gap: 2px; }
+  .portal-nav > a { white-space: nowrap; padding: 8px 10px; }
+  .user-chip-text b { display: block; white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+}

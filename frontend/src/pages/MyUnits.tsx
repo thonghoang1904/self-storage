@@ -87,7 +87,7 @@ export default function MyUnits() {
         <section className="stack">
           <div className="row between wrap">
             <h2 className="section-title with-icon"><Icon name="package" size={20} className="cyan" /> Kho Lưu Trữ Của Tôi {active > 0 && <span className="pill">{active} Đang Hoạt Động</span>}</h2>
-            <Link to="/rent" className="btn primary sm"><Icon name="plus" size={15} /> Đăng ký thuê kho</Link>
+            <Link to="/visit" className="btn primary sm"><Icon name="calendar" size={15} /> Đăng ký vào kho</Link>
           </div>
           <div className="my-unit-grid">
             {contracts?.map((c, i) => {
