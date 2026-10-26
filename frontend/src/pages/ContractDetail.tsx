@@ -198,6 +198,7 @@ export default function ContractDetail() {
             )}
             {showRenew && <RenewalPanel contract={c} renewals={renewals} onChanged={load} />}
             <div className="action-grid">
+              {!ended && <Link to={`/my-units/${c.contractId}/move-in`} className="btn soft sm"><Icon name="package" size={14} /> Đưa đồ vào kho</Link>}
               {!ended && <Link to={`/support?contract=${c.contractId}`} className="btn soft sm"><Icon name="alert" size={14} /> Báo sự cố</Link>}
               {!ended && <Link to={`/support?contract=${c.contractId}&topic=return`} className="btn soft sm"><Icon name="logout" size={14} /> Yêu cầu trả kho</Link>}
               <button type="button" className={`btn soft sm ${showPolicy ? 'active' : ''}`} onClick={() => setShowPolicy(!showPolicy)}><Icon name="clipboard" size={14} /> Xem policy hợp đồng</button>

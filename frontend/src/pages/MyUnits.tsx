@@ -108,7 +108,10 @@ export default function MyUnits() {
                       <Link to={`/my-units/${c.contractId}`} className="btn outline sm grow">Chi Tiết</Link>
                     </div>
                     {(c.status === 'Active' || c.status === 'Renewed') && (
-                      <Link to={`/my-units/${c.contractId}/visit`} className="btn ghost sm block"><Icon name="calendar" size={14} /> Đăng Ký Ra Vào Kho</Link>
+                      <div className="row">
+                        <Link to={`/my-units/${c.contractId}/visit`} className="btn ghost sm grow"><Icon name="calendar" size={14} /> Đăng Ký Vào Kho</Link>
+                        <Link to={`/my-units/${c.contractId}/move-in`} className="btn ghost sm grow"><Icon name="package" size={14} /> Đưa Đồ Vào Kho</Link>
+                      </div>
                     )}
                   </div>
                 </article>

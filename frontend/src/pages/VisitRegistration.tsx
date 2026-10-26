@@ -158,7 +158,7 @@ export default function VisitRegistrationPage() {
         <ol className="journey">
           <li className="done"><span><Icon name="check" size={14} /></span>Hợp đồng đã ký</li>
           <li className="active"><span>1</span>Đăng ký vào kho</li>
-          <li className="later"><span>2</span>Khai báo đồ mang vào <small>(sắp có)</small></li>
+          <li className="later"><span>2</span><Link to={`/my-units/${c.contractId}/move-in`} className="link">Khai báo đồ mang vào</Link></li>
         </ol>
 
         {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
@@ -205,6 +205,9 @@ export default function VisitRegistrationPage() {
                       {VisitPurposes.map((p) => <option key={p}>{p}</option>)}
                     </select>
                   </label>
+                  {purpose === 'Gửi đồ vào kho' && (
+                    <p className="hint"><Icon name="package" size={15} /> Mang đồ vào kho? <Link to={`/my-units/${c.contractId}/move-in`} className="link">Dùng mẫu Đăng ký đưa đồ vào kho</Link> để khai báo danh sách đồ, phương tiện và người phụ.</p>
+                  )}
                   {purpose === 'Khác' && (
                     <label className="field"><span>Ghi rõ mục đích *</span>
                       <input value={otherPurpose} maxLength={255} onChange={(e) => setOtherPurpose(e.target.value)} placeholder="vd: Bàn giao chìa khóa cho người nhà" required />
