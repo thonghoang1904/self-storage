@@ -12,7 +12,7 @@ export const Roles = {
 export const GATE_ROLES: string[] = [Roles.Staff, Roles.Manager]
 
 export const homeFor = (role: string) =>
-  role === Roles.Manager ? '/facility' : GATE_ROLES.includes(role) ? '/gate' : role === Roles.Customer ? '/my-units' : role === Roles.Admin ? '/admin/users' : role === Roles.OpsManager ? '/ops/facilities' : '/'
+  role === Roles.Manager ? '/facility' : GATE_ROLES.includes(role) ? '/gate' : role === Roles.Customer ? '/my-units' : role === Roles.Admin ? '/admin' : role === Roles.OpsManager ? '/ops/facilities' : '/'
 
 export const RoleLabels: Record<string, string> = {
   [Roles.Customer]: 'Khách hàng',

@@ -25,6 +25,9 @@ import ContractPolicy, { ContractPolicyDone } from './pages/ContractPolicy'
 import ContractRenew from './pages/ContractRenew'
 import ContractSuspend from './pages/ContractSuspend'
 import AccountSecurity from './pages/AccountSecurity'
+import AdminOverview from './pages/AdminOverview'
+import AdminUnits from './pages/AdminUnits'
+import AdminCustomers from './pages/AdminCustomers'
 import { Login, Register } from './pages/Login'
 import MyUnits from './pages/MyUnits'
 import Rent from './pages/Rent'
@@ -91,6 +94,11 @@ export default function App() {
             <Route path="/facility-staff" element={<RequireRole roles={[Roles.Manager]}><FacilityStaffPage /></RequireRole>} />
           </Route>
           <Route element={<RequireRole roles={[Roles.Admin]}><AdminLayout /></RequireRole>}>
+            <Route path="/admin" element={<AdminOverview />} />
+            <Route path="/admin/units" element={<AdminUnits />} />
+            <Route path="/admin/facilities" element={<OpsFacilities />} />
+            <Route path="/admin/customers" element={<AdminCustomers />} />
+            <Route path="/admin/settings" element={<OpsPolicies />} />
             <Route path="/admin/users" element={<AdminUsers />} />
             <Route path="/admin/contracts" element={<AdminContracts />} />
             <Route path="/admin/emails" element={<AdminEmails />} />

@@ -10,7 +10,8 @@ namespace SelfStorage.Api.Controllers;
 
 [ApiController]
 [Route("api/operations")]
-[Authorize(Roles = AppRoles.OpsManager)]
+// The system administrator sees and manages everything the operations manager does.
+[Authorize(Roles = AppRoles.OpsManager + "," + AppRoles.Admin)]
 public sealed class OperationsManagementController(
     SelfStorageDbContext db,
     TimeProvider clock) : ControllerBase
@@ -62,6 +63,19 @@ public sealed class OperationsManagementController(
         AddLog("FacilityUpdated", $"Updated facility {facilityId}");
         await db.SaveChangesAsync(ct);
         return ToFacilityDto(facility);
+    }
+
+    /// <summary>All units of a facility with their status (the public catalog lists available units only).</summary>
+    [HttpGet("facilities/{facilityId:int}/units")]
+    public async Task<List<StorageUnitDto>> FacilityUnits(int facilityId, CancellationToken ct)
+    {
+        if (!await db.Facilities.AnyAsync(f => f.FacilityId == facilityId, ct))
+            throw AppException.NotFound("Không tìm thấy cơ sở");
+        return await db.StorageUnits.Where(u => u.FacilityId == facilityId)
+            .OrderBy(u => u.FloorNumber).ThenBy(u => u.UnitCode)
+            .Select(u => new StorageUnitDto(u.UnitId, u.UnitCode, u.FloorNumber, u.ZoneArea,
+                u.UnitType.BaseMonthlyRate, u.Status, u.UnitTypeId, u.UnitType.TypeName))
+            .ToListAsync(ct);
     }
 
     [HttpGet("unit-types")]

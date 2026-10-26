@@ -268,7 +268,7 @@ const promotionsOf = () => (db.promotions ??= [
   { promotionId: 2, promoCode: 'TET2027', title: 'Ưu đãi Tết: giảm 15% thuê từ 6 tháng', discountPercent: 15, maxDiscountAmount: 1000000, minRentalMonths: 6, startDate: '2027-01-15', endDate: '2027-02-28', isActive: true },
   { promotionId: 3, promoCode: 'SUMMER26', title: 'Hè 2026 cho sinh viên', discountPercent: 20, maxDiscountAmount: 300000, minRentalMonths: 1, startDate: '2026-06-01', endDate: '2026-08-31', isActive: false },
 ])
-const opsOnly = (token: string | null) => requireRole(currentUser(token), [Roles.OpsManager])
+const opsOnly = (token: string | null) => requireRole(currentUser(token), [Roles.OpsManager, Roles.Admin])
 /** Approved registration whose window contains now, for this visitor (AccessService.GrantEntryAsync). */
 const approvedNow = (contractId: number, apId?: number | null) => {
   const now = Date.now()
@@ -1549,19 +1549,24 @@ const routes: [string, RegExp, Handler][] = [
       .map<ActivityLog>(({ logId, action, details, ipAddress, createdAt }) => ({ logId, action, details, ipAddress, createdAt }))
   }],
   // ---- business operations manager (OperationsManagementController, OperationsReportsController)
+  ['GET', /^\/api\/operations\/facilities\/(\d+)\/units$/, (m, { token }) => {
+    opsOnly(token)
+    if (!facilityById(Number(m[1]))) throw notFound('Không tìm thấy cơ sở')
+    return db.units.filter((u) => u.facilityId === Number(m[1])).sort((a, b) => a.floorNumber - b.floorNumber || a.unitCode.localeCompare(b.unitCode)).map(unitDto)
+  }],
   ['GET', /^\/api\/operations\/facilities$/, (_m, { token }) => {
-    requireRole(currentUser(token), [Roles.OpsManager])
+    requireRole(currentUser(token), [Roles.OpsManager, Roles.Admin])
     return [...db.facilities].sort((a, b) => a.facilityName.localeCompare(b.facilityName))
   }],
   ['POST', /^\/api\/operations\/facilities$/, (_m, { token, body }) => {
-    requireRole(currentUser(token), [Roles.OpsManager])
+    requireRole(currentUser(token), [Roles.OpsManager, Roles.Admin])
     const f = facilityFields(body)
     const facility: Facility = { facilityId: nextId(), ...f, operatingHours: f.operatingHours || '24/7 Access', status: 'Active' }
     db.facilities.push(facility)
     return facility
   }],
   ['PUT', /^\/api\/operations\/facilities\/(\d+)$/, (m, { token, body }) => {
-    requireRole(currentUser(token), [Roles.OpsManager])
+    requireRole(currentUser(token), [Roles.OpsManager, Roles.Admin])
     const status = String(body.status ?? '')
     if (!['Active', 'Maintenance', 'Closed'].includes(status)) throw bad('Trạng thái cơ sở không hợp lệ')
     const facility = facilityById(Number(m[1]))

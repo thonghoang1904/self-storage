@@ -62,7 +62,7 @@ export function PortalHeader() {
             </>
           )}
           {isStaff && <NavLink to={user.role === Roles.Manager ? '/facility' : '/gate'}>{user.role === Roles.Manager ? 'Màn hình quản lý' : 'Màn hình nhân viên'}</NavLink>}
-          {user?.role === Roles.Admin && <NavLink to="/admin/users">Màn hình quản trị</NavLink>}
+          {user?.role === Roles.Admin && <NavLink to="/admin">Màn hình quản trị</NavLink>}
           {user?.role === Roles.OpsManager && <NavLink to="/ops/facilities">Màn hình vận hành</NavLink>}
           <div className="portal-nav-actions">
             {user ? (
@@ -265,7 +265,8 @@ function ConsoleLayout({ nav, titles }: { nav: ConsoleNavItem[]; titles: Record<
   const { pathname } = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
   useEffect(() => setMenuOpen(false), [pathname])
-  const title = Object.entries(titles).find(([path]) => pathname.startsWith(path))?.[1] ?? ''
+  // Longest matching prefix, so /admin/units is not titled by /admin.
+  const title = Object.entries(titles).filter(([path]) => pathname === path || pathname.startsWith(`${path}/`)).sort((a, b) => b[0].length - a[0].length)[0]?.[1] ?? ''
 
   return (
     <div className="staff">
@@ -273,7 +274,7 @@ function ConsoleLayout({ nav, titles }: { nav: ConsoleNavItem[]; titles: Record<
         <div className="sidebar-brand"><Logo admin light /></div>
         <nav className="sidebar-nav">
           {nav.map((n) => n.to
-            ? <NavLink key={n.label} to={n.to}><Icon name={n.icon} /> {n.label}</NavLink>
+            ? <NavLink key={n.label} to={n.to} end={n.to === '/admin'}><Icon name={n.icon} /> {n.label}</NavLink>
             : <span key={n.label} className="soon" title="Chưa có màn hình"><Icon name={n.icon} /> {n.label}</span>)}
           <Link to="/"><Icon name="arrowRight" className="flip" /> Trang khách hàng</Link>
         </nav>
@@ -305,16 +306,16 @@ function ConsoleLayout({ nav, titles }: { nav: ConsoleNavItem[]; titles: Record<
 export function AdminLayout() {
   return (
     <ConsoleLayout
-      titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu' }}
+      titles={{ '/admin': 'Tổng Quan', '/admin/units': 'Kho Lưu Trữ', '/admin/facilities': 'Quản Lý Cơ Sở', '/admin/customers': 'Khách Hàng', '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu', '/admin/settings': 'Cài Đặt · Giá & Chính Sách' }}
       nav={[
-        { icon: 'grid', label: 'Tổng Quan' },
-        { icon: 'building', label: 'Kho Lưu Trữ' },
-        { icon: 'users', label: 'Khách Hàng' },
+        { icon: 'grid', label: 'Tổng Quan', to: '/admin' },
+        { icon: 'building', label: 'Kho Lưu Trữ', to: '/admin/units' },
+        { icon: 'users', label: 'Khách Hàng', to: '/admin/customers' },
         { icon: 'user', label: 'Nhân Viên', to: '/admin/users' },
         { icon: 'file', label: 'Hợp Đồng', to: '/admin/contracts' },
         { icon: 'chart', label: 'Doanh Thu', to: '/admin/revenue' },
         { icon: 'mail', label: 'Email Hệ Thống', to: '/admin/emails' },
-        { icon: 'settings', label: 'Cài Đặt' },
+        { icon: 'settings', label: 'Cài Đặt', to: '/admin/settings' },
       ]}
     />
   )

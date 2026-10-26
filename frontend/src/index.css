@@ -1052,3 +1052,10 @@ small.center { text-align: center; }
 .change-pw { padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-tint); }
 @media (max-width: 720px) { .month-grid { grid-template-columns: repeat(6, 1fr); } .term-compare { grid-template-columns: 1fr; } .term-compare svg { transform: rotate(90deg); justify-self: center; } }
 @media (prefers-reduced-motion: reduce) { .switch, .switch::after { transition: none; } }
+
+/* ---------- admin overview / units / customers ---------- */
+.split-two { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+.shortcut-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.field.inline { flex-direction: row; align-items: center; gap: 10px; }
+.field.inline select { min-width: 240px; }
+@media (max-width: 900px) { .split-two, .shortcut-grid { grid-template-columns: 1fr; } }

@@ -85,3 +85,9 @@ Dùng API có sẵn (`GET/POST /api/contracts/{id}/renewals`), không cần làm
 Hiện lưu xác nhận trên trình duyệt. Nếu muốn lưu vào database:
 - `POST /api/contracts/{id}/policy-acknowledgements`, body `{ termsVersion }`.
 - `GET` cùng đường dẫn, trả `{ acknowledgedAt, termsVersion } | null`.
+
+---
+
+## 5. Admin xem được toàn bộ — đã sửa backend trong commit này
+- `OperationsManagementController`: quyền đổi từ `OpsManager` thành `OpsManager + Admin`. Admin vào được Quản lý cơ sở, Giá, Chính sách thuê, Phí và Khuyến mãi (mục "Cài Đặt" và "Kho Lưu Trữ" của Admin).
+- API mới `GET /api/operations/facilities/{facilityId}/units` (OpsManager, Admin): trả mọi kho của cơ sở kèm trạng thái, dùng lại `StorageUnitDto`. API danh mục công khai chỉ trả kho còn trống.
