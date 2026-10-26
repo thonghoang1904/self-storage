@@ -88,6 +88,11 @@ public sealed class FacilityManagementController(
         return await ProjectUnit(unitId, ct);
     }
 
+    /// <summary>
+    /// Start (UnderMaintenance) or end (Available) maintenance; staff and managers of the facility may do this.
+    /// Ending maintenance on a unit that is still rented puts it back to Rented, or OverdueLocked if its
+    /// contract is overdue, so the customer can use it again.
+    /// </summary>
     [HttpPut("units/{unitId:int}/status")]
     public async Task<StorageUnitDto> UpdateUnitStatus(
         int facilityId, int unitId, UpdateStorageUnitStatusRequest req, CancellationToken ct)
@@ -98,19 +103,31 @@ public sealed class FacilityManagementController(
         var unit = await db.StorageUnits.FirstOrDefaultAsync(
             u => u.UnitId == unitId && u.FacilityId == facilityId, ct)
             ?? throw AppException.NotFound("Không tìm thấy kho tại cơ sở");
-        if (req.Status == UnitStatus.Available && await db.Contracts.AnyAsync(c =>
-            c.UnitId == unitId
-            && (c.Status == ContractStatus.Active || c.Status == ContractStatus.Overdue), ct))
-            throw AppException.Conflict("Không thể chuyển kho đang có hợp đồng hiệu lực sang trạng thái trống");
+
+        var newStatus = req.Status;
+        if (req.Status == UnitStatus.Available)
+        {
+            var contractStatus = await db.Contracts
+                .Where(c => c.UnitId == unitId
+                    && (c.Status == ContractStatus.Active || c.Status == ContractStatus.Overdue))
+                .Select(c => c.Status)
+                .FirstOrDefaultAsync(ct);
+            newStatus = contractStatus switch
+            {
+                ContractStatus.Active => UnitStatus.Rented,
+                ContractStatus.Overdue => UnitStatus.OverdueLocked,
+                _ => UnitStatus.Available,
+            };
+        }
 
         var oldStatus = unit.Status;
-        unit.Status = req.Status;
+        unit.Status = newStatus;
         db.ActivityLogs.Add(new ActivityLog
         {
             UserId = User.GetUserId(),
             Action = "StorageUnitStatusChanged",
             IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
-            Details = $"Unit {unit.UnitCode}: {oldStatus} -> {req.Status}",
+            Details = $"Unit {unit.UnitCode}: {oldStatus} -> {newStatus}",
             CreatedAt = clock.GetLocalNow().DateTime,
         });
         await db.SaveChangesAsync(ct);
@@ -200,6 +217,10 @@ public sealed class FacilityManagementController(
         return NoContent();
     }
 
+    /// <summary>
+    /// Extra charge (staff or manager). Also allowed right after the return (e.g. cleaning fee) as long as the
+    /// deposit has not been refunded yet: an unpaid charge is held back from the deposit refund.
+    /// </summary>
     [HttpPost("contracts/{contractId:int}/extra-charges")]
     public async Task<ExtraChargeInvoiceDto> CreateExtraCharge(
         int facilityId, int contractId, CreateExtraChargeRequest req, CancellationToken ct)
@@ -208,8 +229,12 @@ public sealed class FacilityManagementController(
         var contract = await db.Contracts.Include(c => c.Unit)
             .FirstOrDefaultAsync(c => c.ContractId == contractId && c.Unit.FacilityId == facilityId, ct)
             ?? throw AppException.NotFound("Không tìm thấy hợp đồng tại cơ sở");
-        if (contract.Status is not (ContractStatus.Active or ContractStatus.Overdue))
-            throw AppException.Conflict("Chỉ được lập phụ thu cho hợp đồng đang hoạt động");
+        if (contract.Status is not (ContractStatus.Active or ContractStatus.Overdue or ContractStatus.Terminated))
+            throw AppException.Conflict("Chỉ được lập phụ thu cho hợp đồng đang hoạt động hoặc vừa trả kho");
+        if (contract.Status == ContractStatus.Terminated && await db.Payments.AnyAsync(p => p.Status == "Refunded"
+                && db.Invoices.Any(i => i.InvoiceId == p.InvoiceId && i.ReservationId == contract.ReservationId
+                    && i.InvoiceType == "DEPOSIT"), ct))
+            throw AppException.Conflict("Tiền cọc của hợp đồng đã được hoàn; không thể lập thêm phụ thu");
         var fee = await db.FeeConfigurations.FindAsync([req.FeeTypeId], ct)
             ?? throw AppException.NotFound("Không tìm thấy loại phí");
         var unitPrice = fee.CalculationMethod switch

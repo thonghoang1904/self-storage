@@ -19,7 +19,8 @@ builder.Services.AddDbContext<SelfStorageDbContext>(o =>
     o.UseSqlServer(builder.Configuration.GetConnectionString("SelfStorageDB")));
 
 // ---- Services ----
-builder.Services.AddSingleton(TimeProvider.System);
+// Business dates and times are Vietnam time (BusinessTimeZone), not the server's time zone.
+builder.Services.AddSingleton<TimeProvider>(BusinessTimeProvider.FromConfiguration(builder.Configuration));
 builder.Services.AddSingleton<DevelopmentDatabaseBootstrapper>();
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<GoogleAuthOptions>(builder.Configuration.GetSection(GoogleAuthOptions.SectionName));
@@ -108,6 +109,17 @@ builder.Services.AddRateLimiter(options =>
             {
                 PermitLimit = 5,
                 Window = TimeSpan.FromMinutes(15),
+                QueueLimit = 0,
+                AutoReplenishment = true,
+            }));
+    // Slows down password guessing: 10 sign-in attempts per minute per IP.
+    options.AddPolicy("login", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0,
                 AutoReplenishment = true,
             }));

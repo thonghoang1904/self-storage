@@ -38,10 +38,16 @@ public class GateController(AccessService access) : ControllerBase
     public Task<IReadOnlyList<AccessRecordDto>> Inside(int facilityId, CancellationToken ct) =>
         access.GetInsideAsync(User.GetUserId(), facilityId, ct);
 
-    /// <summary>All entries and denials recorded today.</summary>
+    /// <summary>All entries and denials of the last 24 hours (a night shift is not cut at midnight).</summary>
     [HttpGet("facilities/{facilityId:int}/today")]
     public Task<IReadOnlyList<AccessRecordDto>> Today(int facilityId, CancellationToken ct) =>
         access.GetTodayAsync(User.GetUserId(), facilityId, ct);
+
+    /// <summary>Record or correct a customer's CCCD after checking the card in person (the customer cannot change it).</summary>
+    [HttpPut("facilities/{facilityId:int}/customers/{customerId:int}/citizen-id")]
+    public Task<PersonDto> UpdateCustomerCitizenId(int facilityId, int customerId,
+        UpdateCustomerCitizenIdRequest req, CancellationToken ct) =>
+        access.UpdateCustomerCitizenIdAsync(User.GetUserId(), facilityId, customerId, req, ct);
 
     /// <summary>Visitor has left the facility.</summary>
     [HttpPost("access-records/{accessRecordId:long}/exit")]

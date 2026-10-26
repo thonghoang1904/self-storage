@@ -12,6 +12,8 @@ public class RentalPolicy
     public int MaxOverdueDaysBeforeLock { get; set; }
     public bool IsActive { get; set; }
     public DateOnly EffectiveDate { get; set; }
+    /// <summary>How long a new reservation waits for its deposit before it expires.</summary>
+    public int DepositPaymentHours { get; set; } = 24;
 }
 
 public class FeeConfiguration

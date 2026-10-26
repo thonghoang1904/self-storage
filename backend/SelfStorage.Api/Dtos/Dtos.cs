@@ -68,6 +68,8 @@ public record CreateUserByAdminRequest(
     [CitizenId] string? CitizenId,
     [Required] int RoleId,
     [MinLength(1)] IReadOnlyList<int>? FacilityIds = null);
+public record SetUserFacilitiesRequest([Required] IReadOnlyList<int> FacilityIds);
+public record AdminResetPasswordRequest([Required, StringLength(100, MinimumLength = 8)] string NewPassword);
 public record ChangeUserRoleRequest([Required] int RoleId);
 public record ChangeUserStatusRequest([Required] string Status);
 public record RoleDto(int RoleId, string RoleName, string? Description);
@@ -94,7 +96,7 @@ public record UpdateFacilityRequest(
     [Required] string Status);
 public record RentalPolicyDto(int PolicyId, string PolicyName, int? FacilityId, decimal DepositPercent,
     int CancellationGraceHours, decimal CancellationFeePercent, int RenewalNoticeDays,
-    int MaxOverdueDaysBeforeLock, bool IsActive, DateOnly EffectiveDate);
+    int MaxOverdueDaysBeforeLock, bool IsActive, DateOnly EffectiveDate, int DepositPaymentHours);
 public record SaveRentalPolicyRequest(
     [Required, StringLength(100)] string PolicyName,
     int? FacilityId,
@@ -104,7 +106,9 @@ public record SaveRentalPolicyRequest(
     [Range(0, 365)] int RenewalNoticeDays,
     [Range(0, 365)] int MaxOverdueDaysBeforeLock,
     bool IsActive,
-    [Required] DateOnly EffectiveDate);
+    [Required] DateOnly EffectiveDate,
+    // Deposit payment window for new reservations (separate from the free-cancellation window).
+    [Range(1, 720)] int DepositPaymentHours = 24);
 public record FeeConfigurationDto(int FeeTypeId, string FeeCode, string FeeName, decimal DefaultAmount,
     string CalculationMethod, string? Description);
 public record SaveFeeConfigurationRequest(
@@ -231,8 +235,18 @@ public record RenewalDto(int RenewalId, int ContractId, DateOnly OldEndDate, Dat
 public record ReturnUnitRequest([Required, StringLength(1000)] string UnitConditionNotes,
     bool AllItemsRemoved,
     [StringLength(500)] string? StaffNotes);
+// UnpaidInvoicesOffset: unpaid rent/extra charges settled from the deposit; UnpaidInvoicesRemaining: still owed
+// (the deposit is held back until they are paid); CancelledFutureInvoices: rent invoices for periods after the return.
+// PrepaidRentCredit: rent/renewal paid ahead for periods starting on or after the return date, paid back with the
+// deposit (DepositRefundDue already includes it).
 public record ReturnUnitDto(int ContractId, string Status, string UnitStatus, decimal DepositPaid,
-    decimal LateFeesDeducted, decimal DepositRefundDue, decimal LateFeesStillOwed, DateTime ReturnedAt);
+    decimal LateFeesDeducted, decimal DepositRefundDue, decimal LateFeesStillOwed, DateTime ReturnedAt,
+    decimal UnpaidInvoicesOffset = 0, decimal UnpaidInvoicesRemaining = 0, int CancelledFutureInvoices = 0,
+    decimal PrepaidRentCredit = 0);
+public record PrepayRentRequest([Range(1, 24)] int Months);
+public record PrepaidRentInvoiceDto(int InvoiceId, string InvoiceNumber, DateOnly PeriodStart, DateOnly PeriodEnd,
+    decimal Amount);
+public record PrepayRentDto(int ContractId, IReadOnlyList<PrepaidRentInvoiceDto> Invoices, decimal TotalAmount);
 public record OverdueSummaryDto(int OverdueId, int ContractId, string ContractNumber, string CustomerName,
     string UnitCode, DateOnly EndDate, string ContractStatus, string UnitStatus, int DaysOverdue,
     decimal AccumulatedLateFee, decimal DepositBalance, decimal OutstandingLateFee, DateTime? LockAppliedAt,
@@ -269,6 +283,18 @@ public record RecordPaymentRequest(
     [StringLength(255)] string? PaymentNotes);
 public record CheckoutResponse(string Provider, int PaymentId, string TransactionReference,
     decimal Amount, string PaymentUrl);
+/// <summary>Staff confirms a deposit or renewal they received; without a body it is cash.</summary>
+public record ConfirmPaymentRequest(
+    string PaymentMethod = "Cash",
+    [StringLength(100)] string? TransactionCode = null,
+    [StringLength(255)] string? PaymentNotes = null);
+public record RefundDuePaymentRequest(
+    [Required] string PaymentMethod,
+    [StringLength(100)] string? TransactionCode,
+    [StringLength(150)] string? Notes);
+public record RefundDuePaymentDto(int PaymentId, int InvoiceId, string InvoiceNumber, string InvoiceType,
+    string CustomerName, string PaymentMethod, string? GatewayReference, decimal Amount, DateTime PaymentDate,
+    string? Notes);
 public record RecordDepositRefundRequest(
     [Required] string PaymentMethod,
     [Required, Range(typeof(decimal), "0.01", "9999999999999999")] decimal Amount,

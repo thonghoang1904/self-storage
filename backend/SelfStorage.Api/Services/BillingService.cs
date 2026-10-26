@@ -8,8 +8,26 @@ using SelfStorage.Api.Infrastructure;
 
 namespace SelfStorage.Api.Services;
 
+public enum OnlinePaymentOutcome
+{
+    /// <summary>The invoice is now paid.</summary>
+    Applied,
+    /// <summary>The gateway reported a failed payment.</summary>
+    Failed,
+    /// <summary>The callback repeats one that was already handled.</summary>
+    AlreadyProcessed,
+    /// <summary>Money was taken but the invoice could no longer accept it; staff must refund it.</summary>
+    RefundDue,
+}
+
 public sealed class BillingService(SelfStorageDbContext db, AccessService access, TimeProvider clock)
 {
+    /// <summary>
+    /// A VNPay/MoMo checkout not confirmed within this time is marked Failed so the invoice can be paid
+    /// another way. VNPay links expire after 15 minutes; a confirmation arriving later is still recorded.
+    /// </summary>
+    public static readonly TimeSpan PendingOnlinePaymentTimeout = TimeSpan.FromMinutes(20);
+
     public Invoice CreateInvoice(
         int customerId,
         string invoiceType,
@@ -75,7 +93,9 @@ public sealed class BillingService(SelfStorageDbContext db, AccessService access
         if (invoice.Status is not ("Unpaid" or "Overdue"))
             throw AppException.Conflict("Hóa đơn không còn ở trạng thái chờ thanh toán");
         if (await db.Payments.AnyAsync(p => p.InvoiceId == invoiceId && p.Status == "Pending", ct))
-            throw AppException.Conflict("Hóa đơn đang có giao dịch trực tuyến chưa được xác nhận");
+            throw AppException.Conflict(
+                "Hóa đơn đang có giao dịch trực tuyến chưa được xác nhận; khách có thể hủy giao dịch đó hoặc chờ tối đa "
+                + $"{PendingOnlinePaymentTimeout.TotalMinutes:0} phút");
         if (request.AmountPaid != invoice.TotalAmount)
             throw AppException.BadRequest($"Số tiền cần thanh toán chính xác là {invoice.TotalAmount:N0}đ");
         if (transactionCode is not null
@@ -83,7 +103,8 @@ public sealed class BillingService(SelfStorageDbContext db, AccessService access
             throw AppException.Conflict("Mã giao dịch đã được ghi nhận");
 
         var now = clock.GetLocalNow().DateTime;
-        await ApplyPaidInvoiceAsync(invoice, staffId, now, ct);
+        if (await TryApplyPaidInvoiceAsync(invoice, staffId, now, now, ct) is string problem)
+            throw AppException.Conflict(problem);
 
         invoice.Status = "Paid";
         var payment = new Payment
@@ -103,7 +124,13 @@ public sealed class BillingService(SelfStorageDbContext db, AccessService access
         return payment;
     }
 
-    public async Task<bool> CompleteOnlinePaymentAsync(
+    /// <summary>
+    /// Records the gateway's verified result. A success is never dropped: if the invoice can no longer accept the
+    /// money (cancelled, expired, paid another way meanwhile), the payment is kept as RefundDue for staff to refund.
+    /// A payment marked Failed locally (timed out or cancelled by the customer) that the gateway later reports as
+    /// paid is handled the same way.
+    /// </summary>
+    public async Task<OnlinePaymentOutcome> CompleteOnlinePaymentAsync(
         string paymentMethod,
         string transactionReference,
         decimal amount,
@@ -116,80 +143,129 @@ public sealed class BillingService(SelfStorageDbContext db, AccessService access
             p.PaymentMethod == paymentMethod && p.TransactionCode == transactionReference, ct)
             ?? throw AppException.NotFound("Không tìm thấy giao dịch thanh toán");
 
-        if (payment.Status == "Success")
+        if (payment.Status is not ("Pending" or "Failed") || (payment.Status == "Failed" && !succeeded))
         {
             await transaction.CommitAsync(ct);
-            return true;
+            return OnlinePaymentOutcome.AlreadyProcessed;
         }
-        if (payment.Status == "Failed" && !succeeded)
-        {
-            await transaction.CommitAsync(ct);
-            return false;
-        }
-        if (payment.Status != "Pending")
-            throw AppException.Conflict("Giao dịch không còn ở trạng thái chờ xử lý");
         if (payment.AmountPaid != amount)
-            throw AppException.Conflict("Số tiền từ cổng thanh toán không khớp hóa đơn");
+            throw AppException.Conflict("Số tiền từ cổng thanh toán không khớp giao dịch");
 
+        var providerReference = string.IsNullOrWhiteSpace(providerTransactionId) ? "không có" : providerTransactionId;
         if (!succeeded)
         {
             payment.Status = "Failed";
-            payment.PaymentNotes = $"Cổng thanh toán báo thất bại ({providerTransactionId ?? "không có mã giao dịch"}).";
+            payment.PaymentNotes = $"Cổng thanh toán báo thất bại (mã giao dịch cổng: {providerReference}).";
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
-            return false;
+            return OnlinePaymentOutcome.Failed;
         }
 
         var invoice = await db.Invoices.FirstOrDefaultAsync(i => i.InvoiceId == payment.InvoiceId, ct)
             ?? throw AppException.NotFound("Không tìm thấy hóa đơn của giao dịch");
-        if (invoice.Status is not ("Unpaid" or "Overdue") || invoice.TotalAmount != amount)
-            throw AppException.Conflict("Hóa đơn không còn chờ thanh toán hoặc số tiền không khớp");
-
         var now = clock.GetLocalNow().DateTime;
-        await ApplyPaidInvoiceAsync(invoice, null, now, ct);
+        // PaymentDate of a pending online payment is when the customer started the checkout.
+        var problem = invoice.Status is not ("Unpaid" or "Overdue") || invoice.TotalAmount != amount
+            ? "hóa đơn không còn chờ thanh toán hoặc đã đổi số tiền"
+            : await TryApplyPaidInvoiceAsync(invoice, null, now, payment.PaymentDate, ct);
 
-        invoice.Status = "Paid";
-        payment.Status = "Success";
         payment.PaymentDate = now;
-        payment.PaymentNotes = string.IsNullOrWhiteSpace(providerTransactionId)
-            ? "Thanh toán trực tuyến đã được xác nhận."
-            : $"Thanh toán trực tuyến đã được xác nhận. Mã giao dịch cổng: {providerTransactionId}";
+        if (problem is null)
+        {
+            invoice.Status = "Paid";
+            payment.Status = "Success";
+            payment.PaymentNotes = $"Thanh toán trực tuyến đã được xác nhận. Mã giao dịch cổng: {providerReference}";
+        }
+        else
+        {
+            payment.Status = "RefundDue";
+            payment.PaymentNotes = Truncate(
+                $"Đã nhận tiền nhưng không ghi nhận được vào hóa đơn ({problem}); cần hoàn tiền cho khách. Mã giao dịch cổng: {providerReference}",
+                255);
+            db.ActivityLogs.Add(new ActivityLog
+            {
+                UserId = invoice.CustomerId,
+                Action = "OnlinePaymentRefundDue",
+                Details = $"Invoice {invoice.InvoiceNumber}; payment {payment.PaymentId}; {amount:N0}đ; {problem}",
+                CreatedAt = now,
+            });
+        }
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
-        return true;
+        return problem is null ? OnlinePaymentOutcome.Applied : OnlinePaymentOutcome.RefundDue;
+    }
+
+    /// <summary>Staff pays back an online payment kept as RefundDue; it becomes Reversed (no revenue either way).</summary>
+    public async Task<Payment> RefundDuePaymentAsync(
+        int paymentId, int staffId, RefundDuePaymentRequest request, CancellationToken ct)
+    {
+        if (request.PaymentMethod is not ("Cash" or "BankTransfer"))
+            throw AppException.BadRequest("Phương thức hoàn tiền chỉ hỗ trợ tiền mặt hoặc chuyển khoản");
+        var transactionCode = string.IsNullOrWhiteSpace(request.TransactionCode) ? null : request.TransactionCode.Trim();
+        if (request.PaymentMethod == "BankTransfer" && transactionCode is null)
+            throw AppException.BadRequest("Hoàn tiền qua chuyển khoản phải có mã giao dịch");
+
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var payment = await db.Payments.FirstOrDefaultAsync(p => p.PaymentId == paymentId, ct)
+            ?? throw AppException.NotFound("Không tìm thấy giao dịch");
+        var invoice = await db.Invoices.FirstAsync(i => i.InvoiceId == payment.InvoiceId, ct);
+        await EnsureStaffOwnsInvoiceAsync(invoice, staffId, ct);
+        if (payment.Status != "RefundDue")
+            throw AppException.Conflict("Giao dịch này không ở trạng thái chờ hoàn tiền");
+
+        var now = clock.GetLocalNow().DateTime;
+        payment.Status = "Reversed";
+        payment.ReceivedByStaffId = staffId;
+        payment.PaymentNotes = Truncate(
+            $"Đã hoàn {payment.AmountPaid:N0}đ cho khách ({request.PaymentMethod}"
+            + (transactionCode is null ? "" : $", mã {transactionCode}") + $") lúc {now:dd/MM/yyyy HH:mm}."
+            + (string.IsNullOrWhiteSpace(request.Notes) ? "" : $" {request.Notes.Trim()}"), 255);
+        db.ActivityLogs.Add(new ActivityLog
+        {
+            UserId = staffId,
+            Action = "OnlinePaymentRefunded",
+            Details = $"Payment {payment.PaymentId} of invoice {invoice.InvoiceNumber}; {payment.AmountPaid:N0}đ; "
+                + $"{request.PaymentMethod} {transactionCode}".Trim(),
+            CreatedAt = now,
+        });
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return payment;
     }
 
     /// <summary>
-    /// What a paid invoice unlocks; shared by staff payments and VNPay/MoMo callbacks.
-    /// DEPOSIT confirms the reservation. RENEWAL extends the contract (paid early at any time while it is active).
+    /// What a paid invoice unlocks; shared by staff payments and VNPay/MoMo callbacks. Returns why the invoice
+    /// can no longer be paid, or null once applied. Nothing is changed when a reason is returned.
+    /// DEPOSIT confirms the reservation (the deadline is checked against when the customer started paying).
+    /// RENEWAL extends the contract (paid early at any time while it is active).
     /// OVERDUE_FINE settles the late fees left after the deposit was used up at return.
     /// </summary>
-    private async Task ApplyPaidInvoiceAsync(Invoice invoice, int? staffId, DateTime now, CancellationToken ct)
+    private async Task<string?> TryApplyPaidInvoiceAsync(
+        Invoice invoice, int? staffId, DateTime now, DateTime paymentStartedAt, CancellationToken ct)
     {
         if (invoice.InvoiceType == "DEPOSIT")
         {
             if (invoice.ReservationId is not int reservationId)
-                throw AppException.Conflict("Hóa đơn cọc không liên kết với đơn đặt kho");
-            var reservation = await db.Reservations.FirstOrDefaultAsync(r => r.ReservationId == reservationId, ct)
-                ?? throw AppException.NotFound("Không tìm thấy đơn đặt kho");
-            if (reservation.Status != ReservationStatus.PendingDeposit
-                || reservation.DepositDeadline <= now
+                return "Hóa đơn cọc không liên kết với đơn đặt kho";
+            var reservation = await db.Reservations.FirstOrDefaultAsync(r => r.ReservationId == reservationId, ct);
+            if (reservation is null
+                || reservation.Status != ReservationStatus.PendingDeposit
+                || reservation.DepositDeadline <= paymentStartedAt
                 || invoice.TotalAmount != reservation.DepositAmount)
-                throw AppException.Conflict("Đơn đặt kho đã hết hạn hoặc số tiền cọc không còn hợp lệ");
+                return "Đơn đặt kho đã hết hạn, đã hủy hoặc số tiền cọc không còn hợp lệ";
             reservation.Status = ReservationStatus.Confirmed;
         }
         else if (invoice.InvoiceType == "RENEWAL")
         {
-            var renewal = await db.ContractRenewals.FirstOrDefaultAsync(r => r.InvoiceId == invoice.InvoiceId, ct)
-                ?? throw AppException.Conflict("Hóa đơn không liên kết với yêu cầu gia hạn");
+            var renewal = await db.ContractRenewals.FirstOrDefaultAsync(r => r.InvoiceId == invoice.InvoiceId, ct);
+            if (renewal is null) return "Hóa đơn không liên kết với yêu cầu gia hạn";
             var contract = await db.Contracts.Include(c => c.Unit)
-                .FirstOrDefaultAsync(c => c.ContractId == renewal.ContractId, ct)
-                ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
+                .FirstOrDefaultAsync(c => c.ContractId == renewal.ContractId, ct);
             // Paying early is allowed; only a contract that got locked for overdue (or was returned) can no longer renew.
-            if (renewal.Status != "Pending" || contract.Status != ContractStatus.Active
+            if (contract is null || renewal.Status != "Pending" || contract.Status != ContractStatus.Active
                 || contract.EndDate != renewal.OldEndDate
                 || invoice.TotalAmount != renewal.RenewalFee)
-                throw AppException.Conflict("Yêu cầu gia hạn đã hết hạn hoặc không còn hợp lệ");
+                return "Yêu cầu gia hạn đã hết hạn hoặc không còn hợp lệ";
 
             renewal.Status = "Paid";
             renewal.ApprovedByStaffId = staffId;
@@ -214,6 +290,7 @@ public sealed class BillingService(SelfStorageDbContext db, AccessService access
                 overdue.Notes = $"{overdue.Notes} Đã thu đủ phí quá hạn còn lại ({invoice.TotalAmount:N0}đ, hóa đơn {invoice.InvoiceNumber}).".Trim();
             }
         }
+        return null;
     }
 
     public async Task EnsureStaffOwnsInvoiceAsync(Invoice invoice, int staffId, CancellationToken ct)
@@ -230,4 +307,7 @@ public sealed class BillingService(SelfStorageDbContext db, AccessService access
             throw AppException.Conflict("Hóa đơn chưa được gắn với cơ sở để nhân viên xử lý");
         await access.EnsureAssignedAsync(staffId, facilityId.Value, ct);
     }
+
+    private static string Truncate(string value, int maxLength) =>
+        value.Length <= maxLength ? value : value[..maxLength];
 }

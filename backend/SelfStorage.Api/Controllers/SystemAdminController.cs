@@ -138,6 +138,82 @@ public sealed class SystemAdminController(
         return ToAdminUser(user);
     }
 
+    /// <summary>Facilities a staff member or facility manager is currently assigned to.</summary>
+    [HttpGet("users/{userId:int}/facilities")]
+    public async Task<List<FacilityDto>> UserFacilities(int userId, CancellationToken ct)
+    {
+        if (!await db.Users.AnyAsync(u => u.UserId == userId, ct))
+            throw AppException.NotFound("Không tìm thấy tài khoản");
+        return await db.FacilityStaffAssignments
+            .Where(a => a.StaffId == userId && a.Status == "Active")
+            .Select(a => a.Facility)
+            .OrderBy(f => f.FacilityName)
+            .Select(f => new FacilityDto(f.FacilityId, f.FacilityName, f.Address, f.City, f.District,
+                f.Hotline, f.OperatingHours, f.Status))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Replace the facility assignments of a staff member or facility manager (e.g. put a manager in charge of a
+    /// new facility). Assignments not in the list end; an empty list removes all of them.
+    /// </summary>
+    [HttpPut("users/{userId:int}/facilities")]
+    public async Task<List<FacilityDto>> SetUserFacilities(int userId, SetUserFacilitiesRequest req, CancellationToken ct)
+    {
+        var user = await db.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.UserId == userId, ct)
+            ?? throw AppException.NotFound("Không tìm thấy tài khoản");
+        var facilityIds = req.FacilityIds.Distinct().ToHashSet();
+        if (facilityIds.Count > 0 && user.Role.RoleName is not (AppRoles.Staff or AppRoles.Manager))
+            throw AppException.BadRequest("Chỉ nhân viên cơ sở hoặc quản lý cơ sở mới được phân công theo cơ sở");
+        if (await db.Facilities.CountAsync(f => facilityIds.Contains(f.FacilityId), ct) != facilityIds.Count)
+            throw AppException.BadRequest("Danh sách có cơ sở không tồn tại");
+
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var today = DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
+        var assignments = await db.FacilityStaffAssignments.Where(a => a.StaffId == userId).ToListAsync(ct);
+        foreach (var assignment in assignments)
+        {
+            if (facilityIds.Contains(assignment.FacilityId))
+            {
+                if (assignment.Status != "Active")
+                {
+                    assignment.Status = "Active";
+                    assignment.AssignedDate = today;
+                }
+            }
+            else if (assignment.Status == "Active")
+            {
+                assignment.Status = "Ended";
+            }
+        }
+        foreach (var facilityId in facilityIds.Where(id => assignments.All(a => a.FacilityId != id)))
+            db.FacilityStaffAssignments.Add(new FacilityStaffAssignment
+            {
+                FacilityId = facilityId,
+                StaffId = userId,
+                AssignedDate = today,
+                Status = "Active",
+            });
+        AddLog(User.GetUserId(), "AdminUserFacilitiesChanged",
+            $"Set facilities of user {userId} to [{string.Join(", ", facilityIds.Order())}]");
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return await UserFacilities(userId, ct);
+    }
+
+    /// <summary>Set a new password for a user who cannot use the email reset (e.g. no access to that mailbox).</summary>
+    [HttpPost("users/{userId:int}/password")]
+    public async Task<IActionResult> ResetPassword(int userId, AdminResetPasswordRequest req, CancellationToken ct)
+    {
+        var user = await db.Users.FirstOrDefaultAsync(u => u.UserId == userId, ct)
+            ?? throw AppException.NotFound("Không tìm thấy tài khoản");
+        user.PasswordHash = hasher.HashPassword(user, req.NewPassword);
+        user.UpdatedAt = clock.GetLocalNow().DateTime;
+        AddLog(User.GetUserId(), "AdminPasswordReset", $"Reset password of user {userId}");
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
     [HttpGet("users/{userId:int}/activity")]
     public async Task<List<ActivityLogDto>> UserActivity(
         int userId, [FromQuery] int take = 100, CancellationToken ct = default)

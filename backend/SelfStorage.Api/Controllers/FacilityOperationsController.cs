@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -9,9 +10,11 @@ using SelfStorage.Api.Services;
 
 namespace SelfStorage.Api.Controllers;
 
+// Roles are set per action: role attributes on the class and on an action must ALL pass, which locked the
+// operations manager out of the dashboard.
 [ApiController]
 [Route("api/facilities/{facilityId:int}")]
-[Authorize(Roles = AppRoles.GateRoles)]
+[Authorize]
 public sealed class FacilityOperationsController(
     SelfStorageDbContext db,
     AccessService access,
@@ -19,6 +22,7 @@ public sealed class FacilityOperationsController(
     TimeProvider clock) : ControllerBase
 {
     [HttpGet("daily-operations")]
+    [Authorize(Roles = AppRoles.GateRoles)]
     public async Task<FacilityWorkQueueDto> DailyOperations(
         int facilityId, [FromQuery] DateOnly? date, CancellationToken ct)
     {
@@ -69,6 +73,7 @@ public sealed class FacilityOperationsController(
     }
 
     [HttpGet("contracts")]
+    [Authorize(Roles = AppRoles.GateRoles)]
     public async Task<List<ContractDto>> Contracts(
         int facilityId, [FromQuery] string? status, CancellationToken ct)
     {
@@ -89,6 +94,7 @@ public sealed class FacilityOperationsController(
     }
 
     [HttpGet("cancellation-requests")]
+    [Authorize(Roles = AppRoles.GateRoles)]
     public async Task<List<CancellationRequestDto>> CancellationRequests(
         int facilityId, [FromQuery] string? status, CancellationToken ct)
     {
@@ -105,11 +111,13 @@ public sealed class FacilityOperationsController(
     }
 
     [HttpPost("cancellation-requests/{requestId:int}/resolve")]
+    [Authorize(Roles = AppRoles.GateRoles)]
     public async Task<CancellationRequestDto> ResolveCancellation(
         int facilityId, int requestId, ResolveCancellationRequest req, CancellationToken ct)
     {
         var staffId = User.GetUserId();
         await access.EnsureAssignedAsync(staffId, facilityId, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var request = await db.ReservationCancellationRequests
             .Include(r => r.Reservation)
             .FirstOrDefaultAsync(r => r.CancellationRequestId == requestId
@@ -126,22 +134,17 @@ public sealed class FacilityOperationsController(
             var depositInvoice = await db.Invoices.Include(i => i.Payments)
                 .FirstOrDefaultAsync(i => i.ReservationId == request.ReservationId
                     && i.InvoiceType == "DEPOSIT", ct);
+            // Cancelling under a running online payment would leave the customer's money without an invoice.
+            if (depositInvoice is not null && depositInvoice.Payments.Any(p => p.Status == "Pending"))
+                throw AppException.Conflict("Khách đang thanh toán cọc trực tuyến; hãy chờ giao dịch hoàn tất rồi duyệt hủy");
             var paidDeposit = depositInvoice?.Payments.Where(p => p.Status == "Success")
                 .Sum(p => p.AmountPaid) ?? 0m;
             var policy = await rentalPolicies.ForFacilityAsync(facilityId, ct);
-            var cancellationFee = decimal.Round(paidDeposit * policy.CancellationFeePercent / 100m, 2,
-                MidpointRounding.AwayFromZero);
-            request.ApprovedRefundAmount = Math.Max(0m, paidDeposit - cancellationFee);
+            // Free within the grace period counted from booking to when the customer asked to cancel.
+            request.ApprovedRefundAmount = policy.CancellationRefund(
+                paidDeposit, request.Reservation.CreatedAt, request.RequestedAt);
             request.Reservation.Status = ReservationStatus.Cancelled;
-            if (depositInvoice is { Status: "Unpaid" })
-            {
-                depositInvoice.Status = "Cancelled";
-                foreach (var pendingPayment in depositInvoice.Payments.Where(p => p.Status == "Pending"))
-                {
-                    pendingPayment.Status = "Failed";
-                    pendingPayment.PaymentNotes = "Giao dịch bị hủy do đơn đặt kho đã được duyệt hủy.";
-                }
-            }
+            if (depositInvoice is { Status: "Unpaid" }) depositInvoice.Status = "Cancelled";
         }
 
         request.Status = req.Approve ? "Approved" : "Rejected";
@@ -157,6 +160,7 @@ public sealed class FacilityOperationsController(
             CreatedAt = clock.GetLocalNow().DateTime,
         });
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return await db.ReservationCancellationRequests
             .Where(r => r.CancellationRequestId == requestId)
             .Select(r => new CancellationRequestDto(r.CancellationRequestId, r.ReservationId,
@@ -192,8 +196,9 @@ public sealed class FacilityOperationsController(
             .Select(group => new { Status = group.Key, Count = group.Count() })
             .ToDictionaryAsync(x => x.Status, x => x.Count, ct);
 
+        // A deposit offset only moves money already counted with the deposit, so it is not revenue again.
         var revenueByStatus = await db.Payments
-            .Where(p => (p.Status == "Success" || p.Status == "Refunded")
+            .Where(p => (p.Status == "Success" || p.Status == "Refunded") && p.PaymentMethod != "DepositOffset"
                 && p.PaymentDate >= start.ToDateTime(TimeOnly.MinValue)
                 && p.PaymentDate < end.AddDays(1).ToDateTime(TimeOnly.MinValue)
                 && db.Invoices.Any(i => i.InvoiceId == p.InvoiceId

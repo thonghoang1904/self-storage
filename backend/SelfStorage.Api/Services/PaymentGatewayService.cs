@@ -143,9 +143,11 @@ public sealed class PaymentGatewayService(
         var signature = fields.GetValueOrDefault("vnp_SecureHash");
         if (string.IsNullOrWhiteSpace(signature) || !VerifyVnPaySignature(fields, signature))
             return "97";
+        // VNPay's IPN carries vnp_TmnCode but not vnp_Command/vnp_CurrCode (those are only in the pay URL),
+        // so the latter are checked only when present.
         if (fields.GetValueOrDefault("vnp_TmnCode") != settings.VnPay.TmnCode
-            || fields.GetValueOrDefault("vnp_CurrCode") != "VND"
-            || fields.GetValueOrDefault("vnp_Command") != "pay")
+            || (fields.TryGetValue("vnp_CurrCode", out var currency) && currency != "VND")
+            || (fields.TryGetValue("vnp_Command", out var command) && command != "pay"))
             return "97";
         if (!fields.TryGetValue("vnp_TxnRef", out var reference)
             || !fields.TryGetValue("vnp_Amount", out var rawAmount)
@@ -160,9 +162,28 @@ public sealed class PaymentGatewayService(
         if (expectedAmount.Value != amount) return "04";
         var succeeded = fields.GetValueOrDefault("vnp_ResponseCode") == "00"
             && fields.GetValueOrDefault("vnp_TransactionStatus") == "00";
-        await billing.CompleteOnlinePaymentAsync("VNPay", reference, amount, succeeded,
+        var outcome = await billing.CompleteOnlinePaymentAsync("VNPay", reference, amount, succeeded,
             fields.GetValueOrDefault("vnp_TransactionNo"), ct);
-        return "00";
+        // 02 = order already confirmed; anything recorded now (paid, failed or kept for refund) is 00.
+        return outcome == OnlinePaymentOutcome.AlreadyProcessed ? "02" : "00";
+    }
+
+    /// <summary>
+    /// The customer gave up on a checkout: the pending payment becomes Failed so the invoice can be paid again.
+    /// If the gateway still confirms it later, the money is recorded (applied or kept for refund).
+    /// </summary>
+    public async Task CancelPendingCheckoutAsync(int invoiceId, int customerId, CancellationToken ct)
+    {
+        if (!await db.Invoices.AnyAsync(i => i.InvoiceId == invoiceId && i.CustomerId == customerId, ct))
+            throw AppException.NotFound("Không tìm thấy hóa đơn");
+        var cancelled = await db.Payments
+            .Where(p => p.InvoiceId == invoiceId && p.Status == "Pending"
+                && (p.PaymentMethod == "VNPay" || p.PaymentMethod == "MoMo"))
+            .ExecuteUpdateAsync(update => update
+                .SetProperty(p => p.Status, "Failed")
+                .SetProperty(p => p.PaymentNotes, "Khách hủy giao dịch trước khi cổng thanh toán xác nhận."), ct);
+        if (cancelled == 0)
+            throw AppException.Conflict("Hóa đơn không có giao dịch trực tuyến đang chờ");
     }
 
     public async Task ProcessMomoIpnAsync(MomoIpnRequest request, CancellationToken ct)
@@ -201,7 +222,10 @@ public sealed class PaymentGatewayService(
         {
             var renewal = await db.ContractRenewals.FirstOrDefaultAsync(r => r.InvoiceId == invoice.InvoiceId, ct)
                 ?? throw AppException.Conflict("Hóa đơn không liên kết với yêu cầu gia hạn");
-            if (renewal.Status != "Pending" || renewal.RenewalFee != invoice.TotalAmount)
+            var contract = await db.Contracts.FirstOrDefaultAsync(c => c.ContractId == renewal.ContractId, ct);
+            if (renewal.Status != "Pending" || renewal.RenewalFee != invoice.TotalAmount
+                || contract is null || contract.Status != ContractStatus.Active
+                || contract.EndDate != renewal.OldEndDate)
                 throw AppException.Conflict("Yêu cầu gia hạn không còn hợp lệ");
         }
     }

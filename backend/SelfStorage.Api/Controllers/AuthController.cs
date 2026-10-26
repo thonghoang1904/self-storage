@@ -62,6 +62,7 @@ public class AuthController(
 
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting("login")]
     public async Task<ActionResult<LoginResponse>> Login(LoginRequest req, CancellationToken ct)
     {
         var username = req.Username.Trim();
@@ -77,6 +78,7 @@ public class AuthController(
     /// <summary>Authenticate an existing account using a verified Google ID token.</summary>
     [HttpPost("google")]
     [AllowAnonymous]
+    [EnableRateLimiting("login")]
     public async Task<ActionResult<LoginResponse>> GoogleLogin(GoogleLoginRequest req, CancellationToken ct)
     {
         var clientId = googleOptions.Value.ClientId;
@@ -115,7 +117,7 @@ public class AuthController(
         if (user.Status != "Active")
             throw new AppException(StatusCodes.Status401Unauthorized, "Tài khoản Google không thể đăng nhập.");
 
-        var now = clock.GetUtcNow().UtcDateTime;
+        var now = clock.GetLocalNow().DateTime;
         db.ActivityLogs.Add(new ActivityLog
         {
             UserId = user.UserId,
@@ -168,7 +170,7 @@ public class AuthController(
             Action = ResetTokenAction,
             IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
             Details = details,
-            CreatedAt = clock.GetUtcNow().UtcDateTime,
+            CreatedAt = clock.GetLocalNow().DateTime,
         });
         await db.SaveChangesAsync(ct);
 
@@ -201,11 +203,12 @@ public class AuthController(
     public async Task<IActionResult> ResetPassword(ResetPasswordRequest req, CancellationToken ct)
     {
         var tokenHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(req.Token)));
-        var now = clock.GetUtcNow();
+        // ActivityLogs.CreatedAt is business local time like every other timestamp; expiry itself uses Unix seconds.
+        var now = clock.GetLocalNow();
         var tokenLog = await db.ActivityLogs
             .Where(log => log.Action == ResetTokenAction && log.Details != null
                 && log.Details.StartsWith("pending:") && log.Details.EndsWith($":{tokenHash}")
-                && log.CreatedAt >= now.UtcDateTime.Add(-ResetTokenLifetime))
+                && log.CreatedAt >= now.DateTime.Add(-ResetTokenLifetime))
             .OrderByDescending(log => log.CreatedAt)
             .Select(log => new { log.LogId, log.UserId, log.Details })
             .FirstOrDefaultAsync(ct);
@@ -225,14 +228,14 @@ public class AuthController(
         var user = await db.Users.FirstOrDefaultAsync(u => u.UserId == userId && u.Status == "Active", ct)
                    ?? throw AppException.BadRequest("Mã đặt lại mật khẩu không hợp lệ, đã hết hạn hoặc đã được sử dụng");
         user.PasswordHash = hasher.HashPassword(user, req.NewPassword);
-        user.UpdatedAt = now.UtcDateTime;
+        user.UpdatedAt = now.DateTime;
         db.ActivityLogs.Add(new ActivityLog
         {
             UserId = user.UserId,
             Action = "PasswordResetCompleted",
             IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
             Details = "Password reset completed using a single-use email token",
-            CreatedAt = now.UtcDateTime,
+            CreatedAt = now.DateTime,
         });
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);

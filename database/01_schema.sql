@@ -167,7 +167,9 @@ CREATE TABLE RentalPolicies (
     MaxOverdueDaysBeforeLock INT NOT NULL CONSTRAINT DF_RentalPolicies_LockDays DEFAULT 3,
     IsActive BIT NOT NULL CONSTRAINT DF_RentalPolicies_IsActive DEFAULT 1,
     EffectiveDate DATE NOT NULL,
-    CONSTRAINT FK_RentalPolicies_Facilities FOREIGN KEY (FacilityID) REFERENCES Facilities(FacilityID)
+    DepositPaymentHours INT NOT NULL CONSTRAINT DF_RentalPolicies_DepositHours DEFAULT 24,
+    CONSTRAINT FK_RentalPolicies_Facilities FOREIGN KEY (FacilityID) REFERENCES Facilities(FacilityID),
+    CONSTRAINT CK_RentalPolicies_DepositHours CHECK (DepositPaymentHours > 0)
 );
 GO
 
@@ -263,6 +265,8 @@ CREATE TABLE Contracts (
     Status VARCHAR(25) NOT NULL CONSTRAINT DF_Contracts_Status DEFAULT 'Active',
     SignedDate DATETIME2 NOT NULL CONSTRAINT DF_Contracts_SignedDate DEFAULT SYSDATETIME(),
     TermsConditions NVARCHAR(MAX) NULL,
+    PrepaidRentCredit DECIMAL(18,2) NOT NULL CONSTRAINT DF_Contracts_PrepaidRentCredit DEFAULT 0
+        CONSTRAINT CK_Contracts_PrepaidRentCredit CHECK (PrepaidRentCredit >= 0),
     CONSTRAINT FK_Contracts_Reservations FOREIGN KEY (ReservationID) REFERENCES Reservations(ReservationID),
     CONSTRAINT FK_Contracts_Customers FOREIGN KEY (CustomerID) REFERENCES Users(UserID),
     CONSTRAINT FK_Contracts_StorageUnits FOREIGN KEY (UnitID) REFERENCES StorageUnits(UnitID),
@@ -439,8 +443,8 @@ CREATE TABLE Payments (
     PaymentNotes NVARCHAR(255) NULL,
     CONSTRAINT FK_Payments_Invoices FOREIGN KEY (InvoiceID) REFERENCES Invoices(InvoiceID),
     CONSTRAINT FK_Payments_Staff FOREIGN KEY (ReceivedByStaffID) REFERENCES Users(UserID),
-    CONSTRAINT CK_Payments_Method CHECK (PaymentMethod IN ('VNPay', 'MoMo', 'BankTransfer', 'Cash', 'CreditCard')),
-    CONSTRAINT CK_Payments_Status CHECK (Status IN ('Pending', 'Success', 'Failed', 'Refunded'))
+    CONSTRAINT CK_Payments_Method CHECK (PaymentMethod IN ('VNPay', 'MoMo', 'BankTransfer', 'Cash', 'CreditCard', 'DepositOffset')),
+    CONSTRAINT CK_Payments_Status CHECK (Status IN ('Pending', 'Success', 'Failed', 'Refunded', 'RefundDue', 'Reversed'))
 );
 GO
 

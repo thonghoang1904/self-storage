@@ -81,7 +81,7 @@ public class SupportController(SelfStorageDbContext db, AccessService access, Ti
 
         var request = new SupportRequest
         {
-            RequestCode = $"SUP-{clock.GetLocalNow():yyyyMMdd}-{Random.Shared.Next(100000, 999999)}",
+            RequestCode = BusinessCodes.New("SUP", clock.GetLocalNow().DateTime),
             CustomerId = contract.CustomerId,
             ContractId = contract.ContractId,
             UnitId = contract.UnitId,

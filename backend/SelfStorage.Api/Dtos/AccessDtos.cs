@@ -25,7 +25,9 @@ public record VisitCandidateDto(
     IReadOnlyList<string> PeopleInside,
     IReadOnlyList<AccessIssueDto> Issues,
     bool CanEnter,
-    bool CanEnterForMoveOut);
+    bool CanEnterForMoveOut,
+    // For staff updating the customer's CCCD after checking the card.
+    int CustomerId);
 
 public record GrantEntryRequest(
     [Required] int ContractId,
@@ -39,10 +41,17 @@ public record GrantEntryRequest(
     [StringLength(500)] string? Notes,
     // People entering with the visitor, not counting the visitor.
     [Range(0, 50)] int CompanionCount = 0,
-    // Null = now. Lets staff record an entry a little after the fact; never in the future.
+    // Null = now. Lets staff record an entry up to 12 hours after the fact; never in the future.
     DateTime? EntryTime = null,
     // Contract expired or overdue-locked: let the visitor in only to empty the unit for the return.
     bool MoveOut = false);
+
+/// <summary>Staff checked the customer's card in person and records (or corrects) the CCCD on file.</summary>
+public record UpdateCustomerCitizenIdRequest(
+    [Required(ErrorMessage = "Vui lòng nhập số CCCD trên thẻ của khách")]
+    [CitizenId]
+    string CitizenId,
+    [StringLength(300)] string? Notes);
 
 public record DenyEntryRequest(
     [Required] int ContractId,

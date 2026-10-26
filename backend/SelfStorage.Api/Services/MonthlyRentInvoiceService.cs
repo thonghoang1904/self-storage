@@ -16,9 +16,23 @@ public sealed class MonthlyRentInvoiceService(
         using var timer = new PeriodicTimer(TimeSpan.FromHours(6));
         do
         {
-            await CreateDueInvoicesAsync(stoppingToken);
+            try
+            {
+                await CreateDueInvoicesAsync(stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // One failed run must not stop the service or the host.
+                logger.LogError(ex, "Monthly rent invoicing failed; retrying on the next tick");
+            }
         } while (await timer.WaitForNextTickAsync(stoppingToken));
     }
+
+    /// <summary>A period paid through a renewal is not billed again as monthly rent.</summary>
+    public static Task<bool> IsCoveredByPaidRenewalAsync(
+        SelfStorageDbContext db, int contractId, DateOnly periodStart, DateOnly periodEnd, CancellationToken ct) =>
+        db.ContractRenewals.AnyAsync(r => r.ContractId == contractId && r.Status == "Paid"
+            && r.OldEndDate <= periodStart && r.NewEndDate >= periodEnd, ct);
 
     private async Task CreateDueInvoicesAsync(CancellationToken ct)
     {
@@ -27,6 +41,7 @@ public sealed class MonthlyRentInvoiceService(
         var billing = scope.ServiceProvider.GetRequiredService<BillingService>();
         var today = DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
         var generationThrough = today.AddDays(7);
+        // Rent invoices for periods after a return are cancelled at return, so whatever is still unpaid here is owed.
         await db.Invoices
             .Where(i => i.Status == "Unpaid" && i.DueDate < today
                 && (i.InvoiceType == "MONTHLY_RENT" || i.InvoiceType == "EXTRA_CHARGE"))
@@ -46,16 +61,13 @@ public sealed class MonthlyRentInvoiceService(
 
         foreach (var contract in contracts)
         {
-            for (var month = 0; month < 61; month++)
+            foreach (var (periodStart, periodEnd) in RentSchedule.Periods(contract.StartDate, contract.EndDate))
             {
-                var periodStart = contract.StartDate.AddMonths(month);
-                if (periodStart >= contract.EndDate || periodStart > generationThrough)
+                if (periodStart > generationThrough)
                     break;
-                var periodEnd = periodStart.AddMonths(1);
-                if (periodEnd > contract.EndDate)
-                    periodEnd = contract.EndDate;
                 if (await IsCoveredByPaidRenewalAsync(db, contract.ContractId, periodStart, periodEnd, ct))
                     continue;
+                // Also skips periods the customer already prepaid (POST /api/contracts/{id}/prepay).
                 if (await db.Invoices.AnyAsync(i => i.ContractId == contract.ContractId
                     && i.InvoiceType == "MONTHLY_RENT" && i.BillingPeriodStart == periodStart, ct))
                     continue;
@@ -65,7 +77,7 @@ public sealed class MonthlyRentInvoiceService(
                     contract.CustomerId,
                     "MONTHLY_RENT",
                     periodStart,
-                    $"Tiền thuê kỳ {periodStart:dd/MM/yyyy} - {periodEnd:dd/MM/yyyy} cho hợp đồng {contract.ContractNumber}",
+                    RentSchedule.Description(periodStart, periodEnd, contract.ContractNumber),
                     contract.MonthlyRentFee,
                     contractId: contract.ContractId,
                     billingPeriodStart: periodStart,
@@ -90,9 +102,4 @@ public sealed class MonthlyRentInvoiceService(
             }
         }
     }
-
-    private static Task<bool> IsCoveredByPaidRenewalAsync(
-        SelfStorageDbContext db, int contractId, DateOnly periodStart, DateOnly periodEnd, CancellationToken ct) =>
-        db.ContractRenewals.AnyAsync(r => r.ContractId == contractId && r.Status == "Paid"
-            && r.OldEndDate <= periodStart && r.NewEndDate >= periodEnd, ct);
 }

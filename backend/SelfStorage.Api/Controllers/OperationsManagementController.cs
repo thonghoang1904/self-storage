@@ -69,7 +69,8 @@ public sealed class OperationsManagementController(
         db.RentalPolicies.OrderByDescending(p => p.EffectiveDate).ThenBy(p => p.FacilityId)
             .Select(p => new RentalPolicyDto(p.PolicyId, p.PolicyName, p.FacilityId,
                 p.DepositPercent, p.CancellationGraceHours, p.CancellationFeePercent,
-                p.RenewalNoticeDays, p.MaxOverdueDaysBeforeLock, p.IsActive, p.EffectiveDate))
+                p.RenewalNoticeDays, p.MaxOverdueDaysBeforeLock, p.IsActive, p.EffectiveDate,
+                p.DepositPaymentHours))
             .ToListAsync(ct);
 
     [HttpPost("rental-policies")]
@@ -89,6 +90,7 @@ public sealed class OperationsManagementController(
             MaxOverdueDaysBeforeLock = req.MaxOverdueDaysBeforeLock,
             IsActive = req.IsActive,
             EffectiveDate = req.EffectiveDate,
+            DepositPaymentHours = req.DepositPaymentHours,
         };
         db.RentalPolicies.Add(policy);
         AddLog("RentalPolicyCreated", "Created a rental policy");
@@ -114,6 +116,7 @@ public sealed class OperationsManagementController(
         policy.MaxOverdueDaysBeforeLock = req.MaxOverdueDaysBeforeLock;
         policy.IsActive = req.IsActive;
         policy.EffectiveDate = req.EffectiveDate;
+        policy.DepositPaymentHours = req.DepositPaymentHours;
         AddLog("RentalPolicyUpdated", $"Updated rental policy {policyId}");
         await db.SaveChangesAsync(ct);
         return ToPolicyDto(policy);
@@ -255,7 +258,7 @@ public sealed class OperationsManagementController(
     private static RentalPolicyDto ToPolicyDto(RentalPolicy policy) =>
         new(policy.PolicyId, policy.PolicyName, policy.FacilityId, policy.DepositPercent,
             policy.CancellationGraceHours, policy.CancellationFeePercent, policy.RenewalNoticeDays,
-            policy.MaxOverdueDaysBeforeLock, policy.IsActive, policy.EffectiveDate);
+            policy.MaxOverdueDaysBeforeLock, policy.IsActive, policy.EffectiveDate, policy.DepositPaymentHours);
 
     private static FeeConfigurationDto ToFeeDto(FeeConfiguration fee) =>
         new(fee.FeeTypeId, fee.FeeCode, fee.FeeName, fee.DefaultAmount, fee.CalculationMethod, fee.Description);

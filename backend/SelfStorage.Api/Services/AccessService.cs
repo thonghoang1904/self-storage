@@ -12,9 +12,12 @@ namespace SelfStorage.Api.Services;
 /// the visitor arrives -> staff looks up the contract and checks the ID card -> Granted or Denied row
 /// -> staff confirms exit (ExitTime). "Waiting for verification" exists only on the staff screen.
 /// </summary>
-public class AccessService(SelfStorageDbContext db, TimeProvider clock)
+public class AccessService(SelfStorageDbContext db, RentalPolicyService rentalPolicies, TimeProvider clock)
 {
     private DateTime Now => clock.GetLocalNow().DateTime;   // DB defaults use SYSDATETIME() (server local time)
+
+    /// <summary>How far back staff may record an entry that already happened (e.g. across midnight).</summary>
+    private static readonly TimeSpan MaxEntryBackdate = TimeSpan.FromHours(12);
 
     // ---------------------------------------------------------------- lookup
 
@@ -41,6 +44,7 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
             .ToListAsync(ct);
 
         var ids = contracts.Select(c => c.ContractId).ToList();
+        var unpaid = await ContractsWithOverdueBillsAsync(facilityId, ids, ct);
         var inside = await db.AccessRecords
             .Where(r => ids.Contains(r.ContractId) && r.Result == AccessResult.Granted && r.ExitTime == null)
             .Select(r => new
@@ -52,7 +56,7 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
 
         return contracts.Select(c =>
         {
-            var issues = FindIssues(c);
+            var issues = FindIssues(c, unpaid.Contains(c.ContractId));
             return new VisitCandidateDto(
                 c.ContractId, c.ContractNumber, c.Status, c.StartDate, c.EndDate, c.Unit.UnitCode, c.Unit.Status,
                 new PersonDto(null, c.Customer.FullName, c.Customer.CitizenId, c.Customer.PhoneNumber, "Chủ hợp đồng"),
@@ -62,7 +66,8 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
                 inside.Where(i => i.ContractId == c.ContractId).Select(i => i.Name).ToList(),
                 issues,
                 issues.Count == 0,
-                CanMoveOut(issues));
+                CanMoveOut(issues),
+                c.CustomerId);
         }).ToList();
     }
 
@@ -73,7 +78,8 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
         await EnsureAssignedAsync(staffId, facilityId, ct);
         var contract = await LoadContractAsync(facilityId, req.ContractId, ct);
 
-        var issues = FindIssues(contract);
+        var unpaid = await ContractsWithOverdueBillsAsync(facilityId, [contract.ContractId], ct);
+        var issues = FindIssues(contract, unpaid.Contains(contract.ContractId));
         if (issues.Count > 0 && !(req.MoveOut && CanMoveOut(issues)))
         {
             var blocking = issues.FirstOrDefault(i => !i.MoveOutAllowed) ?? issues[0];
@@ -93,8 +99,10 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
         var entryTime = req.EntryTime ?? Now;
         if (entryTime > Now.AddMinutes(1))
             throw AppException.BadRequest("Giờ vào kho không được ở tương lai");
-        if (entryTime < Now.Date)
-            throw AppException.BadRequest("Chỉ được ghi nhận giờ vào kho trong ngày hôm nay");
+        // 24/7: an entry just before midnight can still be recorded after it, so the limit is hours, not "today".
+        if (entryTime < Now - MaxEntryBackdate)
+            throw AppException.BadRequest(
+                $"Chỉ được ghi bù giờ vào kho trong vòng {MaxEntryBackdate.TotalHours:0} giờ trước");
 
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var alreadyInside = await db.AccessRecords.AnyAsync(r => r.ContractId == contract.ContractId
@@ -161,12 +169,13 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
             .ToListAsync(ct);
     }
 
+    /// <summary>Entries and denials of the last 24 hours, so a night shift is not cut in two at midnight.</summary>
     public async Task<IReadOnlyList<AccessRecordDto>> GetTodayAsync(int staffId, int facilityId, CancellationToken ct)
     {
         await EnsureAssignedAsync(staffId, facilityId, ct);
-        var today = Now.Date;
+        var since = Now.AddHours(-24);
         return await ProjectRecords(db.AccessRecords
-                .Where(r => r.FacilityId == facilityId && r.EntryTime >= today)
+                .Where(r => r.FacilityId == facilityId && r.EntryTime >= since)
                 .OrderByDescending(r => r.EntryTime))
             .ToListAsync(ct);
     }
@@ -211,24 +220,81 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
     }
 
     /// <summary>
-    /// Reasons the contract's unit cannot be opened right now; codes match AccessRecords.DenyReason.
-    /// An expired or overdue-locked contract that was not returned yet still lets the visitor in to empty the unit.
+    /// Staff checked the customer's ID card in person and records the CCCD on file (customers cannot change a
+    /// CCCD themselves). Only for customers with a reservation or contract at this facility; the change is logged.
     /// </summary>
-    private List<AccessIssueDto> FindIssues(Contract c)
+    public async Task<PersonDto> UpdateCustomerCitizenIdAsync(
+        int staffId, int facilityId, int customerId, UpdateCustomerCitizenIdRequest req, CancellationToken ct)
+    {
+        await EnsureAssignedAsync(staffId, facilityId, ct);
+        var isCustomerHere = await db.Contracts.AnyAsync(c => c.CustomerId == customerId && c.Unit.FacilityId == facilityId, ct)
+            || await db.Reservations.AnyAsync(r => r.CustomerId == customerId && r.FacilityId == facilityId, ct);
+        var customer = isCustomerHere
+            ? await db.Users.FirstOrDefaultAsync(u => u.UserId == customerId && u.Role.RoleName == AppRoles.Customer, ct)
+            : null;
+        if (customer is null) throw AppException.NotFound("Không tìm thấy khách hàng tại cơ sở này");
+
+        var citizenId = Contact.NormalizeCitizenId(req.CitizenId);
+        if (await db.Users.AnyAsync(u => u.CitizenId == citizenId && u.UserId != customerId, ct))
+            throw AppException.Conflict("Số CCCD đã được đăng ký cho tài khoản khác");
+        var previous = customer.CitizenId;
+        customer.CitizenId = citizenId;
+        customer.UpdatedAt = Now;
+        db.ActivityLogs.Add(new ActivityLog
+        {
+            UserId = staffId,
+            Action = "CustomerCitizenIdUpdated",
+            Details = $"Customer {customerId}: {previous ?? "(trống)"} -> {citizenId}"
+                + (string.IsNullOrWhiteSpace(req.Notes) ? "" : $". {req.Notes.Trim()}"),
+            CreatedAt = Now,
+        });
+        await db.SaveChangesAsync(ct);
+        return new PersonDto(null, customer.FullName, customer.CitizenId, customer.PhoneNumber, "Chủ hợp đồng");
+    }
+
+    /// <summary>
+    /// Contracts with rent or extra charges unpaid for longer than the facility's MaxOverdueDaysBeforeLock:
+    /// the unit stays closed until they are paid.
+    /// </summary>
+    private async Task<HashSet<int>> ContractsWithOverdueBillsAsync(
+        int facilityId, IReadOnlyCollection<int> contractIds, CancellationToken ct)
+    {
+        if (contractIds.Count == 0) return [];
+        var policy = await rentalPolicies.ForFacilityAsync(facilityId, ct);
+        var dueBefore = DateOnly.FromDateTime(Now).AddDays(-policy.MaxOverdueDaysBeforeLock);
+        var ids = await db.Invoices
+            .Where(i => i.ContractId != null && contractIds.Contains(i.ContractId.Value)
+                && (i.Status == "Unpaid" || i.Status == "Overdue")
+                && (i.InvoiceType == "MONTHLY_RENT" || i.InvoiceType == "EXTRA_CHARGE")
+                && i.DueDate < dueBefore)
+            .Select(i => i.ContractId!.Value)
+            .Distinct()
+            .ToListAsync(ct);
+        return ids.ToHashSet();
+    }
+
+    /// <summary>
+    /// Reasons the contract's unit cannot be opened right now; codes match AccessRecords.DenyReason.
+    /// An expired or overdue-locked contract that was not returned yet still lets the visitor in to empty the unit,
+    /// but not while rent or extra charges are overdue: those must be paid first.
+    /// </summary>
+    private List<AccessIssueDto> FindIssues(Contract c, bool hasOverdueBills)
     {
         var today = DateOnly.FromDateTime(Now);
         var issues = new List<AccessIssueDto>();
 
         if (c.Status is ContractStatus.Terminated or ContractStatus.Liquidated)
             issues.Add(new("ContractEnded", "Hợp đồng đã kết thúc"));
-        else if (Now >= ContractSchedule.ExpiresAt(c.EndDate))
+        else if (Now >= ContractSchedule.ExpiresAt(c.EndDate, c.SignedDate))
             issues.Add(new("ContractEnded", "Hợp đồng đã hết hạn, chưa gia hạn hoặc trả kho", MoveOutAllowed: true));
         else if (c.StartDate > today)
             issues.Add(new("ContractEnded", $"Hợp đồng chưa bắt đầu (từ {c.StartDate:dd/MM/yyyy})"));
 
         if (c.Status == ContractStatus.Overdue || c.Unit.Status == UnitStatus.OverdueLocked)
-            issues.Add(new("OverdueLocked", "Hợp đồng quá hạn thanh toán, kho đang bị khóa",
+            issues.Add(new("OverdueLocked", "Hợp đồng đã quá hạn mà chưa gia hạn hoặc trả kho, kho đang bị khóa",
                 MoveOutAllowed: c.Status is ContractStatus.Active or ContractStatus.Overdue));
+        if (hasOverdueBills && c.Status is ContractStatus.Active or ContractStatus.Overdue)
+            issues.Add(new("OverdueLocked", "Còn hóa đơn tiền thuê/phụ thu quá hạn thanh toán; khách cần thanh toán trước khi vào kho"));
         if (c.Unit.Status == UnitStatus.UnderMaintenance)
             issues.Add(new("UnitUnderMaintenance", "Kho đang bảo trì"));
         return issues;

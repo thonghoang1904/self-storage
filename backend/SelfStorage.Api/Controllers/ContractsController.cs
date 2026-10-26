@@ -2,6 +2,7 @@ using System.Data;
 using System.Linq.Expressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
 using SelfStorage.Api.Data;
 using SelfStorage.Api.Data.Entities;
@@ -62,12 +63,12 @@ public class ContractsController(
             contract.StartDate, contract.EndDate, contract.Status, contract.MonthlyRentFee, contract.DepositPaid,
             accrued, Math.Max(0m, contract.DepositPaid - accrued), Math.Max(0m, accrued - contract.DepositPaid),
             contract.EndDate.AddDays(-policy.RenewalNoticeDays).ToDateTime(TimeOnly.MinValue),
-            contract.Customer.FullName, ContractSchedule.ExpiresAt(contract.EndDate), hasPendingRenewal);
+            contract.Customer.FullName, ContractSchedule.ExpiresAt(contract.EndDate, contract.SignedDate), hasPendingRenewal);
     }
 
     /// <summary>
     /// Ask for a renewal (and pay it early) at any time while the contract is active, also after it expired
-    /// at 20:00 as long as the unit has not been locked for overdue yet. RenewalNoticeDays is only a reminder.
+    /// as long as the unit has not been locked for overdue yet. RenewalNoticeDays is only a reminder.
     /// </summary>
     [HttpPost("{id:int}/renewals")]
     [Authorize(Roles = AppRoles.Customer)]
@@ -82,6 +83,11 @@ public class ContractsController(
                 : "Chỉ có thể gia hạn hợp đồng đang hiệu lực");
         if (await db.ContractRenewals.AnyAsync(r => r.ContractId == id && r.Status == "Pending", ct))
             throw AppException.Conflict("Hợp đồng đã có yêu cầu gia hạn đang chờ xử lý");
+        // By due date, not only by the Overdue status the invoicing worker sets every few hours.
+        var today = DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
+        if (await db.Invoices.AnyAsync(i => i.ContractId == id
+                && (i.Status == "Overdue" || (i.Status == "Unpaid" && i.DueDate < today)), ct))
+            throw AppException.Conflict("Vui lòng thanh toán các hóa đơn quá hạn của hợp đồng trước khi gia hạn");
 
         var renewal = new ContractRenewal
         {
@@ -102,6 +108,50 @@ public class ContractsController(
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return ToRenewalDto(renewal);
+    }
+
+    /// <summary>
+    /// Pay rent ahead within the contract term: creates now the rent invoices of the next <c>Months</c> periods
+    /// that have none yet (the invoicing worker only creates them 7 days ahead), to be paid online or at the
+    /// facility like any invoice. Periods after the end date need a renewal instead. Rent paid ahead for periods
+    /// that have not started when the unit is returned early is paid back with the deposit.
+    /// </summary>
+    [HttpPost("{id:int}/prepay")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public async Task<PrepayRentDto> PrepayRent(int id, PrepayRentRequest req, CancellationToken ct)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var contract = await LoadOwnAsync(id, ct);
+        if (contract.Status != ContractStatus.Active)
+            throw AppException.Conflict("Chỉ có thể trả trước tiền thuê cho hợp đồng đang hiệu lực");
+
+        var today = DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
+        var invoiced = await db.Invoices
+            .Where(i => i.ContractId == id && i.InvoiceType == "MONTHLY_RENT" && i.BillingPeriodStart != null)
+            .Select(i => i.BillingPeriodStart!.Value)
+            .ToListAsync(ct);
+        var created = new List<Invoice>();
+        foreach (var (periodStart, periodEnd) in RentSchedule.Periods(contract.StartDate, contract.EndDate))
+        {
+            if (created.Count == req.Months) break;
+            if (periodEnd <= today || invoiced.Contains(periodStart)
+                || await MonthlyRentInvoiceService.IsCoveredByPaidRenewalAsync(db, id, periodStart, periodEnd, ct))
+                continue;
+            var invoice = billing.CreateInvoice(contract.CustomerId, "MONTHLY_RENT", periodStart,
+                RentSchedule.Description(periodStart, periodEnd, contract.ContractNumber),
+                contract.MonthlyRentFee, contractId: id,
+                billingPeriodStart: periodStart, billingPeriodEnd: periodEnd);
+            db.Invoices.Add(invoice);
+            created.Add(invoice);
+        }
+        if (created.Count == 0)
+            throw AppException.Conflict(
+                "Các kỳ còn lại trong thời hạn hợp đồng đều đã có hóa đơn; hãy thanh toán các hóa đơn đó hoặc gia hạn hợp đồng");
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        var rows = created.Select(i => new PrepaidRentInvoiceDto(i.InvoiceId, i.InvoiceNumber,
+            i.BillingPeriodStart!.Value, i.BillingPeriodEnd!.Value, i.SubTotal)).ToList();
+        return new PrepayRentDto(id, rows, rows.Sum(r => r.Amount));
     }
 
     [HttpGet("{id:int}/renewals")]
@@ -126,10 +176,13 @@ public class ContractsController(
                 r.ExtensionMonths, r.RenewalFee, r.Status, r.RequestedAt, r.InvoiceId)).ToListAsync(ct);
     }
 
+    /// <summary>Staff received the renewal fee (cash by default; send a body for a bank transfer).</summary>
     [HttpPost("renewals/{renewalId:int}/confirm-payment")]
     [Authorize(Roles = AppRoles.GateRoles)]
-    public async Task<RenewalDto> ConfirmRenewalPayment(int renewalId, CancellationToken ct)
+    public async Task<RenewalDto> ConfirmRenewalPayment(int renewalId,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ConfirmPaymentRequest? req, CancellationToken ct)
     {
+        req ??= new ConfirmPaymentRequest();
         var renewal = await db.ContractRenewals.FirstOrDefaultAsync(r => r.RenewalId == renewalId, ct)
                       ?? throw AppException.NotFound("Không tìm thấy yêu cầu gia hạn");
         var contract = await db.Contracts.Include(c => c.Unit)
@@ -141,7 +194,8 @@ public class ContractsController(
         var invoice = await db.Invoices.FindAsync([invoiceId], ct)
             ?? throw AppException.NotFound("Không tìm thấy hóa đơn gia hạn");
         await billing.RecordStaffPaymentAsync(invoiceId, User.GetUserId(),
-            new RecordPaymentRequest("Cash", invoice.TotalAmount, null, "Nhân viên xác nhận đã nhận phí gia hạn"),
+            new RecordPaymentRequest(req.PaymentMethod, invoice.TotalAmount, req.TransactionCode,
+                req.PaymentNotes ?? "Nhân viên xác nhận đã nhận phí gia hạn"),
             ct);
         await db.Entry(renewal).ReloadAsync(ct);
         return ToRenewalDto(renewal);
@@ -159,6 +213,9 @@ public class ContractsController(
         await access.EnsureAssignedAsync(User.GetUserId(), contract.Unit.FacilityId, ct);
         if (renewal.Status != "Pending")
             throw AppException.Conflict("Yêu cầu gia hạn không còn chờ xử lý");
+        if (renewal.InvoiceId is int pendingInvoiceId
+            && await db.Payments.AnyAsync(p => p.InvoiceId == pendingInvoiceId && p.Status == "Pending", ct))
+            throw AppException.Conflict("Khách đang thanh toán gia hạn trực tuyến; hãy chờ giao dịch hoàn tất rồi xử lý");
         renewal.Status = "Rejected";
         renewal.ApprovedByStaffId = User.GetUserId();
         renewal.ProcessedAt = clock.GetLocalNow().DateTime;
@@ -173,8 +230,12 @@ public class ContractsController(
     }
 
     /// <summary>
-    /// Take the unit back at any hour (24/7), also before the end date. Late fees are deducted from the deposit;
-    /// pending renewals are cancelled together with their unpaid invoices.
+    /// Take the unit back at any hour (24/7), also before the end date. Pending renewals are cancelled together
+    /// with their unpaid invoices, and so are rent invoices for periods starting on or after the return date.
+    /// The deposit first covers late fees, then unpaid rent/extra charges (oldest first, whole invoices);
+    /// whatever the deposit cannot cover stays owed and the rest of the deposit is held back until it is paid.
+    /// Rent already paid for periods starting on or after the return date (prepaid months, unused renewal months)
+    /// is added to what is paid back with the deposit.
     /// </summary>
     [HttpPost("{id:int}/return")]
     [Authorize(Roles = AppRoles.GateRoles)]
@@ -186,7 +247,7 @@ public class ContractsController(
         var staffId = User.GetUserId();
         await access.EnsureAssignedAsync(staffId, contract.Unit.FacilityId, ct);
         var now = clock.GetLocalNow().DateTime;
-        var early = now < ContractSchedule.ExpiresAt(contract.EndDate);
+        var early = now < ContractSchedule.ExpiresAt(contract.EndDate, contract.SignedDate);
         if (!req.AllItemsRemoved)
             throw AppException.BadRequest("Nhân viên cần xác nhận kho đã được dọn sạch trước khi hoàn tất trả kho");
         if (contract.Status is not (ContractStatus.Active or ContractStatus.Overdue))
@@ -195,11 +256,19 @@ public class ContractsController(
             && r.ExitTime == null, ct))
             throw AppException.Conflict("Cần xác nhận tất cả khách đã ra khỏi cơ sở trước khi trả kho");
 
+        var openInvoices = await db.Invoices.Include(i => i.Payments)
+            .Where(i => i.ContractId == id && (i.Status == "Unpaid" || i.Status == "Overdue"))
+            .OrderBy(i => i.DueDate).ThenBy(i => i.InvoiceId)
+            .ToListAsync(ct);
+        if (openInvoices.Any(i => i.Payments.Any(p => p.Status == "Pending")))
+            throw AppException.Conflict(
+                "Khách đang có giao dịch trực tuyến chờ xác nhận; hãy chờ giao dịch hoàn tất hoặc để khách hủy giao dịch rồi trả kho");
+
         var overdue = await db.OverdueRecords.Where(r => r.ContractId == id && r.ResolvedDate == null)
             .OrderByDescending(r => r.OverdueId).FirstOrDefaultAsync(ct);
         var accumulated = overdue?.AccumulatedLateFee ?? 0m;
         var deducted = Math.Min(contract.DepositPaid, accumulated);
-        var refund = contract.DepositPaid - deducted;
+        var depositLeft = contract.DepositPaid - deducted;
         var stillOwed = accumulated - deducted;
         db.HandoverRecords.Add(new HandoverRecord
         {
@@ -213,18 +282,78 @@ public class ContractsController(
         });
         var pendingRenewals = await db.ContractRenewals
             .Where(r => r.ContractId == id && r.Status == "Pending").ToListAsync(ct);
-        var renewalInvoiceIds = pendingRenewals.Where(r => r.InvoiceId != null).Select(r => r.InvoiceId!.Value).ToList();
-        if (renewalInvoiceIds.Count > 0
-            && await db.Payments.AnyAsync(p => renewalInvoiceIds.Contains(p.InvoiceId) && p.Status == "Pending", ct))
-            throw AppException.Conflict("Khách đang có giao dịch gia hạn trực tuyến chờ xác nhận; hãy chờ giao dịch hoàn tất rồi trả kho");
+        var renewalInvoiceIds = pendingRenewals.Where(r => r.InvoiceId != null).Select(r => r.InvoiceId!.Value).ToHashSet();
         foreach (var renewal in pendingRenewals)
         {
             renewal.Status = "Rejected";
             renewal.ApprovedByStaffId = staffId;
             renewal.ProcessedAt = now;
         }
-        await db.Invoices.Where(i => renewalInvoiceIds.Contains(i.InvoiceId) && i.Status == "Unpaid")
-            .ForEachAsync(i => i.Status = "Cancelled", ct);
+
+        // A period counts as unused if it has not started by now; periods start at the handover time of day (24/7).
+        bool NotStarted(DateOnly periodStart) => ContractSchedule.PeriodStartsAt(periodStart, contract.SignedDate) > now;
+
+        // Renewal invoices and rent for periods the customer will no longer use are cancelled, not owed.
+        var today = DateOnly.FromDateTime(now);
+        var cancelledFutureInvoices = 0;
+        foreach (var invoice in openInvoices.Where(i => renewalInvoiceIds.Contains(i.InvoiceId)
+            || (i.InvoiceType == "MONTHLY_RENT" && i.BillingPeriodStart is DateOnly start && NotStarted(start))))
+        {
+            invoice.Status = "Cancelled";
+            if (invoice.InvoiceType == "MONTHLY_RENT") cancelledFutureInvoices++;
+        }
+
+        // Rent paid ahead for periods that have not started yet is owed back in full (the current period is not):
+        // prepaid monthly invoices and the not-yet-started months of paid renewals.
+        var prepaidCredit = (await db.Invoices
+                .Where(i => i.ContractId == id && i.InvoiceType == "MONTHLY_RENT" && i.Status == "Paid"
+                    && i.BillingPeriodStart >= today)
+                .Select(i => new { Start = i.BillingPeriodStart!.Value, i.TotalAmount })
+                .ToListAsync(ct))
+            .Where(i => NotStarted(i.Start))
+            .Sum(i => i.TotalAmount);
+        foreach (var renewal in await db.ContractRenewals
+                     .Where(r => r.ContractId == id && r.Status == "Paid" && r.NewEndDate >= today).ToListAsync(ct))
+        {
+            var unusedMonths = RentSchedule.Periods(contract.StartDate, renewal.NewEndDate)
+                .Count(p => p.Start >= renewal.OldEndDate && NotStarted(p.Start));
+            prepaidCredit += decimal.Round(
+                renewal.RenewalFee / renewal.ExtensionMonths * Math.Min(unusedMonths, renewal.ExtensionMonths),
+                2, MidpointRounding.AwayFromZero);
+        }
+        contract.PrepaidRentCredit = prepaidCredit;
+        // The credit joins what is left of the deposit: both settle debts first, the rest is paid back.
+        depositLeft += prepaidCredit;
+
+        // Settle unpaid rent and extra charges from what is left of the deposit, oldest first.
+        var offset = 0m;
+        var unpaidRemaining = 0m;
+        foreach (var invoice in openInvoices.Where(i => i.Status != "Cancelled"))
+        {
+            if (invoice.InvoiceType is ("MONTHLY_RENT" or "EXTRA_CHARGE") && invoice.TotalAmount <= depositLeft)
+            {
+                db.Payments.Add(new Payment
+                {
+                    InvoiceId = invoice.InvoiceId,
+                    ReceivedByStaffId = staffId,
+                    PaymentMethod = "DepositOffset",
+                    AmountPaid = invoice.TotalAmount,
+                    PaymentDate = now,
+                    Status = "Success",
+                    PaymentNotes = $"Cấn trừ từ tiền cọc khi trả kho hợp đồng {contract.ContractNumber}",
+                });
+                invoice.Status = "Paid";
+                depositLeft -= invoice.TotalAmount;
+                offset += invoice.TotalAmount;
+            }
+            else
+            {
+                unpaidRemaining += invoice.TotalAmount;
+            }
+        }
+        // Whatever is still owed keeps the rest of the deposit until it is paid (see deposit-refunds).
+        var refund = Math.Max(0m, depositLeft - unpaidRemaining);
+
         contract.Status = ContractStatus.Terminated;
         contract.Unit.Status = UnitStatus.Available;
         if (overdue is not null)
@@ -245,7 +374,7 @@ public class ContractsController(
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return new ReturnUnitDto(id, contract.Status, contract.Unit.Status, contract.DepositPaid,
-            deducted, refund, stillOwed, now);
+            deducted, refund, stillOwed, now, offset, unpaidRemaining, cancelledFutureInvoices, prepaidCredit);
     }
 
     [HttpPost("{id:int}/deposit-refunds")]
@@ -280,13 +409,25 @@ public class ContractsController(
             p => p.TransactionCode == transactionCode, ct))
             throw AppException.Conflict("Mã giao dịch đã được ghi nhận");
 
+        // Deposit plus unused prepaid rent, minus late fees, minus what was settled from them at return,
+        // minus anything the customer still owes.
         var latestOverdue = await db.OverdueRecords.Where(o => o.ContractId == id)
             .OrderByDescending(o => o.OverdueId).FirstOrDefaultAsync(ct);
-        var refundable = Math.Max(0m, contract.DepositPaid - (latestOverdue?.AccumulatedLateFee ?? 0m));
+        var lateFeesDeducted = Math.Min(contract.DepositPaid, latestOverdue?.AccumulatedLateFee ?? 0m);
+        var settledFromDeposit = await db.Payments
+            .Where(p => p.PaymentMethod == "DepositOffset" && p.Status == "Success"
+                && db.Invoices.Any(i => i.InvoiceId == p.InvoiceId && i.ContractId == id))
+            .SumAsync(p => p.AmountPaid, ct);
+        var stillOwed = await db.Invoices
+            .Where(i => i.ContractId == id && (i.Status == "Unpaid" || i.Status == "Overdue"))
+            .SumAsync(i => i.TotalAmount, ct);
+        var refundable = Math.Max(0m, contract.DepositPaid + contract.PrepaidRentCredit - lateFeesDeducted
+            - settledFromDeposit - stillOwed);
         var alreadyRefunded = depositInvoice.Payments.Where(p => p.Status == "Refunded").Sum(p => p.AmountPaid);
         var remaining = refundable - alreadyRefunded;
         if (req.Amount <= 0 || req.Amount > remaining)
-            throw AppException.BadRequest($"Số tiền hoàn cọc còn có thể hoàn là {Math.Max(0m, remaining):N0}đ");
+            throw AppException.BadRequest($"Số tiền hoàn cọc còn có thể hoàn là {Math.Max(0m, remaining):N0}đ"
+                + (stillOwed > 0 ? $" (khách còn nợ {stillOwed:N0}đ hóa đơn chưa thanh toán)" : ""));
 
         var now = clock.GetLocalNow().DateTime;
         var payment = new Payment
@@ -345,12 +486,12 @@ public class ContractsController(
             .Select(c => new
             {
                 c.ContractId, c.ContractNumber, c.Customer.FullName, c.Customer.PhoneNumber, c.Unit.UnitCode,
-                c.EndDate, c.Status, UnitStatus = c.Unit.Status,
+                c.EndDate, c.SignedDate, c.Status, UnitStatus = c.Unit.Status,
                 HasPendingRenewal = db.ContractRenewals.Any(r => r.ContractId == c.ContractId && r.Status == "Pending"),
             })
             .ToListAsync(ct);
         return rows.Select(c => new DueContractDto(c.ContractId, c.ContractNumber, c.FullName, c.PhoneNumber,
-            c.UnitCode, c.EndDate, ContractSchedule.ExpiresAt(c.EndDate), c.Status, c.UnitStatus,
+            c.UnitCode, c.EndDate, ContractSchedule.ExpiresAt(c.EndDate, c.SignedDate), c.Status, c.UnitStatus,
             c.HasPendingRenewal)).ToList();
     }
 

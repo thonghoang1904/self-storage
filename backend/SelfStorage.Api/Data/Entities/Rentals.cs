@@ -40,8 +40,11 @@ public class Contract
     public decimal MonthlyRentFee { get; set; }
     public decimal DepositPaid { get; set; }
     public string Status { get; set; } = ContractStatus.Active;
+    /// <summary>Handover moment; the contract expires at this time of day on EndDate.</summary>
     public DateTime SignedDate { get; set; }
     public string? TermsConditions { get; set; }
+    /// <summary>Rent paid ahead for periods after an early return; paid back together with the deposit.</summary>
+    public decimal PrepaidRentCredit { get; set; }
 
     public User Customer { get; set; } = null!;
     public StorageUnit Unit { get; set; } = null!;
