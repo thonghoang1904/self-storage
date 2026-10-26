@@ -1178,3 +1178,14 @@ a.user-chip:hover { background: var(--bg-tint); }
 .policy-done-bar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .policy-done-bar p { margin: 2px 0 0; }
 .terms-return { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; border: 1px solid var(--cyan); background: var(--cyan-50); }
+/* unit cards: price, stock and button pinned to the bottom so every card lines up */
+.unit-foot { margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
+.unit-foot .unit-price { flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 2px; }
+.unit-price-value { display: inline-flex; align-items: baseline; gap: 2px; white-space: nowrap; }
+.unit-price-value b { font-size: 22px; }
+.unit-stock { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; color: var(--ok, #16a34a); min-width: 0; }
+.unit-stock span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.unit-stock.out { color: var(--muted); }
+/* "Đặt Thuê Ngay": outlined on every card, fills cyan when the card (or the button) is hovered/focused */
+.unit-card .btn.unit-cta { transition: background 0.2s, color 0.2s, border-color 0.2s; }
+.unit-card:hover .btn.unit-cta, .unit-card:focus-within .btn.unit-cta { background: var(--cyan); border-color: var(--cyan); color: #fff; }

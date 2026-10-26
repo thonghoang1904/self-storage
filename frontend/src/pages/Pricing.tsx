@@ -110,12 +110,14 @@ export default function Pricing() {
                       <li><Icon name="check" size={14} /> {t.hasClimateControl ? 'Có điều hòa, kiểm soát độ ẩm' : 'Kho khô ráo, thông thoáng'}</li>
                       <li><Icon name="check" size={14} /> Vào kho bằng CCCD, có nhân viên xác nhận</li>
                     </ul>
-                    <div className="unit-price">
-                      <span className="muted">Giá thuê chỉ từ</span>
-                      <span><b>{fmtMoney(t.baseMonthlyRate)}</b><small>/tháng</small></span>
+                    <div className="unit-foot">
+                      <div className="unit-price">
+                        <span className="muted">Giá thuê chỉ từ</span>
+                        <span className="unit-price-value"><b>{fmtMoney(t.baseMonthlyRate)}</b><small>/tháng</small></span>
+                      </div>
+                      {free && <p className={`unit-stock ${free[t.unitTypeId] ? '' : 'out'}`}><Icon name="building" size={14} /> <span>{free[t.unitTypeId] ? `Còn ${free[t.unitTypeId]} kho trống · mọi cơ sở` : 'Tạm hết chỗ'}</span></p>}
+                      <Link to={rentLink} className="btn block outline unit-cta">Đặt Thuê Ngay</Link>
                     </div>
-                    {free && <p className="meta">{free[t.unitTypeId] ? `Còn ${free[t.unitTypeId]} kho trống trên toàn hệ thống` : 'Tạm hết chỗ'}</p>}
-                    <Link to={rentLink} className={`btn block ${popular ? 'primary' : 'outline'}`}>Đặt Thuê Ngay</Link>
                   </div>
                 </article>
               )

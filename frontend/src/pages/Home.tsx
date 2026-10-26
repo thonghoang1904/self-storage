@@ -81,7 +81,7 @@ export default function Home() {
           <div className="section-head">
             <span className="kicker">Kho lưu trữ phổ biến</span>
             <h2>Chọn Không Gian Phù Hợp Với Bạn</h2>
-            <p>Đa dạng kích thước, giá thuê rõ ràng theo tháng. Tiền cọc bằng một tháng thuê.</p>
+            <p>Đa dạng kích thước, giá thuê rõ ràng theo tháng. Tiền cọc bằng một tháng thuê.{facilities[0] && availability.length > 0 && ` Số kho trống tính tại ${facilities[0].facilityName}.`}</p>
           </div>
           <div className="unit-grid">
             {types.map((t, i) => {
@@ -98,12 +98,14 @@ export default function Home() {
                     </div>
                     <p className="meta"><Icon name="size" size={14} /> {size || `Dài ${t.lengthMeters}m × Rộng ${t.widthMeters}m`} · Cao {t.heightMeters}m</p>
                     <p className="unit-desc">{t.description}</p>
-                    <div className="unit-price">
-                      <span className="muted">Giá thuê chỉ từ</span>
-                      <span><b>{fmtMoney(t.baseMonthlyRate)}</b><small>/tháng</small></span>
+                    <div className="unit-foot">
+                      <div className="unit-price">
+                        <span className="muted">Giá thuê chỉ từ</span>
+                        <span className="unit-price-value"><b>{fmtMoney(t.baseMonthlyRate)}</b><small>/tháng</small></span>
+                      </div>
+                      {a && (() => { const where = facilities[0]?.facilityName ?? ''; const text = a.availableUnits > 0 ? `Còn ${a.availableUnits} kho trống` : 'Tạm hết chỗ'; return <p className={`unit-stock ${a.availableUnits > 0 ? '' : 'out'}`} title={`${text} tại ${where}`}><Icon name="building" size={14} /> <span>{text}</span></p> })()}
+                      <Link to={rentLink} className="btn block outline unit-cta">Đặt Thuê Ngay</Link>
                     </div>
-                    {a && <p className="meta">{a.availableUnits > 0 ? `Còn ${a.availableUnits} kho trống tại ${facilities[0]?.facilityName}` : `Tạm hết chỗ tại ${facilities[0]?.facilityName}`}</p>}
-                    <Link to={rentLink} className={`btn block ${popular ? 'primary' : 'outline'}`}>Đặt Thuê Ngay</Link>
                   </div>
                 </article>
               )
