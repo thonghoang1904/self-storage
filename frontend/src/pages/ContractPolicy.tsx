@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
@@ -61,24 +61,28 @@ function sections(c: ContractDetail, hours?: string): Section[] {
   ]
 }
 
-function useContract(id: number) {
+export function useContract(id: number) {
   const [c, setC] = useState<ContractDetail | null>(null)
   const [renewals, setRenewals] = useState<Renewal[]>([])
   const [facility, setFacility] = useState<Facility | null>(null)
   const [unitType, setUnitType] = useState('')
   const [error, setError] = useState('')
-  useEffect(() => {
-    api<ContractDetail>(`/api/contracts/${id}`).then((d) => {
+  const reload = useCallback(async () => {
+    try {
+      const d = await api<ContractDetail>(`/api/contracts/${id}`)
       setC(d)
       api<Facility[]>('/api/facilities').then((fs) => setFacility(fs.find((f) => f.facilityId === d.facilityId) ?? null)).catch(() => {})
       api<StorageUnit[]>(`/api/facilities/${d.facilityId}/units`).then((us) => setUnitType(us.find((u) => u.unitId === d.unitId)?.unitTypeName ?? '')).catch(() => {})
-    }).catch((e) => setError((e as Error).message))
-    api<Renewal[]>(`/api/contracts/${id}/renewals`).then(setRenewals).catch(() => {})
+    } catch (e) {
+      setError((e as Error).message)
+    }
+    await api<Renewal[]>(`/api/contracts/${id}/renewals`).then(setRenewals).catch(() => {})
   }, [id])
-  return { c, renewals, facility, unitType, error }
+  useEffect(() => { void reload() }, [reload])
+  return { c, renewals, facility, unitType, error, reload }
 }
 
-function Hero({ c, title, subtitle, crumb }: { c: ContractDetail; title: string; subtitle: string; crumb: string }) {
+export function Hero({ c, title, subtitle, crumb }: { c: ContractDetail; title: string; subtitle: string; crumb: string }) {
   const active = c.status === 'Active' || c.status === 'Renewed'
   return (
     <section className="page-hero detail-hero">
@@ -97,12 +101,30 @@ function Hero({ c, title, subtitle, crumb }: { c: ContractDetail; title: string;
   )
 }
 
-function Loading({ error }: { error: string }) {
+export function Loading({ error }: { error: string }) {
   return (
     <div className="container page-body">
       {error ? <p className="alert bad"><Icon name="alert" size={16} />{error}</p> : <p className="muted">Đang tải hợp đồng…</p>}
       <Link to="/my-units" className="link">← Về Kho Của Tôi</Link>
     </div>
+  )
+}
+
+/** Figma "Active contract" strip: unit, current term, rent, deposit. */
+export function ContractStrip({ c, unitType }: { c: ContractDetail; unitType: string }) {
+  const type = unitType ? splitTypeName(unitType) : null
+  return (
+    <section className="panel contract-strip">
+      <div className="unit-photo xs"><UnitArt variant={(c.unitId + 1) % 4} /></div>
+      <div className="strip-identity">
+        <b>{type ? `${type.name} ${type.size}` : `Kho ${c.unitCode}`} · {c.unitCode}</b>
+        <small className="muted">{c.facilityName}</small>
+        <StatusBadge status={c.status} />
+      </div>
+      <div><small className="muted">Thời hạn hiện tại</small><b>{fmtDate(c.startDate)} – {fmtDate(c.endDate)}</b></div>
+      <div><small className="muted">Tiền thuê</small><b>{fmtMoney(c.monthlyRentFee)} / tháng</b></div>
+      <div><small className="muted">Tiền cọc</small><b>{fmtMoney(c.depositPaid)}</b></div>
+    </section>
   )
 }
 
@@ -117,7 +139,6 @@ export default function ContractPolicy() {
   const ack = readPolicyAcks()[c.contractNumber]
   const list = sections(c, facility?.operatingHours)
   const pending = renewals.find((r) => r.status === 'Pending')
-  const type = unitType ? splitTypeName(unitType) : null
   const go = (sid: string) => document.getElementById(`policy-${sid}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
   const confirm = () => {
@@ -130,17 +151,7 @@ export default function ContractPolicy() {
     <>
       <Hero c={c} crumb="Policy hợp đồng" title="Xem trước policy của hợp đồng" subtitle={`Xem lại điều khoản đang áp dụng cho hợp đồng ${c.contractNumber} trước khi xác nhận.`} />
       <div className="container page-body">
-        <section className="panel contract-strip">
-          <div className="unit-photo xs"><UnitArt variant={(c.unitId + 1) % 4} /></div>
-          <div className="strip-identity">
-            <b>{type ? `${type.name} ${type.size}` : `Kho ${c.unitCode}`} · {c.unitCode}</b>
-            <small className="muted">{c.facilityName}</small>
-            <StatusBadge status={c.status} />
-          </div>
-          <div><small className="muted">Thời hạn hiện tại</small><b>{fmtDate(c.startDate)} – {fmtDate(c.endDate)}</b></div>
-          <div><small className="muted">Tiền thuê</small><b>{fmtMoney(c.monthlyRentFee)} / tháng</b></div>
-          <div><small className="muted">Tiền cọc</small><b>{fmtMoney(c.depositPaid)}</b></div>
-        </section>
+        <ContractStrip c={c} unitType={unitType} />
 
         <div className="notice info-notice">
           <span className="notice-icon info"><Icon name="clipboard" size={16} /></span>

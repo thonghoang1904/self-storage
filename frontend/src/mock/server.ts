@@ -6,7 +6,7 @@
  */
 import type {
   AccessIssue, ActivityLog, AdminUser, AdminContract, EmailOutboxMessage, OperationsReportRow, CancellationRequest, CancellationRefund, ExtraChargeInvoice, FacilityStaff, FacilityWorkQueue, FacilityTaskContract, FacilityReport, OperationsReport, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
-  OverdueSummary, Person, Renewal, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate, VisitRegistration, RentalPolicy, FeeConfiguration, Promotion,
+  OverdueSummary, Person, Renewal, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate, VisitRegistration, RentalPolicy, FeeConfiguration, Promotion, ContractSuspension, SecuritySettings, LoginSession, AccountProfile, AccountActivity,
 } from '../types'
 import { Roles } from '../types'
 
@@ -58,6 +58,10 @@ interface Db {
   extraCharges?: Xtra[]
   /** EmailOutboxMessages: invoice and receipt emails (sent by a worker in the real backend). */
   emails?: (EmailOutboxMessage & { emailOutboxMessageId: number })[]
+  /** Awaiting backend (docs/API-cho-backend.md): contract suspensions and account security. */
+  suspensions?: ContractSuspension[]
+  security?: Record<number, SecuritySettings>
+  sessions?: Record<number, LoginSession[]>
 }
 interface Cnl { cancellationRequestId: number; reservationId: number; customerId: number; reason: string; status: string; requestedAt: string; resolvedAt: string | null; resolvedByStaffId: number | null; resolutionNotes: string | null; approvedRefundAmount: number | null; refunds: { amount: number; method: string; code: string | null; at: string; staffId: number }[] }
 interface Xtra { id: number; contractId: number; feeCode: string; feeName: string; unitPrice: number; quantity: number; notes: string | null; dueDate: string; createdAt: string; paid?: Paid }
@@ -358,7 +362,7 @@ function ownContract(user: User, id: number): Ctr {
 const returnAppointment = (c: Ctr) => `${c.endDate}T20:00:00`
 const openOverdue = (contractId: number) =>
   db.overdues.filter((o) => o.contractId === contractId && !o.resolvedAt).sort((a, b) => b.overdueId - a.overdueId)[0]
-const renewalDto = (r: Rnw): Renewal => ({ ...r })
+const renewalDto = (r: Rnw): Renewal => ({ ...r, invoiceId: 20000 + r.renewalId })
 const addMonthsIso = (iso: string, n: number) => {
   const d = new Date(`${iso}T00:00:00`)
   const day = d.getDate()
@@ -505,6 +509,15 @@ const adminUserDto = (u: User): AdminUser => ({
   userId: u.userId, username: u.username, fullName: u.fullName, email: u.email, phoneNumber: u.phoneNumber,
   citizenId: u.citizenId, status: u.status ?? 'Active', roleId: ROLE_ROWS.find((r) => r.roleName === u.role)!.roleId, roleName: u.role,
 })
+const securityOf = (userId: number): SecuritySettings => (db.security ??= {})[userId] ?? { accessAlerts: true, newDeviceAlerts: true, paymentEmails: true }
+function sessionsOf(userId: number): LoginSession[] {
+  db.sessions ??= {}
+  return (db.sessions[userId] ??= [
+    { sessionId: `cur-${userId}`, device: 'Chrome · Windows', location: 'TP. Hồ Chí Minh', lastActiveAt: localIso(new Date()), current: true },
+    { sessionId: `ios-${userId}`, device: 'Safari · iPhone', location: 'TP. Hồ Chí Minh', lastActiveAt: localIso(addDays(new Date(), -2)), current: false },
+    { sessionId: `mac-${userId}`, device: 'Chrome · macOS', location: 'Hà Nội', lastActiveAt: localIso(addDays(new Date(), -9)), current: false },
+  ])
+}
 function addLog(userId: number, action: string, details: string) {
   db.logs ??= []
   db.logs.push({ logId: nextId(), userId, action, details, ipAddress: '127.0.0.1', createdAt: localIso(new Date()) })
@@ -703,7 +716,9 @@ const routes: [string, RegExp, Handler][] = [
   // ---- auth
   ['POST', /^\/api\/auth\/login$/, (_m, { body }) => {
     const u = db.users.find((x) => x.username === body.username)
+    if (u && u.password !== body.password) addLog(u.userId, 'LOGIN_FAILED', 'Sai mật khẩu')
     if (!u || u.password !== body.password || (u.status ?? 'Active') !== 'Active') throw new MockHttpError(401, 'Sai tên đăng nhập hoặc mật khẩu')
+    addLog(u.userId, 'LOGIN', 'Đăng nhập trên trình duyệt này')
     const res: LoginResponse = { token: `mock.${u.userId}`, expiresAt: localIso(addDays(new Date(), 1)), user: toUserDto(u) }
     return res
   }],
@@ -721,6 +736,107 @@ const routes: [string, RegExp, Handler][] = [
     return toUserDto(u)
   }],
   ['GET', /^\/api\/auth\/me$/, (_m, { token }) => toUserDto(currentUser(token))],
+
+  // ---- account security (awaiting backend; spec in docs/API-cho-backend.md)
+  ['GET', /^\/api\/auth\/me\/profile$/, (_m, { token }) => {
+    const u = currentUser(token)
+    return { userId: u.userId, username: u.username, fullName: u.fullName, email: u.email, phoneNumber: u.phoneNumber, citizenId: u.citizenId, createdAt: '2026-01-05T09:00:00' } satisfies AccountProfile
+  }],
+  ['GET', /^\/api\/auth\/me\/security-settings$/, (_m, { token }) => securityOf(currentUser(token).userId)],
+  ['PUT', /^\/api\/auth\/me\/security-settings$/, (_m, { token, body }) => {
+    const u = currentUser(token)
+    const s: SecuritySettings = { accessAlerts: !!body.accessAlerts, newDeviceAlerts: !!body.newDeviceAlerts, paymentEmails: !!body.paymentEmails }
+    ;(db.security ??= {})[u.userId] = s
+    addLog(u.userId, 'SECURITY_SETTINGS', 'Cập nhật cài đặt cảnh báo bảo mật')
+    return s
+  }],
+  ['GET', /^\/api\/auth\/me\/sessions$/, (_m, { token }) => sessionsOf(currentUser(token).userId)],
+  ['DELETE', /^\/api\/auth\/me\/sessions\/([\w-]+)$/, (m, { token }) => {
+    const u = currentUser(token)
+    const list = sessionsOf(u.userId)
+    const s = list.find((x) => x.sessionId === m[1])
+    if (!s) throw notFound('Không tìm thấy phiên đăng nhập')
+    if (s.current) throw bad('Không thể tự đăng xuất phiên hiện tại ở đây; hãy dùng nút Đăng xuất')
+    db.sessions![u.userId] = list.filter((x) => x.sessionId !== s.sessionId)
+    addLog(u.userId, 'SESSION_REVOKED', `Đăng xuất thiết bị ${s.device}`)
+    return null
+  }],
+  ['POST', /^\/api\/auth\/me\/sessions\/revoke-others$/, (_m, { token }) => {
+    const u = currentUser(token)
+    db.sessions![u.userId] = sessionsOf(u.userId).filter((x) => x.current)
+    addLog(u.userId, 'SESSION_REVOKED', 'Đăng xuất mọi thiết bị khác')
+    return null
+  }],
+  ['POST', /^\/api\/auth\/change-password$/, (_m, { token, body }) => {
+    const u = currentUser(token)
+    const current = String(body.currentPassword ?? '')
+    const next = String(body.newPassword ?? '')
+    if (current !== u.password) {
+      addLog(u.userId, 'PASSWORD_CHANGE_FAILED', 'Nhập sai mật khẩu hiện tại khi đổi mật khẩu')
+      throw bad('Mật khẩu hiện tại không đúng')
+    }
+    if (next.length < 8 || next.length > 100) throw bad('Mật khẩu mới từ 8 đến 100 ký tự')
+    if (next === current) throw bad('Mật khẩu mới phải khác mật khẩu hiện tại')
+    u.password = next
+    addLog(u.userId, 'PASSWORD_CHANGED', 'Đổi mật khẩu thành công')
+    return { message: 'Đã đổi mật khẩu' }
+  }],
+  ['GET', /^\/api\/auth\/me\/activity$/, (_m, { token }) => {
+    const u = currentUser(token)
+    const label: Record<string, [string, string, string]> = {
+      LOGIN: ['Login', 'Đăng nhập', 'Success'], LOGIN_FAILED: ['Login', 'Đăng nhập thất bại', 'Failed'],
+      PASSWORD_CHANGED: ['Password', 'Đổi mật khẩu', 'Success'], PASSWORD_CHANGE_FAILED: ['Password', 'Đổi mật khẩu thất bại', 'Failed'],
+      SECURITY_SETTINGS: ['Settings', 'Đổi cài đặt bảo mật', 'Success'], SESSION_REVOKED: ['Session', 'Đăng xuất thiết bị', 'Warning'],
+      SUSPENSION_REQUESTED: ['Contract', 'Gửi yêu cầu tạm ngưng hợp đồng', 'Success'],
+    }
+    const seeded: AccountActivity[] = [
+      { logId: -2, category: 'Login', action: 'Đăng nhập', details: 'Safari · iPhone', ipAddress: '113.161.20.4', createdAt: localIso(addDays(new Date(), -2)), result: 'Success' },
+      { logId: -1, category: 'Login', action: 'Đăng nhập thất bại', details: 'Sai mật khẩu · Chrome · macOS', ipAddress: '171.244.8.19', createdAt: localIso(addDays(new Date(), -5)), result: 'Failed' },
+    ]
+    return [...(db.logs ?? []).filter((l) => l.userId === u.userId).map((l): AccountActivity => {
+      const [category, action, result] = label[l.action] ?? ['Login', l.action, 'Success']
+      return { logId: l.logId, category, action, details: l.details, ipAddress: l.ipAddress, createdAt: l.createdAt, result }
+    }), ...seeded].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 100)
+  }],
+
+  // ---- contract suspension (awaiting backend; spec in docs/API-cho-backend.md)
+  ['GET', /^\/api\/contracts\/(\d+)\/suspensions$/, (m, { token }) => {
+    const c = ownContract(currentUser(token), Number(m[1]))
+    return (db.suspensions ?? []).filter((x) => x.contractId === c.contractId).sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))
+  }],
+  ['POST', /^\/api\/contracts\/(\d+)\/suspensions$/, (m, { token, body }) => {
+    const me = currentUser(token)
+    requireRole(me, [Roles.Customer])
+    const c = ownContract(me, Number(m[1]))
+    const start = String(body.startDate ?? ''), end = String(body.endDate ?? '')
+    const reason = String(body.reason ?? '').trim()
+    if (c.status !== 'Active') throw conflict('Chỉ hợp đồng đang hoạt động mới tạm ngưng được')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || end < start) throw bad('Ngày tạm ngưng không hợp lệ')
+    if (start < dateOnly(addDays(new Date(), 3))) throw bad('Ngày bắt đầu phải sau hôm nay ít nhất 3 ngày')
+    const days = Math.round((new Date(`${end}T00:00:00`).getTime() - new Date(`${start}T00:00:00`).getTime()) / 86400000) + 1
+    if (days < 30 || days > 90) throw bad('Thời gian tạm ngưng từ 30 đến 90 ngày')
+    if (end >= c.endDate) throw bad('Ngày kết thúc tạm ngưng phải trước ngày hết hạn hợp đồng')
+    if (!reason) throw bad('Vui lòng chọn lý do tạm ngưng')
+    if ((db.suspensions ?? []).some((x) => x.contractId === c.contractId && ['Pending', 'Approved', 'Active'].includes(x.status))) throw conflict('Hợp đồng đã có yêu cầu tạm ngưng đang xử lý')
+    if (db.renewals.some((r) => r.contractId === c.contractId && r.status === 'Pending')) throw conflict('Hợp đồng đang có yêu cầu gia hạn chờ thanh toán')
+    const x: ContractSuspension = {
+      suspensionId: nextId(), contractId: c.contractId, startDate: start, endDate: end, days, reason,
+      notes: (body.notes as string | null)?.trim() || null, status: 'Pending',
+      holdingFee: Math.round((c.monthlyRentFee / 30) * days * 0.3 / 1000) * 1000,
+      newEndDate: dateOnly(addDays(new Date(`${c.endDate}T00:00:00`), days)), requestedAt: localIso(new Date()), reviewNotes: null,
+    }
+    ;(db.suspensions ??= []).push(x)
+    addLog(me.userId, 'SUSPENSION_REQUESTED', `Hợp đồng ${c.contractNumber}: ${start} → ${end}`)
+    return x
+  }],
+  ['DELETE', /^\/api\/contracts\/(\d+)\/suspensions\/(\d+)$/, (m, { token }) => {
+    const c = ownContract(currentUser(token), Number(m[1]))
+    const x = (db.suspensions ?? []).find((s) => s.suspensionId === Number(m[2]) && s.contractId === c.contractId)
+    if (!x) throw notFound('Không tìm thấy yêu cầu tạm ngưng')
+    if (x.status !== 'Pending') throw conflict('Chỉ hủy được yêu cầu đang chờ duyệt')
+    x.status = 'Cancelled'
+    return null
+  }],
 
   ['POST', /^\/api\/auth\/forgot-password$/, (_m, { body }) => {
     const email = String(body.email ?? '').trim().toLowerCase()

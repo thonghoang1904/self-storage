@@ -105,7 +105,7 @@ export default function MyUnits() {
                       <li><Icon name="card" size={14} /> Chi phí: <b className="cyan">{fmtMoney(c.monthlyRentFee)}/tháng</b></li>
                     </ul>
                     <div className="row">
-                      <Link to={`/my-units/${c.contractId}?renew=1`} className="btn primary sm grow">Gia Hạn</Link>
+                      <Link to={`/my-units/${c.contractId}/renew`} className="btn primary sm grow">Gia Hạn</Link>
                       <Link to={`/my-units/${c.contractId}`} className="btn outline sm grow">Chi Tiết</Link>
                     </div>
                     {(c.status === 'Active' || c.status === 'Renewed') && (
@@ -223,7 +223,7 @@ export default function MyUnits() {
                   <span className="notice-icon bad"><Icon name="alert" size={16} /></span>
                   <div className="grow">
                     <div className="notice-head"><b>Cảnh báo hết hạn hợp đồng</b><small>Còn {daysUntil(c.endDate)} ngày</small></div>
-                    <p>Kho {c.unitCode} của bạn sắp kết thúc thời hạn thuê vào ngày {fmtDate(c.endDate)}. <Link to={`/my-units/${c.contractId}?renew=1`} className="link">Gửi yêu cầu gia hạn</Link></p>
+                    <p>Kho {c.unitCode} của bạn sắp kết thúc thời hạn thuê vào ngày {fmtDate(c.endDate)}. <Link to={`/my-units/${c.contractId}/renew`} className="link">Gửi yêu cầu gia hạn</Link></p>
                   </div>
                 </div>
               ))}

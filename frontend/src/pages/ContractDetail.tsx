@@ -192,17 +192,19 @@ export default function ContractDetail() {
               <div className="info-row"><span className="muted">Số dư cọc</span><b>{fmtMoney(c.depositBalance)}</b></div>
             </>}
             {!ended && (
-              <button className="btn primary self-start" onClick={() => setShowRenew(!showRenew)}>
-                <Icon name="calendar" size={15} /> {pending ? 'Xem yêu cầu gia hạn' : 'Gia hạn hợp đồng'}
-              </button>
+              <div className="row wrap">
+                <Link to={`/my-units/${c.contractId}/renew`} className="btn primary"><Icon name="calendar" size={15} /> {pending ? 'Xem yêu cầu gia hạn' : 'Gia hạn hợp đồng'}</Link>
+                <button className="btn ghost sm" onClick={() => setShowRenew(!showRenew)}>{showRenew ? 'Ẩn gia hạn nhanh' : 'Gia hạn nhanh'}</button>
+              </div>
             )}
             {showRenew && <RenewalPanel contract={c} renewals={renewals} onChanged={load} />}
             <div className="action-grid">
               {!ended && <Link to={`/my-units/${c.contractId}/move-in`} className="btn soft sm"><Icon name="package" size={14} /> Đưa đồ vào kho</Link>}
               {!ended && <Link to={`/support?contract=${c.contractId}`} className="btn soft sm"><Icon name="alert" size={14} /> Báo sự cố</Link>}
               {!ended && <Link to={`/support?contract=${c.contractId}&topic=return`} className="btn soft sm"><Icon name="logout" size={14} /> Yêu cầu trả kho</Link>}
+              {!ended && <Link to={`/my-units/${c.contractId}/suspend`} className="btn soft sm"><Icon name="clock" size={14} /> Tạm ngưng hợp đồng</Link>}
               <Link to={`/my-units/${c.contractId}/policy`} className="btn soft sm"><Icon name="clipboard" size={14} /> Xem policy hợp đồng</Link>
-              <Link to={`/my-units?contract=${c.contractId}&tab=history`} className="btn soft sm"><Icon name="shield" size={14} /> Bảo mật & nhật ký</Link>
+              <Link to="/account/security" className="btn soft sm"><Icon name="shield" size={14} /> Bảo mật & nhật ký</Link>
             </div>
             {!readPolicyAcks()[c.contractNumber] && !ended && (
               <div className="notice warn-notice">

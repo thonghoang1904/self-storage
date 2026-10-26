@@ -327,6 +327,8 @@ export interface Renewal {
   renewalFee: number
   status: string
   requestedAt: string
+  /** Renewal invoice to pay (RenewalDto.InvoiceId). */
+  invoiceId?: number | null
 }
 
 /** A contract in the staff list of one facility. */
@@ -643,4 +645,64 @@ export interface OperationsReportRow {
   renewedContracts: number
   liquidatedContracts: number
   netRevenue: number
+}
+
+// ---- awaiting backend (spec in docs/API-cho-backend.md): contract suspension and account security
+
+/** Customer asks to pause a contract for a while (no access, holding fee instead of rent, end date pushed back). */
+export interface ContractSuspension {
+  suspensionId: number
+  contractId: number
+  startDate: string
+  endDate: string
+  days: number
+  reason: string
+  notes: string | null
+  /** Pending | Approved | Rejected | Cancelled | Active | Completed */
+  status: string
+  holdingFee: number
+  newEndDate: string
+  requestedAt: string
+  reviewNotes: string | null
+}
+export const SuspensionStatuses: Record<string, { label: string; tone: 'ok' | 'warn' | 'bad' | 'info' | 'muted' }> = {
+  Pending: { label: 'Chờ duyệt', tone: 'warn' },
+  Approved: { label: 'Đã duyệt', tone: 'ok' },
+  Active: { label: 'Đang tạm ngưng', tone: 'info' },
+  Completed: { label: 'Đã kết thúc', tone: 'muted' },
+  Rejected: { label: 'Bị từ chối', tone: 'bad' },
+  Cancelled: { label: 'Đã hủy', tone: 'muted' },
+}
+
+export interface SecuritySettings {
+  accessAlerts: boolean
+  newDeviceAlerts: boolean
+  paymentEmails: boolean
+}
+export interface AccountProfile {
+  userId: number
+  username: string
+  fullName: string
+  email: string
+  phoneNumber: string
+  citizenId: string | null
+  createdAt: string
+}
+export interface LoginSession {
+  sessionId: string
+  device: string
+  location: string | null
+  lastActiveAt: string
+  current: boolean
+}
+export interface AccountActivity {
+  logId: number
+  /** Login | Password | Settings | Session | Contract */
+  category: string
+  action: string
+  details: string | null
+  ipAddress: string | null
+  createdAt: string
+  /** Success | Warning | Failed */
+  result: string
 }

@@ -52,6 +52,7 @@ export function PortalHeader() {
               <NavLink to="/invoices">Thanh Toán</NavLink>
               <NavLink to="/support">Hỗ Trợ</NavLink>
               <NavLink to="/rent">Thuê Kho</NavLink>
+              <NavLink to="/account/security">Tài Khoản</NavLink>
             </>
           ) : (
             <>
