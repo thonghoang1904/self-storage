@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { statusOf } from '../types'
 
 // ------------------------------------------------------------------ icons (stroke icons, 24x24 grid)
@@ -92,9 +92,27 @@ export function splitTypeName(typeName: string) {
 
 // ------------------------------------------------------------------ illustrations (stand-ins for the photos in Figma)
 
-/** A storage unit with a roll-up door, drawn bigger for bigger unit types. */
+/**
+ * Photos from the Figma design, served from public/images (see public/images/README.md).
+ * Index 0–3 follows the unit types by size: tủ khóa / locker, kho nhỏ, kho tiêu chuẩn (vừa), kho lớn.
+ * When a file is missing (or in the single-file demo) the drawn illustration is shown instead.
+ */
+const IMAGE_BASE = `${(import.meta.env.BASE_URL as string | undefined) ?? '/'}images/`
+const missingPhotos = new Set<string>()
+function Photo({ src, className, fallback }: { src: string; className?: string; fallback: ReactNode }) {
+  const [failed, setFailed] = useState(missingPhotos.has(src))
+  if (failed) return <>{fallback}</>
+  return <img className={`photo-fill ${className ?? ''}`} src={src} alt="" loading="lazy" decoding="async"
+    onError={() => { missingPhotos.add(src); setFailed(true) }} />
+}
+
+/** A storage unit photo (Figma), or a drawn unit with a roll-up door, bigger for bigger unit types. */
 export function UnitArt({ variant = 0, label, className }: { variant?: number; label?: string; className?: string }) {
   const v = Math.max(0, Math.min(3, variant))
+  return <Photo src={`${IMAGE_BASE}units/unit-${v + 1}.jpg`} className={className} fallback={<UnitDrawing variant={v} label={label} className={className} />} />
+}
+
+function UnitDrawing({ variant: v, label, className }: { variant: number; label?: string; className?: string }) {
   const doorW = [70, 110, 150, 196][v]
   const doorH = [70, 118, 132, 140][v]
   const x = 160 - doorW / 2
@@ -126,8 +144,13 @@ export function UnitArt({ variant = 0, label, className }: { variant?: number; l
   )
 }
 
-/** One-point perspective corridor of storage doors, used in the hero panels. */
+/** Hero photo (Figma "hero-photo"), or a drawn corridor of storage doors. */
 export function CorridorArt({ className }: { className?: string }) {
+  return <Photo src={`${IMAGE_BASE}hero.jpg`} className={className} fallback={<CorridorDrawing className={className} />} />
+}
+
+/** One-point perspective corridor of storage doors, used in the hero panels. */
+function CorridorDrawing({ className }: { className?: string }) {
   const W = 400, H = 480, vx = 200, vy = 210
   const lerp = (a: number, b: number, t: number) => a + (b - a) * t
   // depth t: 0 = front edge of the picture, 1 = vanishing point

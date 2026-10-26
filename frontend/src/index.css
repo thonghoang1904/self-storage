@@ -1059,3 +1059,7 @@ small.center { text-align: center; }
 .field.inline { flex-direction: row; align-items: center; gap: 10px; }
 .field.inline select { min-width: 240px; }
 @media (max-width: 900px) { .split-two, .shortcut-grid { grid-template-columns: 1fr; } }
+
+/* Figma photos (public/images); same box as the drawings they replace */
+.photo-fill { display: block; width: 100%; height: 100%; object-fit: cover; }
+.auth-hero-bg.photo-fill { position: absolute; inset: 0; }
