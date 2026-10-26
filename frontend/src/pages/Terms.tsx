@@ -39,7 +39,7 @@ export const TERMS: { title: string; icon: string; items: string[] }[] = [
     title: 'Gia hạn, trả kho & quá hạn',
     icon: 'calendar',
     items: [
-      'Gửi yêu cầu gia hạn trong 7 ngày trước ngày hết hạn; hợp đồng được gia hạn sau khi thanh toán phí gia hạn.',
+      'Có thể gia hạn sớm bất cứ lúc nào khi hợp đồng còn hiệu lực (chậm nhất 20:00 ngày hết hạn); thời hạn mới cộng tiếp từ ngày hết hạn hiện tại và có hiệu lực sau khi thanh toán phí gia hạn.',
       'Trả kho trước 20:00 ngày hết hạn. Nhân viên kiểm tra kho, đối soát phí và hoàn lại phần cọc còn lại.',
       'Quá 24 giờ kể từ 20:00 ngày hết hạn, kho bị khóa và tính phí mỗi ngày bằng phí tháng / 30, cấn trừ vào tiền cọc. Phần vượt cọc lập thành hóa đơn.',
     ],

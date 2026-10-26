@@ -50,7 +50,8 @@ public class ContractsController(
             contract.Unit.Facility.FacilityName, contract.UnitId, contract.Unit.UnitCode, contract.Unit.Status,
             contract.StartDate, contract.EndDate, contract.Status, contract.MonthlyRentFee, contract.DepositPaid,
             accrued, Math.Max(0m, contract.DepositPaid - accrued), Math.Max(0m, accrued - contract.DepositPaid),
-            contract.EndDate.AddDays(-policy.RenewalNoticeDays).ToDateTime(TimeOnly.MinValue));
+            // Renewal is open for the whole term (early renewal); the policy's notice days only drive reminders.
+            contract.StartDate.ToDateTime(TimeOnly.MinValue));
     }
 
     [HttpPost("{id:int}/renewals")]
@@ -59,13 +60,11 @@ public class ContractsController(
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var now = clock.GetLocalNow().DateTime;
-        var today = DateOnly.FromDateTime(now);
         var contract = await db.Contracts.Include(c => c.Unit).FirstOrDefaultAsync(c => c.ContractId == id
             && c.CustomerId == User.GetUserId(), ct) ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
-        var policy = await rentalPolicies.ForFacilityAsync(contract.Unit.FacilityId, ct);
-        if (contract.Status != ContractStatus.Active || today < contract.EndDate.AddDays(-policy.RenewalNoticeDays)
-            || now >= contract.EndDate.ToDateTime(new TimeOnly(20, 0)))
-            throw AppException.Conflict($"Chỉ có thể yêu cầu gia hạn trong {policy.RenewalNoticeDays} ngày trước ngày hết hạn, khi hợp đồng còn hiệu lực");
+        // Early renewal: allowed any time while the contract is active, until 20:00 on the end date.
+        if (contract.Status != ContractStatus.Active || now >= contract.EndDate.ToDateTime(new TimeOnly(20, 0)))
+            throw AppException.Conflict("Chỉ có thể yêu cầu gia hạn khi hợp đồng còn hiệu lực, trước 20:00 ngày hết hạn");
         if (await db.ContractRenewals.AnyAsync(r => r.ContractId == id && r.Status == "Pending", ct))
             throw AppException.Conflict("Hợp đồng đã có yêu cầu gia hạn đang chờ xử lý");
 

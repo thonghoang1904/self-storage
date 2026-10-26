@@ -16,7 +16,7 @@ import { homeFor, type Availability, type Facility, type UnitType } from '../typ
 const FAQS = [
   {
     q: 'Thời hạn thuê kho tối thiểu là bao lâu?',
-    a: 'Bạn thuê theo tháng, từ 1 tháng trở lên tùy chính sách của từng cơ sở. Khi sắp hết hạn, bạn gửi yêu cầu gia hạn ngay trên tài khoản trong 7 ngày trước ngày hết hạn.',
+    a: 'Bạn thuê theo tháng, từ 1 tháng trở lên tùy chính sách của từng cơ sở. Bạn có thể gia hạn sớm ngay trên tài khoản bất cứ lúc nào khi hợp đồng còn hiệu lực; thời hạn mới cộng tiếp từ ngày hết hạn hiện tại.',
   },
   {
     q: 'Giờ mở cửa và cách vào kho như thế nào?',

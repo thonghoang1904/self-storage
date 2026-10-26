@@ -139,7 +139,7 @@ export default function OpsPolicies() {
                 title={p.policyName} meta={`${facilityName(p.facilityId)} · hiệu lực từ ${fmtDate(p.effectiveDate)}`} onEdit={() => setEditing({ tab: 'policies', id: p.policyId })}>
                 <span>Cọc <b>{pct(p.depositPercent)}</b></span>
                 <span>Hủy miễn phí <b>{p.cancellationGraceHours} giờ</b>, sau đó phí <b>{pct(p.cancellationFeePercent)}</b></span>
-                <span>Gia hạn trước <b>{p.renewalNoticeDays} ngày</b></span>
+                <span>Nhắc gia hạn trước <b>{p.renewalNoticeDays} ngày</b></span>
                 <span>Khóa kho sau <b>{p.maxOverdueDaysBeforeLock} ngày</b> quá hạn</span>
               </PolicyItem>
             ))}
@@ -173,7 +173,7 @@ export default function OpsPolicies() {
                 <div className="info-row"><span className="muted">Tiền cọc</span><b>{pct(current.depositPercent)} giá tháng</b></div>
                 <div className="info-row"><span className="muted">Hủy miễn phí trong</span><b>{current.cancellationGraceHours} giờ</b></div>
                 <div className="info-row"><span className="muted">Phí hủy sau đó</span><b>{pct(current.cancellationFeePercent)}</b></div>
-                <div className="info-row"><span className="muted">Mở gia hạn trước</span><b>{current.renewalNoticeDays} ngày</b></div>
+                <div className="info-row"><span className="muted">Nhắc gia hạn trước</span><b>{current.renewalNoticeDays} ngày</b></div>
                 <div className="info-row"><span className="muted">Khóa kho khi quá hạn</span><b>{current.maxOverdueDaysBeforeLock} ngày</b></div>
                 <div className="chip-row">
                   <Badge tone="ok">Áp dụng toàn hệ thống</Badge>
@@ -292,7 +292,7 @@ function PolicyForm({ policy, facilities, onCancel, onSaved }: { policy?: Rental
         <label className="field"><span>Tiền cọc (% giá tháng) *</span><input type="number" min={0.01} max={100} step="0.01" value={f.depositPercent} onChange={(e) => set('depositPercent', e.target.value)} required /></label>
         <label className="field"><span>Hủy miễn phí trong (giờ)</span><input type="number" min={0} max={8760} value={f.cancellationGraceHours} onChange={(e) => set('cancellationGraceHours', e.target.value)} /></label>
         <label className="field"><span>Phí hủy sau thời gian đó (%)</span><input type="number" min={0} max={100} step="0.01" value={f.cancellationFeePercent} onChange={(e) => set('cancellationFeePercent', e.target.value)} /></label>
-        <label className="field"><span>Mở gia hạn trước (ngày)</span><input type="number" min={0} max={365} value={f.renewalNoticeDays} onChange={(e) => set('renewalNoticeDays', e.target.value)} /></label>
+        <label className="field"><span>Nhắc gia hạn trước (ngày)</span><input type="number" min={0} max={365} value={f.renewalNoticeDays} onChange={(e) => set('renewalNoticeDays', e.target.value)} /></label>
         <label className="field"><span>Khóa kho sau khi quá hạn (ngày)</span><input type="number" min={0} max={365} value={f.maxOverdueDaysBeforeLock} onChange={(e) => set('maxOverdueDaysBeforeLock', e.target.value)} /></label>
         <label className="field"><span>Ngày hiệu lực *</span><input type="date" value={f.effectiveDate} onChange={(e) => set('effectiveDate', e.target.value)} required /></label>
       </div>

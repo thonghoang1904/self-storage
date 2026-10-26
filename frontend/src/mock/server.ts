@@ -884,7 +884,7 @@ const routes: [string, RegExp, Handler][] = [
       unitId: u.unitId, unitCode: u.unitCode, unitStatus: u.status, startDate: c.startDate, endDate: c.endDate, status: c.status,
       monthlyRentFee: c.monthlyRentFee, depositPaid: c.depositPaid, accumulatedLateFee: accrued,
       depositBalance: Math.max(0, c.depositPaid - accrued), outstandingLateFee: Math.max(0, accrued - c.depositPaid),
-      renewalAvailableFrom: `${dateOnly(addDays(new Date(`${c.endDate}T00:00:00`), -7))}T00:00:00`,
+      renewalAvailableFrom: `${c.startDate}T00:00:00`,
     }
     return d
   }],
@@ -899,9 +899,8 @@ const routes: [string, RegExp, Handler][] = [
     const months = Number(body.extensionMonths)
     if (!(months >= 1 && months <= 60)) throw bad('Thời gian gia hạn từ 1 đến 60 tháng')
     const now = localIso(new Date())
-    const opens = dateOnly(addDays(new Date(`${c.endDate}T00:00:00`), -7))
-    if (c.status !== 'Active' || today() < opens || now >= returnAppointment(c))
-      throw conflict('Chỉ có thể yêu cầu gia hạn trong 7 ngày trước ngày hết hạn, khi hợp đồng còn hiệu lực')
+    if (c.status !== 'Active' || now >= returnAppointment(c))
+      throw conflict('Chỉ có thể yêu cầu gia hạn khi hợp đồng còn hiệu lực, trước 20:00 ngày hết hạn')
     if (db.renewals.some((r) => r.contractId === c.contractId && r.status === 'Pending'))
       throw conflict('Hợp đồng đã có yêu cầu gia hạn đang chờ xử lý')
     const r: Rnw = { renewalId: nextId(), contractId: c.contractId, oldEndDate: c.endDate, newEndDate: addMonthsIso(c.endDate, months), extensionMonths: months, renewalFee: c.monthlyRentFee * months, status: 'Pending', requestedAt: now }
