@@ -252,7 +252,7 @@ export default function ContractDetail() {
               {schedule.length === 0 && <Empty icon="wallet">Chưa có kỳ thanh toán nào cho hợp đồng này.</Empty>}
             </div>
             <div className="row between wrap">
-              <small className="muted">Thanh toán online qua VNPay / MoMo hoặc tại quầy cơ sở.</small>
+              <small className="muted">Thanh toán online qua VNPay hoặc tại quầy cơ sở.</small>
               <Link to="/invoices" className="btn soft sm"><Icon name="card" size={14} /> Quản lý thanh toán</Link>
             </div>
           </section>

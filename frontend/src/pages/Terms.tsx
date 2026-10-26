@@ -15,7 +15,7 @@ export const TERMS: { title: string; icon: string; items: string[] }[] = [
     icon: 'card',
     items: [
       'Đơn đặt kho được giữ trong thời gian giữ chỗ (mặc định 24 giờ). Quá hạn mà chưa đặt cọc, đơn tự hết hiệu lực.',
-      'Tiền cọc tính theo chính sách thuê của cơ sở (mặc định bằng 1 tháng tiền thuê), thanh toán online qua VNPay/MoMo hoặc tại quầy.',
+      'Tiền cọc tính theo chính sách thuê của cơ sở (mặc định bằng 1 tháng tiền thuê), thanh toán online qua VNPay hoặc tại quầy.',
       'Mã khuyến mãi chỉ áp dụng cho lần thuê đầu tiên, đúng thời gian và số tháng tối thiểu của chương trình; mức giảm trừ vào tiền thuê tháng đầu.',
     ],
   },
