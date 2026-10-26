@@ -147,9 +147,10 @@ export default function ContractDetail() {
 
       <div className="container page-body">
         {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
-        <div className="detail-grid">
+        <div className="detail-grid detail-cols">
+          <div className="stack-lg detail-main">
           {/* row 1 left: the unit */}
-          <div className="stack-lg area-unit">
+          <>
             <section className="panel unit-panel">
               <div className="unit-photo"><UnitArt variant={unit ? unit.unitTypeId - 1 : 2} /></div>
               <div className="row between wrap">
@@ -180,53 +181,25 @@ export default function ContractDetail() {
                 </dl>
               </section>
             )}
-          </div>
+          </>
 
-          {/* row 1 right: the contract */}
-          <section className="panel contract-card area-contract">
-            <h3 className="panel-title">Thông Tin Hợp Đồng</h3>
-            <div className="price-box">
-              <div className="row between"><small className="muted">Mã hợp đồng</small><b>{c.contractNumber}</b></div>
-              <div><b className="price-big">{fmtMoney(c.monthlyRentFee)}</b> <small className="muted">/ tháng</small></div>
-            </div>
-            <div className="info-row"><span className="muted">Ngày bắt đầu</span><b>{fmtDate(c.startDate)}</b></div>
-            <div className="info-row"><span className="muted">Ngày hết hạn</span><b>{fmtDate(c.endDate)}</b></div>
-            <div className="info-row"><span className="muted">Thời gian còn lại</span>
-              <b className={ended ? '' : left <= 7 ? 'warn-text' : 'cyan'}>{ended ? 'Đã kết thúc' : left > 0 ? `${left} ngày` : left === 0 ? 'Hết hạn hôm nay' : `Quá ${-left} ngày`}</b></div>
-            <div className="info-row"><span className="muted">Chu kỳ thanh toán</span><b>Hàng tháng</b></div>
-            <div className="info-row"><span className="muted">Tiền cọc</span><b>{fmtMoney(c.depositPaid)}</b></div>
-            {c.accumulatedLateFee > 0 && <>
-              <div className="info-row"><span className="muted">Phí quá hạn</span><b className="danger-text">{fmtMoney(c.accumulatedLateFee)}</b></div>
-              <div className="info-row"><span className="muted">Số dư cọc</span><b>{fmtMoney(c.depositBalance)}</b></div>
-            </>}
-            {!ended && (
-              <div className="row wrap">
-                <Link to={`/my-units/${c.contractId}/renew`} className="btn primary"><Icon name="calendar" size={15} /> {pending ? 'Xem yêu cầu gia hạn' : 'Gia hạn hợp đồng'}</Link>
-                <button className="btn ghost sm" onClick={() => setShowRenew(!showRenew)}>{showRenew ? 'Ẩn gia hạn nhanh' : 'Gia hạn nhanh'}</button>
-              </div>
-            )}
+          <section className="panel stack contract-actions">
+            <div><h3 className="panel-title">Thao Tác Hợp Đồng</h3><p className="muted">Gia hạn, trả kho, tạm ngưng và các yêu cầu khác cho hợp đồng {c.contractNumber}.</p></div>
             {showRenew && <RenewalPanel contract={c} renewals={renewals} onChanged={load} />}
-            <div className="action-grid">
-              {!ended && <Link to={`/my-units/${c.contractId}/move-in`} className="btn soft sm"><Icon name="package" size={14} /> Đưa đồ vào kho</Link>}
-              {!ended && <Link to={`/support?contract=${c.contractId}`} className="btn soft sm"><Icon name="alert" size={14} /> Báo sự cố</Link>}
+            <div className="action-tiles">
+              {!ended && <Link to={`/my-units/${c.contractId}/move-in`} className="action-tile"><span className="tile-icon"><Icon name="package" size={18} /></span><b>Đưa đồ vào kho</b><small>Khai báo đồ và lịch chuyển</small></Link>}
+              {!ended && <Link to={`/support?contract=${c.contractId}`} className="action-tile"><span className="tile-icon"><Icon name="alert" size={18} /></span><b>Báo sự cố</b><small>Gửi yêu cầu hỗ trợ</small></Link>}
               {canReturnEarly
-                ? <button type="button" className={`btn soft sm ${showEarly ? 'active' : ''}`} onClick={() => setShowEarly(!showEarly)}><Icon name="logout" size={14} /> Trả kho sớm</button>
-                : !ended && <Link to={`/support?contract=${c.contractId}&topic=return`} className="btn soft sm"><Icon name="logout" size={14} /> Yêu cầu trả kho</Link>}
-              {!ended && <Link to={`/my-units/${c.contractId}/suspend`} className="btn soft sm"><Icon name="clock" size={14} /> Tạm ngưng hợp đồng</Link>}
-              <Link to={`/my-units/${c.contractId}/policy`} className="btn soft sm"><Icon name="clipboard" size={14} /> Xem policy hợp đồng</Link>
-              <Link to="/account/security" className="btn soft sm"><Icon name="shield" size={14} /> Bảo mật & nhật ký</Link>
+                ? <button type="button" className={`action-tile ${showEarly ? 'active' : ''}`} aria-expanded={showEarly} onClick={() => setShowEarly(!showEarly)}><span className="tile-icon"><Icon name="logout" size={18} /></span><b>Trả kho sớm</b><small>Trước ngày {fmtDate(c.endDate)}</small></button>
+                : !ended && <Link to={`/support?contract=${c.contractId}&topic=return`} className="action-tile"><span className="tile-icon"><Icon name="logout" size={18} /></span><b>Yêu cầu trả kho</b><small>Hẹn ngày trả với cơ sở</small></Link>}
+              {!ended && <Link to={`/my-units/${c.contractId}/suspend`} className="action-tile"><span className="tile-icon"><Icon name="clock" size={18} /></span><b>Tạm ngưng hợp đồng</b><small>30–90 ngày</small></Link>}
+              <Link to={`/my-units/${c.contractId}/policy`} className="action-tile"><span className="tile-icon"><Icon name="clipboard" size={18} /></span><b>Xem policy hợp đồng</b><small>Điều khoản đang áp dụng</small></Link>
+              <Link to="/account/security" className="action-tile"><span className="tile-icon"><Icon name="shield" size={18} /></span><b>Bảo mật & nhật ký</b><small>Lịch sử vào kho, đăng nhập</small></Link>
             </div>
             {showEarly && canReturnEarly && <EarlyReturnPanel contract={c} facility={facility} />}
-            {!readPolicyAcks()[c.contractNumber] && !ended && (
-              <div className="notice warn-notice">
-                <span className="notice-icon warn"><Icon name="clipboard" size={16} /></span>
-                <div className="grow"><b>Bạn chưa xác nhận policy hợp đồng</b><p>Xem lại điều khoản đang áp dụng và tích xác nhận, không cần ký. <Link to={`/my-units/${c.contractId}/policy`} className="link">Xem & xác nhận</Link></p></div>
-              </div>
-            )}
           </section>
-
           {/* row 2 left: payments */}
-          <section className="panel area-pay">
+          <section className="panel">
             <div>
               <h3 className="panel-title">Lịch Thanh Toán & Hóa Đơn</h3>
               <p className="muted">{next ? `Kỳ tiếp theo: ${fmtDate(next.due)}` : 'Không còn kỳ thanh toán nào'}</p>
@@ -254,8 +227,41 @@ export default function ContractDetail() {
             </div>
           </section>
 
+          </div>
+          <div className="stack-lg detail-side">
+          {/* row 1 right: the contract */}
+          <section className="panel contract-card">
+            <h3 className="panel-title">Thông Tin Hợp Đồng</h3>
+            <div className="price-box">
+              <div className="row between"><small className="muted">Mã hợp đồng</small><b>{c.contractNumber}</b></div>
+              <div><b className="price-big">{fmtMoney(c.monthlyRentFee)}</b> <small className="muted">/ tháng</small></div>
+            </div>
+            <div className="info-row"><span className="muted">Ngày bắt đầu</span><b>{fmtDate(c.startDate)}</b></div>
+            <div className="info-row"><span className="muted">Ngày hết hạn</span><b>{fmtDate(c.endDate)}</b></div>
+            <div className="info-row"><span className="muted">Thời gian còn lại</span>
+              <b className={ended ? '' : left <= 7 ? 'warn-text' : 'cyan'}>{ended ? 'Đã kết thúc' : left > 0 ? `${left} ngày` : left === 0 ? 'Hết hạn hôm nay' : `Quá ${-left} ngày`}</b></div>
+            <div className="info-row"><span className="muted">Chu kỳ thanh toán</span><b>Hàng tháng</b></div>
+            <div className="info-row"><span className="muted">Tiền cọc</span><b>{fmtMoney(c.depositPaid)}</b></div>
+            {c.accumulatedLateFee > 0 && <>
+              <div className="info-row"><span className="muted">Phí quá hạn</span><b className="danger-text">{fmtMoney(c.accumulatedLateFee)}</b></div>
+              <div className="info-row"><span className="muted">Số dư cọc</span><b>{fmtMoney(c.depositBalance)}</b></div>
+            </>}
+            {!ended && (
+              <div className="row wrap">
+                <Link to={`/my-units/${c.contractId}/renew`} className="btn primary"><Icon name="calendar" size={15} /> {pending ? 'Xem yêu cầu gia hạn' : 'Gia hạn hợp đồng'}</Link>
+                <button className="btn ghost sm" onClick={() => setShowRenew(!showRenew)}>{showRenew ? 'Ẩn gia hạn nhanh' : 'Gia hạn nhanh'}</button>
+              </div>
+            )}
+            {!readPolicyAcks()[c.contractNumber] && !ended && (
+              <div className="notice warn-notice">
+                <span className="notice-icon warn"><Icon name="clipboard" size={16} /></span>
+                <div className="grow"><b>Bạn chưa xác nhận policy hợp đồng</b><p>Xem lại điều khoản đang áp dụng và tích xác nhận, không cần ký. <Link to={`/my-units/${c.contractId}/policy`} className="link">Xem & xác nhận</Link></p></div>
+              </div>
+            )}
+          </section>
+
           {/* row 2 right: access */}
-          <section className="panel area-access">
+          <section className="panel">
             <div>
               <h3 className="panel-title">Quyền Truy Cập</h3>
               <p className="muted">Chỉ hiển thị cho chủ hợp đồng</p>
@@ -275,6 +281,7 @@ export default function ContractDetail() {
               <Link to={`/my-units?contract=${c.contractId}&tab=history`} className="btn soft sm"><Icon name="shield" size={14} /> Bảo mật & nhật ký</Link>
             </div>
           </section>
+          </div>
         </div>
       </div>
     </>
