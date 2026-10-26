@@ -1,5 +1,7 @@
 # Ảnh trong Figma
 
+Hiện tại các file ở đây là ảnh dựng bằng code theo khung ảnh trong Figma (hành lang kho, cửa cuốn, thùng hàng), chưa phải ảnh chụp thật. Có ảnh xuất từ Figma thì thay file trùng tên.
+
 Bỏ ảnh xuất từ Figma vào đây đúng tên file. Thiếu file nào thì web tự hiện hình vẽ thay thế cho chỗ đó.
 
 | File | Ảnh trong Figma | Dùng ở |
