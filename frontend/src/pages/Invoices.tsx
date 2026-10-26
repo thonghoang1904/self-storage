@@ -1,19 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
-import { QrCode } from '../components/qr'
 import { Icon, StatusBadge } from '../components/ui'
 import type { CheckoutResponse, Invoice } from '../types'
-
-const isMobile = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
 
 export default function Invoices() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [startingInvoiceId, setStartingInvoiceId] = useState<number | null>(null)
-  /** MoMo checkout shown as a QR code to scan (desktop), keyed by invoice. */
-  const [momo, setMomo] = useState<{ invoiceId: number; checkout: CheckoutResponse } | null>(null)
   const [searchParams] = useSearchParams()
   const returnedFromGateway = searchParams.get('paymentReturn') === '1'
   // Arrived from the rent page right after agreeing to the terms: put that deposit invoice first.
@@ -52,18 +47,13 @@ export default function Invoices() {
     }
   }, [])
 
-  const startCheckout = async (invoiceId: number, provider: 'vnpay' | 'momo') => {
+  /** Online payment goes through VNPay only; the page comes back here and the IPN marks the invoice paid. */
+  const startCheckout = async (invoiceId: number) => {
     setError('')
     setStartingInvoiceId(invoiceId)
     try {
-      const checkout = await api<CheckoutResponse>(`/api/invoices/${invoiceId}/checkout/${provider}`, { method: 'POST' })
-      // MoMo: on a computer show the QR to scan with the MoMo app; on a phone open the app directly.
-      if (provider === 'momo' && checkout.qrCodeUrl && !(isMobile() && checkout.deeplink)) {
-        setMomo({ invoiceId, checkout })
-        setStartingInvoiceId(null)
-        return
-      }
-      window.location.assign(provider === 'momo' && isMobile() && checkout.deeplink ? checkout.deeplink : checkout.paymentUrl)
+      const checkout = await api<CheckoutResponse>(`/api/invoices/${invoiceId}/checkout/vnpay`, { method: 'POST' })
+      window.location.assign(checkout.paymentUrl)
     } catch (e) {
       setError((e as Error).message)
       setStartingInvoiceId(null)
@@ -76,7 +66,7 @@ export default function Invoices() {
       <div className="container">
         <span className="eyebrow dark"><i />Tài khoản khách hàng</span>
         <h1>Hóa Đơn & Thanh Toán</h1>
-        <p>Thanh toán cọc, gia hạn và các khoản phí trực tuyến qua VNPay hoặc MoMo.</p>
+        <p>Thanh toán cọc, gia hạn và các khoản phí trực tuyến qua VNPay hoặc tại quầy.</p>
       </div>
     </section>
     <div className="container page-body">
@@ -89,7 +79,7 @@ export default function Invoices() {
           <span className="success-icon"><Icon name="check" size={22} /></span>
           <div className="grow">
             <h3>Đã đồng ý điều khoản & giữ chỗ · {newCode}</h3>
-            <p>Bước cuối: thanh toán tiền cọc bên dưới{deadline && <> trước <b>{fmtTime(deadline)}</b></>} qua VNPay, MoMo hoặc tại quầy. Sau khi cọc được xác nhận, đặt lịch nhận kho ở mục Thuê Kho.</p>
+            <p>Bước cuối: thanh toán tiền cọc bên dưới{deadline && <> trước <b>{fmtTime(deadline)}</b></>} qua VNPay hoặc tại quầy. Sau khi cọc được xác nhận, đặt lịch nhận kho ở mục Thuê Kho.</p>
           </div>
         </div>
       )}
@@ -128,31 +118,11 @@ export default function Invoices() {
                   {payment.paymentMethod} · {payment.status} · {fmtMoney(payment.amountPaid)}
                 </p>
               ))}
-              {payable && momo?.invoiceId === invoice.invoiceId && (
-                <div className="momo-qr">
-                  <div className="momo-qr-code"><QrCode text={momo.checkout.qrCodeUrl!} size={200} label={`Mã QR MoMo cho hóa đơn ${invoice.invoiceNumber}`} /></div>
-                  <div className="stack-sm grow">
-                    <b className="momo-title">Quét mã bằng ứng dụng MoMo</b>
-                    <span className="muted">Mở MoMo → biểu tượng quét mã → quét mã bên cạnh để thanh toán <b>{fmtMoney(momo.checkout.amount)}</b>.</span>
-                    <small className="muted">Mã giao dịch: <span className="code">{momo.checkout.transactionReference}</span></small>
-                    <small className="muted">Hóa đơn chỉ chuyển sang Đã thanh toán sau khi MoMo xác nhận; bấm Làm mới sau khi trả xong.</small>
-                    <div className="row wrap">
-                      {momo.checkout.paymentUrl && <a className="btn outline sm" href={momo.checkout.paymentUrl}>Mở trang thanh toán MoMo</a>}
-                      <button className="btn primary sm" onClick={() => { setMomo(null); setLoading(true); void load() }}><Icon name="refresh" size={14} /> Tôi đã thanh toán, làm mới</button>
-                      <button className="btn ghost sm" onClick={() => setMomo(null)}>Đóng</button>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {payable && momo?.invoiceId !== invoice.invoiceId && (
+              {payable && (
                 <div className="row wrap">
                   <button className="btn primary" disabled={startingInvoiceId !== null}
-                    onClick={() => void startCheckout(invoice.invoiceId, 'vnpay')}>
+                    onClick={() => void startCheckout(invoice.invoiceId)}>
                     {startingInvoiceId === invoice.invoiceId ? 'Đang chuyển đến thanh toán…' : 'Thanh toán VNPay'}
-                  </button>
-                  <button className="btn" disabled={startingInvoiceId !== null}
-                    onClick={() => void startCheckout(invoice.invoiceId, 'momo')}>
-                    Thanh toán MoMo · quét QR
                   </button>
                 </div>
               )}

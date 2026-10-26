@@ -745,7 +745,7 @@ textarea::placeholder { color: var(--muted-2); }
 .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
 @media (max-width: 1100px) { .policy-workspace { grid-template-columns: minmax(0, 1fr); } }
 
-/* ---------- facility manager (#43), cancellations, revenue, MoMo QR, Google sign-in ---------- */
+/* ---------- facility manager (#43), cancellations, revenue, Google sign-in ---------- */
 .ok-text { color: var(--ok); font-weight: 600; }
 .sidebar-group { display: block; padding: 14px 14px 4px; font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); }
 .count-pill { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 7px; margin-left: 6px; border-radius: 999px; background: var(--cyan-50); color: var(--cyan-600); font-size: 12px; font-weight: 800; }
@@ -790,9 +790,6 @@ textarea::placeholder { color: var(--muted-2); }
 .occ { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; }
 .occ-track { width: 90px; height: 8px; }
 tfoot td { border-top: 2px solid var(--border); font-weight: 700; }
-.momo-qr { display: flex; gap: 20px; align-items: center; padding: 18px; border-radius: 12px; border: 1px solid #f4c6dc; background: #fdf2f8; }
-.momo-qr-code { flex-shrink: 0; padding: 8px; background: #fff; border-radius: 10px; border: 1px solid #f4c6dc; line-height: 0; }
-.momo-title { color: #a50064; font-size: 16px; }
 .google-btn { gap: 10px; }
 .google-btn-box { display: flex; justify-content: center; min-height: 44px; }
 small.center { text-align: center; }
@@ -802,7 +799,6 @@ small.center { text-align: center; }
   .cancel-form { flex-direction: column; align-items: stretch; }
   .revenue-bar { grid-template-columns: 1fr auto; }
   .revenue-bar .revenue-track { grid-column: 1 / -1; grid-row: 2; }
-  .momo-qr { flex-direction: column; align-items: flex-start; }
   .search-sm { min-width: 0; width: 100%; }
 }
 

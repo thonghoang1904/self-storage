@@ -122,7 +122,7 @@ export default function StaffBilling() {
       <section className="panel">
         <div>
           <h2 className="panel-title">Danh sách hóa đơn</h2>
-          <p className="muted">Chỉ ghi nhận khi đã nhận đủ tiền thực tế. Hóa đơn đang có giao dịch VNPay/MoMo chờ xác nhận sẽ bị từ chối ghi nhận.</p>
+          <p className="muted">Chỉ ghi nhận khi đã nhận đủ tiền thực tế. Hóa đơn đang có giao dịch trực tuyến chờ xác nhận sẽ bị từ chối ghi nhận.</p>
         </div>
         <div className="table-scroll">
           <table>
