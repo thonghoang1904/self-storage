@@ -3,7 +3,8 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { CITIZEN_ID_FILTER, citizenIdError, digitsOnly, textError } from '../validation'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
-import { Empty, Icon, UnitArt } from '../components/ui'
+import { Empty, Icon } from '../components/ui'
+import { ContractUnitArt } from '../components/unitPhoto'
 import { VisitPurposes, type Contract, type ContractDetail, type Facility, type Person, type VisitRegistration } from '../types'
 import { FieldNote, useInputFilter } from '../components/form'
 
@@ -334,7 +335,7 @@ export default function VisitRegistrationPage({ contractId, picker }: { contract
           <aside className="stack-lg">
             <section className="panel">
               <h3 className="panel-title">Hợp đồng của bạn</h3>
-              <div className="unit-photo sm"><UnitArt variant={(c.unitId + 1) % 4} /></div>
+              <div className="unit-photo sm"><ContractUnitArt facilityId={c.facilityId} unitId={c.unitId} /></div>
               <div>
                 <h4 className="unit-title">Kho {c.unitCode}</h4>
                 <p className="muted">{c.facilityName} • {c.contractNumber}</p>

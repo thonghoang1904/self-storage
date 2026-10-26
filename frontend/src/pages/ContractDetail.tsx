@@ -4,7 +4,7 @@ import { api, ApiError, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { FormField } from '../components/form'
 import { Badge, Empty, Icon, StatusBadge, UnitArt, splitTypeName } from '../components/ui'
-import { readPolicyAcks } from './ContractPolicy'
+import { photoVariant } from '../components/unitPhoto'
 import type { AccessRecord, ContractDetail as Detail, EarlyReturnQuote, EarlyReturnRequest, Facility, Invoice, Person, Renewal, StorageUnit, UnitType } from '../types'
 import { textError } from '../validation'
 
@@ -152,7 +152,7 @@ export default function ContractDetail() {
           {/* row 1 left: the unit */}
           <>
             <section className="panel unit-panel">
-              <div className="unit-photo"><UnitArt variant={unit ? unit.unitTypeId - 1 : 2} /></div>
+              <div className="unit-photo"><UnitArt variant={unit ? photoVariant(unit.unitTypeName, unit.unitTypeId) : 2} /></div>
               <div className="row between wrap">
                 <div>
                   <h2 className="unit-title">{typeName?.name ?? `Kho ${c.unitCode}`}{area ? ` ${area.toLocaleString('vi-VN')}m²` : ''}</h2>
@@ -250,12 +250,6 @@ export default function ContractDetail() {
               <div className="row wrap">
                 <Link to={`/my-units/${c.contractId}/renew`} className="btn primary"><Icon name="calendar" size={15} /> {pending ? 'Xem yêu cầu gia hạn' : 'Gia hạn hợp đồng'}</Link>
                 <button className="btn ghost sm" onClick={() => setShowRenew(!showRenew)}>{showRenew ? 'Ẩn gia hạn nhanh' : 'Gia hạn nhanh'}</button>
-              </div>
-            )}
-            {!readPolicyAcks()[c.contractNumber] && !ended && (
-              <div className="notice warn-notice">
-                <span className="notice-icon warn"><Icon name="clipboard" size={16} /></span>
-                <div className="grow"><b>Bạn chưa xác nhận policy hợp đồng</b><p>Xem lại điều khoản đang áp dụng và tích xác nhận, không cần ký. <Link to={`/my-units/${c.contractId}/policy`} className="link">Xem & xác nhận</Link></p></div>
               </div>
             )}
           </section>

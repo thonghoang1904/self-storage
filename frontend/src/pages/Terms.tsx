@@ -1,4 +1,5 @@
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
 import { Icon } from '../components/ui'
 
@@ -8,6 +9,23 @@ import { Icon } from '../components/ui'
  * Shown as its own page (/terms) and in the step where the customer agrees before a reservation is created.
  */
 export const TERMS_VERSION = '2026-10'
+
+/**
+ * Link to /terms that remembers the step the customer is in, so the page offers a way straight back to it.
+ * `back`/`label`: where "Quay lại" goes. `next`/`nextLabel`: the step to continue (e.g. the renewal).
+ * `newTab`: the step has a half-filled form; the terms open in a new tab and the button closes it.
+ */
+export function termsHref(o: { back?: string; label?: string; next?: string; nextLabel?: string; newTab?: boolean } = {}) {
+  const q = new URLSearchParams()
+  if (o.newTab) q.set('tab', '1')
+  if (o.back) q.set('back', o.back)
+  if (o.label) q.set('label', o.label)
+  if (o.next) q.set('next', o.next)
+  if (o.nextLabel) q.set('nextLabel', o.nextLabel)
+  const s = q.toString()
+  return s ? `/terms?${s}` : '/terms'
+}
+
 
 export const TERMS: { title: string; icon: string; items: string[] }[] = [
   {
@@ -64,16 +82,47 @@ export const TERMS: { title: string; icon: string; items: string[] }[] = [
 ]
 
 export default function TermsPage() {
+  const q = new URLSearchParams(useLocation().search)
+  const navigate = useNavigate()
+  const { user } = useAuth()
+  const inTab = q.get('tab') === '1'
+  // Only in-app paths, never a full URL from the query string.
+  const safe = (v: string | null) => (v && v.startsWith('/') && !v.startsWith('//') ? v : null)
+  const back = safe(q.get('back'))
+  const next = safe(q.get('next'))
+  const backLabel = q.get('label') || 'Quay lại'
+  const nextLabel = q.get('nextLabel') || 'Tiếp tục'
+  const canGoBack = typeof window !== 'undefined' && window.history.length > 1
+
+  const actions = inTab ? (
+    <button type="button" className="btn primary" onClick={() => { window.close(); if (back) navigate(back) }}>
+      <Icon name="arrowRight" size={15} className="flip" /> {backLabel}
+    </button>
+  ) : (
+    <>
+      {back ? <Link to={back} className={`btn ${next ? 'outline' : 'primary'}`}><Icon name="arrowRight" size={15} className="flip" /> {backLabel}</Link>
+        : canGoBack && <button type="button" className={`btn ${user ? 'primary' : 'outline'}`} onClick={() => window.history.back()}><Icon name="arrowRight" size={15} className="flip" /> Quay lại trang trước</button>}
+      {next && <Link to={next} className="btn primary">{nextLabel} <Icon name="arrowRight" size={15} /></Link>}
+      {!back && !next && !user && <Link to="/rent" className="btn primary">Đặt kho ngay <Icon name="arrowRight" size={15} /></Link>}
+    </>
+  )
+
   return (
     <>
       <PageHero center eyebrow={`Phiên bản ${TERMS_VERSION}`} title="Điều Khoản & Chính Sách Hợp Đồng">
         Những quy định áp dụng cho mọi hợp đồng thuê kho SafeKeep. Khách đồng ý các điều khoản này trước khi giữ chỗ và thanh toán cọc.
       </PageHero>
       <div className="container page-body terms-page">
+        {(back || next || inTab) && (
+          <div className="panel terms-return">
+            <span className="muted grow">{inTab ? 'Đọc xong, đóng trang này để quay lại bước đang làm (thông tin đã nhập vẫn còn).' : 'Đọc xong, quay lại để tiếp tục bước đang làm.'}</span>
+            <div className="row wrap">{actions}</div>
+          </div>
+        )}
         <TermsList />
         <div className="panel row between wrap">
           <span className="muted">Mức cọc, thời gian giữ chỗ và phí hủy cụ thể theo chính sách thuê của từng cơ sở tại thời điểm đặt kho.</span>
-          <Link to="/rent" className="btn primary">Đặt kho ngay <Icon name="arrowRight" size={15} /></Link>
+          <div className="row wrap">{actions}</div>
         </div>
       </div>
     </>

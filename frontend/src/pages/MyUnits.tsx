@@ -4,7 +4,8 @@ import { CITIZEN_ID_FILTER, citizenIdError, fullNameError, NAME_FILTER, normaliz
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { AppointmentPicker, depositDueAt, depositMissed, pickupMissed } from '../components/appointment'
-import { Empty, Eyebrow, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
+import { Empty, Eyebrow, Icon, splitTypeName, StatusBadge } from '../components/ui'
+import { ContractUnitArt } from '../components/unitPhoto'
 import { DenyReasons, type AccessRecord, type Contract, type Facility, type Invoice, type Person, type Reservation } from '../types'
 import { FormField, useValidatedForm } from '../components/form'
 
@@ -90,12 +91,12 @@ export default function MyUnits() {
             <Link to="/visit" className="btn primary sm"><Icon name="calendar" size={15} /> Đăng ký vào kho</Link>
           </div>
           <div className="my-unit-grid">
-            {contracts?.map((c, i) => {
+            {contracts?.map((c) => {
               const left = daysUntil(c.endDate)
               return (
                 <article key={c.contractId} className="my-unit-card">
                   <div className="my-unit-media">
-                    <UnitArt variant={(i + 1) % 4} />
+                    <ContractUnitArt facilityId={c.facilityId} unitCode={c.unitCode} />
                     <span className="tag-dark">{c.unitCode}</span>
                     <span className="tag-status"><StatusBadge status={c.status} /></span>
                   </div>

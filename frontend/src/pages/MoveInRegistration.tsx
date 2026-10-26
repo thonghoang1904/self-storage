@@ -4,8 +4,10 @@ import { CITIZEN_ID_FILTER, PHONE_FILTER, checkCitizenId, checkPhone, digitsOnly
 import { FieldNote, useInputFilter } from '../components/form'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
-import { Empty, Icon, UnitArt } from '../components/ui'
+import { Empty, Icon } from '../components/ui'
+import { ContractUnitArt } from '../components/unitPhoto'
 import type { Contract, ContractDetail, Facility, Person, StorageUnit, UnitType, VisitRegistration } from '../types'
+import { termsHref } from './Terms'
 
 /**
  * Figma "Đăng ký đưa đồ vào kho" (120:2343): the customer declares the items to bring in, books the move-in slot
@@ -307,7 +309,7 @@ export default function MoveInRegistration() {
                     <span className="notice-icon warn"><Icon name="shield" size={16} /></span>
                     <div><p>Đồ có giá trị cao (trang sức, tiền mặt, giấy tờ quan trọng) nên khai báo rõ hoặc không gửi. SafeKeep chỉ chịu trách nhiệm theo điều khoản hợp đồng đã đồng ý.</p></div>
                   </div>
-                  <Link to="/terms" className="link with-icon"><Icon name="file" size={14} /> Xem điều khoản hợp đồng đã đồng ý</Link>
+                  <Link to={termsHref({ newTab: true, label: 'Đóng & quay lại đăng ký đưa đồ' })} target="_blank" className="link with-icon"><Icon name="file" size={14} /> Xem điều khoản hợp đồng đã đồng ý</Link>
                 </section>
 
                 <section className="panel form-section">
@@ -410,7 +412,7 @@ export default function MoveInRegistration() {
           <aside className="stack-lg">
             <section className="panel">
               <h3 className="panel-title">Kho nhận đồ</h3>
-              <div className="unit-photo sm"><UnitArt variant={(c.unitId + 1) % 4} /></div>
+              <div className="unit-photo sm"><ContractUnitArt facilityId={c.facilityId} unitId={c.unitId} /></div>
               <div>
                 <h4 className="unit-title">Kho {c.unitCode}</h4>
                 <p className="muted">{type ? `${type.typeName} · ${capacity.toFixed(1)} m³` : c.facilityName}</p>

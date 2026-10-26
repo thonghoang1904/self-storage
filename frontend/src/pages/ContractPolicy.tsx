@@ -1,27 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
-import { useAuth } from '../auth'
-import { Empty, Icon, StatusBadge, UnitArt, splitTypeName } from '../components/ui'
+import { Empty, Icon, splitTypeName, StatusBadge } from '../components/ui'
+import { ContractUnitArt } from '../components/unitPhoto'
 import { ExtraChargeFees, type ContractDetail, type Facility, type Renewal, type StorageUnit } from '../types'
-import { TERMS_VERSION } from './Terms'
+import { TERMS_VERSION, termsHref } from './Terms'
 
 /**
- * Figma "Xem trước policy của hợp đồng" (96:11044) and "Ký hợp đồng thành công" (110:362).
- * The customer reads the policy that applies to their contract (rules the backend enforces, the fee table and the
- * contract's own amounts), sees any pending appendix (a renewal not yet paid) as "not in force yet", ticks that they
- * have read it and gets a confirmation page. No signature: the group agreed a tick is enough. The confirmation is kept
- * in this browser (localStorage), the same way the reservation terms agreement is, since there is no API for it.
+ * Figma "Xem trước policy của hợp đồng" (96:11044): the customer reads the policy that applies to their contract
+ * (rules the backend enforces, the fee table and the contract's own amounts) and any pending appendix (a renewal not
+ * yet paid) as "not in force yet". Nothing to confirm: it is opened from a step (?from=renew|suspend|early-return)
+ * and a button takes the customer straight back to that step.
  */
-
-const ACK_KEY = 'ss_policy_ack'
-type Ack = { at: string; version: string }
-export function readPolicyAcks(): Record<string, Ack> {
-  try { return JSON.parse(localStorage.getItem(ACK_KEY) ?? '{}') as Record<string, Ack> } catch { return {} }
-}
-function saveAck(contractNumber: string, ack: Ack) {
-  try { localStorage.setItem(ACK_KEY, JSON.stringify({ ...readPolicyAcks(), [contractNumber]: ack })) } catch { /* private mode: page still works */ }
-}
 
 type Section = { id: string; code: string; title: string; body: string[] }
 
@@ -115,7 +105,7 @@ export function ContractStrip({ c, unitType }: { c: ContractDetail; unitType: st
   const type = unitType ? splitTypeName(unitType) : null
   return (
     <section className="panel contract-strip">
-      <div className="unit-photo xs"><UnitArt variant={(c.unitId + 1) % 4} /></div>
+      <div className="unit-photo xs"><ContractUnitArt facilityId={c.facilityId} unitId={c.unitId} /></div>
       <div className="strip-identity">
         <b>{type ? `${type.name} ${type.size}` : `Kho ${c.unitCode}`} · {c.unitCode}</b>
         <small className="muted">{c.facilityName}</small>
@@ -128,28 +118,29 @@ export function ContractStrip({ c, unitType }: { c: ContractDetail; unitType: st
   )
 }
 
+const BACK: Record<string, { label: string; hint: string; path: (id: number) => string }> = {
+  renew: { label: 'Quay lại gia hạn', hint: 'Quay lại trang gia hạn để tiếp tục chọn thời gian và gửi yêu cầu.', path: (id) => `/my-units/${id}/renew` },
+  suspend: { label: 'Quay lại tạm ngưng', hint: 'Quay lại trang tạm ngưng hợp đồng để tiếp tục.', path: (id) => `/my-units/${id}/suspend` },
+  'early-return': { label: 'Quay lại trả kho sớm', hint: 'Quay lại yêu cầu trả kho sớm của bạn.', path: (id) => `/my-units/${id}/early-return` },
+  contract: { label: 'Quay lại hợp đồng', hint: 'Quay lại trang chi tiết kho & hợp đồng.', path: (id) => `/my-units/${id}` },
+}
+
 export default function ContractPolicy() {
   const id = Number(useParams().id)
-  const navigate = useNavigate()
+  const from = new URLSearchParams(useLocation().search).get('from') ?? ''
   const { c, renewals, facility, unitType, error } = useContract(id)
-  const [agree, setAgree] = useState(false)
-  const [warn, setWarn] = useState('')
   if (!c) return <Loading error={error} />
 
-  const ack = readPolicyAcks()[c.contractNumber]
+  // Opened from another step (renewal, suspension, early return): after reading, go straight back to it.
+  const back = BACK[from] ?? BACK.contract
+  const backTo = back.path(c.contractId)
   const list = sections(c, facility?.operatingHours)
   const pending = renewals.find((r) => r.status === 'Pending')
   const go = (sid: string) => document.getElementById(`policy-${sid}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
-  const confirm = () => {
-    if (!agree) { setWarn('Vui lòng tích xác nhận đã đọc và hiểu policy trước khi tiếp tục'); return }
-    saveAck(c.contractNumber, { at: new Date().toISOString(), version: TERMS_VERSION })
-    navigate(`/my-units/${c.contractId}/policy/done`)
-  }
-
   return (
     <>
-      <Hero c={c} crumb="Policy hợp đồng" title="Xem trước policy của hợp đồng" subtitle={`Xem lại điều khoản đang áp dụng cho hợp đồng ${c.contractNumber} trước khi xác nhận.`} />
+      <Hero c={c} crumb="Policy hợp đồng" title="Xem trước policy của hợp đồng" subtitle={`Xem lại điều khoản đang áp dụng cho hợp đồng ${c.contractNumber}.`} />
       <div className="container page-body">
         <ContractStrip c={c} unitType={unitType} />
 
@@ -206,14 +197,13 @@ export default function ContractPolicy() {
           <aside className="stack-lg policy-aside">
             <section className="panel stack-sm">
               <h3 className="panel-title">Phiên bản của bản xem trước</h3>
-              <span className={`badge ${ack ? 'ok' : 'warn'} self-start`}>{ack ? 'Đã xác nhận' : 'Chưa xác nhận'}</span>
               <div className="info-row"><span className="muted">Mã hợp đồng</span><b>{c.contractNumber}</b></div>
               <div className="info-row"><span className="muted">Phiên bản điều khoản</span><b>{TERMS_VERSION}</b></div>
               <div className="info-row"><span className="muted">Hiệu lực từ</span><b>{fmtDate(c.startDate)}</b></div>
-              {ack && <div className="info-row"><span className="muted">Bạn xác nhận lúc</span><b>{fmtTime(ack.at)}</b></div>}
               <hr />
               <small className="muted">Bản xem trước tóm tắt các điều khoản chính. Toàn văn áp dụng chung cho mọi hợp đồng ở trang Điều khoản.</small>
-              <Link to="/terms" className="btn outline block"><Icon name="file" size={15} /> Xem toàn văn điều khoản</Link>
+              <Link to={termsHref({ back: `/my-units/${c.contractId}/policy${from ? `?from=${from}` : ''}`, label: 'Quay lại policy hợp đồng', ...(from && BACK[from] ? { next: backTo, nextLabel: back.label.replace('Quay lại', 'Tiếp tục') } : {}) })} className="btn outline block"><Icon name="file" size={15} /> Xem toàn văn điều khoản</Link>
+              <Link to={backTo} className="btn primary block"><Icon name="arrowRight" size={15} className="flip" /> {back.label}</Link>
             </section>
             <section className="panel stack-sm">
               <h3 className="panel-title">Nội dung cần xem</h3>
@@ -225,104 +215,15 @@ export default function ContractPolicy() {
             </section>
             <div className="notice warn-notice">
               <span className="notice-icon warn"><Icon name="alert" size={16} /></span>
-              <div><b>Có thắc mắc về điều khoản?</b><p>Liên hệ cơ sở {c.facilityName}{facility?.hotline && ` (${facility.hotline})`} hoặc gửi yêu cầu hỗ trợ trước khi xác nhận.</p></div>
+              <div><b>Có thắc mắc về điều khoản?</b><p>Liên hệ cơ sở {c.facilityName}{facility?.hotline && ` (${facility.hotline})`} hoặc gửi yêu cầu hỗ trợ.</p></div>
             </div>
           </aside>
         </div>
 
-        <section className="panel stack">
-          <h2 className="panel-title">Xác nhận đã xem policy</h2>
-          <label className="check-line">
-            <input type="checkbox" checked={agree} onChange={(e) => { setAgree(e.target.checked); setWarn('') }} />
-            <span>Tôi đã đọc, hiểu và đồng ý với các điều khoản đang áp dụng cho hợp đồng {c.contractNumber}.</span>
-          </label>
-          {warn && <p className="alert bad"><Icon name="alert" size={16} />{warn}</p>}
-          <div className="row between wrap">
-            <Link to={`/my-units/${c.contractId}`} className="btn outline">Quay lại</Link>
-            <small className="muted grow">Chỉ cần tích xác nhận, không cần ký. Bạn có thể xem lại policy bất cứ lúc nào.</small>
-            <button type="button" className="btn primary" onClick={confirm}><Icon name="arrowRight" size={16} /> Xác nhận & tiếp tục</button>
-          </div>
+        <section className="panel policy-done-bar">
+          <div className="grow"><b>Đã đọc xong policy?</b><p className="muted">{back.hint}</p></div>
+          <Link to={backTo} className="btn primary"><Icon name="arrowRight" size={16} className="flip" /> {back.label}</Link>
         </section>
-      </div>
-    </>
-  )
-}
-
-export function ContractPolicyDone() {
-  const id = Number(useParams().id)
-  const { user } = useAuth()
-  const { c, facility, unitType, error } = useContract(id)
-  if (!c) return <Loading error={error} />
-  const ack = readPolicyAcks()[c.contractNumber]
-  const type = unitType ? splitTypeName(unitType) : null
-
-  return (
-    <>
-      <Hero c={c} crumb="Xác nhận thành công" title="Xác nhận hợp đồng thành công" subtitle={`Bạn đã xác nhận policy của hợp đồng ${c.contractNumber}.`} />
-      <div className="container page-body">
-        <section className="panel policy-success">
-          <ol className="journey done-all">
-            <li className="done"><span><Icon name="check" size={14} /></span>Xem policy</li>
-            <li className="done"><span><Icon name="check" size={14} /></span>Xác nhận đồng ý</li>
-            <li className="done"><span><Icon name="check" size={14} /></span>Hoàn tất</li>
-          </ol>
-          {ack ? (
-            <div className="success-block">
-              <span className="success-seal"><Icon name="check" size={34} /></span>
-              <h2>Hợp đồng {c.contractNumber} đã được xác nhận!</h2>
-              <p className="muted">{user?.fullName} đã đồng ý điều khoản phiên bản {ack.version} lúc {fmtTime(ack.at)}. Bạn có thể xem lại policy bất cứ lúc nào trong trang hợp đồng.</p>
-              <div className="row wrap center">
-                <Link to={`/my-units/${c.contractId}`} className="btn primary"><Icon name="clipboard" size={16} /> Xem hợp đồng</Link>
-                <button type="button" className="btn outline" onClick={() => window.print()}><Icon name="file" size={16} /> In / lưu PDF</button>
-              </div>
-            </div>
-          ) : (
-            <div className="success-block">
-              <p className="alert bad"><Icon name="alert" size={16} />Bạn chưa xác nhận policy của hợp đồng này.</p>
-              <Link to={`/my-units/${c.contractId}/policy`} className="btn primary">Xem & xác nhận policy</Link>
-            </div>
-          )}
-        </section>
-
-        <div className="policy-layout">
-          <section className="panel stack">
-            <div className="row between"><h2 className="panel-title">Thông tin hợp đồng đã xác nhận</h2><StatusBadge status={c.status} /></div>
-            <div className="row">
-              <div className="unit-photo xs"><UnitArt variant={(c.unitId + 1) % 4} /></div>
-              <div className="strip-identity">
-                <b>{type ? `${type.name} ${type.size}` : `Kho ${c.unitCode}`} · {c.unitCode}</b>
-                <small className="muted">{c.facilityName}{facility && ` · ${facility.address}`}</small>
-              </div>
-            </div>
-            <dl className="movein-grid">
-              <div><dt>Mã hợp đồng</dt><dd>{c.contractNumber}</dd></div>
-              <div><dt>Chủ hợp đồng</dt><dd>{user?.fullName}</dd></div>
-              <div><dt>Ngày bắt đầu</dt><dd>{fmtDate(c.startDate)}</dd></div>
-              <div><dt>Ngày hết hạn</dt><dd>{fmtDate(c.endDate)}</dd></div>
-              <div><dt>Tiền cọc</dt><dd>{fmtMoney(c.depositPaid)}</dd></div>
-              <div><dt>Tiền thuê</dt><dd>{fmtMoney(c.monthlyRentFee)} / tháng</dd></div>
-            </dl>
-            <div className="notice info-notice">
-              <span className="notice-icon info"><Icon name="shield" size={16} /></span>
-              <div><b>Điều khoản đã xác nhận</b><p>Các điều khoản phiên bản {TERMS_VERSION} áp dụng cho hợp đồng này. Thay đổi về sau (như phụ lục gia hạn) chỉ có hiệu lực khi bạn hoàn tất thủ tục.</p></div>
-            </div>
-          </section>
-
-          <aside className="stack-lg policy-aside">
-            <section className="panel stack-sm">
-              <h3 className="panel-title">Bước tiếp theo</h3>
-              <Link to={`/my-units/${c.contractId}/visit`} className="related-link"><Icon name="calendar" size={16} /><span className="grow"><b>Đăng ký vào kho</b><small className="muted">Đặt lịch lượt vào đầu tiên, xuất trình CCCD tại cổng.</small></span><Icon name="arrowRight" size={14} /></Link>
-              <Link to={`/my-units/${c.contractId}/move-in`} className="related-link"><Icon name="package" size={16} /><span className="grow"><b>Đưa đồ vào kho</b><small className="muted">Khai báo danh sách đồ và lịch chuyển đồ.</small></span><Icon name="arrowRight" size={14} /></Link>
-              <Link to="/invoices" className="related-link"><Icon name="wallet" size={16} /><span className="grow"><b>Theo dõi thanh toán</b><small className="muted">Hóa đơn tiền thuê phát hành theo từng kỳ một tháng.</small></span><Icon name="arrowRight" size={14} /></Link>
-              <Link to={`/my-units/${c.contractId}`} className="btn outline block"><Icon name="arrowRight" size={15} /> Về hợp đồng</Link>
-            </section>
-            <section className="panel stack-sm">
-              <h3 className="panel-title">Cần hỗ trợ về hợp đồng?</h3>
-              <p className="muted">Liên hệ cơ sở hoặc gửi yêu cầu hỗ trợ kèm mã {c.contractNumber}.</p>
-              <Link to={`/support?contract=${c.contractId}`} className="link with-icon"><Icon name="phone" size={14} /> {facility?.hotline ?? '(028) 1234 5678'}</Link>
-            </section>
-          </aside>
-        </div>
       </div>
     </>
   )

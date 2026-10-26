@@ -5,7 +5,7 @@ import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
 import { AppointmentPicker, depositDueAt, depositMissed, pickupMissed } from '../components/appointment'
 import { Empty, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
-import { TermsList, TERMS_VERSION } from './Terms'
+import { TermsList, TERMS_VERSION, termsHref } from './Terms'
 import { CancellationStatuses, type Availability, type CancellationRequest, type Facility, type Reservation, type UnitType } from '../types'
 import { CODE_FILTER, localToday, promoCodeError, textError } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
@@ -270,7 +270,7 @@ export default function Rent() {
                 <div className="terms-box" tabIndex={0} aria-label="Điều khoản hợp đồng">
                   <TermsList compact />
                 </div>
-                <Link to="/terms" target="_blank" className="link">Mở trang điều khoản đầy đủ <Icon name="arrowRight" size={14} /></Link>
+                <Link to={termsHref({ newTab: true, label: 'Đóng & quay lại đặt kho' })} target="_blank" className="link">Mở trang điều khoản đầy đủ <Icon name="arrowRight" size={14} /></Link>
               </div>
               <div className="stack sign-side">
                 <label className="check-row">

@@ -200,7 +200,7 @@ export default function ContractSuspend() {
             <section className="panel stack-sm">
               <h3 className="panel-title">Trước khi xác nhận</h3>
               <p className="muted">Nhân viên sẽ kiểm tra công nợ và lịch hẹn của kho trước khi duyệt. Hóa đơn chưa thanh toán cần được thanh toán trước.</p>
-              <Link to={`/my-units/${c.contractId}/policy`} className="btn outline block"><Icon name="clipboard" size={15} /> Xem policy hợp đồng</Link>
+              <Link to={`/my-units/${c.contractId}/policy?from=suspend`} className="btn outline block"><Icon name="clipboard" size={15} /> Xem policy hợp đồng</Link>
             </section>
           </aside>
         </div>

@@ -6,6 +6,7 @@ import { AppointmentPicker } from '../components/appointment'
 import { INVOICE_TYPE, PAY_METHOD, PAY_STATUS, PayButtons, SandboxPayButton, TYPE_ICON, moneyInWords, useCheckout } from '../components/checkout'
 import { Icon, StatusBadge } from '../components/ui'
 import type { ContractDetail, Facility, Invoice, Reservation } from '../types'
+import { termsHref } from './Terms'
 
 /**
  * One invoice in full (GET /api/invoices/{id}): who issued it and to whom, the contract or reservation and unit it bills,
@@ -191,7 +192,7 @@ export default function InvoiceDetail() {
               <div className="paper-notes">
                 <span className="label">Ghi chú</span>
                 <ul>{NOTES[invoice.invoiceType].map((n) => <li key={n}>{n}</li>)}</ul>
-                <small className="muted">Chi tiết xem <Link className="link" to="/terms">Điều khoản hợp đồng</Link>.</small>
+                <small className="muted">Chi tiết xem <Link className="link" to={termsHref({ back: `/invoices/${invoice.invoiceId}`, label: 'Quay lại hóa đơn' })}>Điều khoản hợp đồng</Link>.</small>
               </div>
             )}
           </article>

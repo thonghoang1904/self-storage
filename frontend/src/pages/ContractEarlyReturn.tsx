@@ -149,7 +149,7 @@ export default function ContractEarlyReturn() {
                   </li>
                 ))}
               </ol>
-              <Link to={`/my-units/${c.contractId}/policy`} className="link with-icon"><Icon name="clipboard" size={14} /> Xem toàn bộ điều khoản & chính sách hợp đồng</Link>
+              <Link to={`/my-units/${c.contractId}/policy?from=early-return`} className="link with-icon"><Icon name="clipboard" size={14} /> Xem toàn bộ điều khoản & chính sách hợp đồng</Link>
             </section>
           </div>
 

@@ -93,7 +93,7 @@ export default function ContractRenew() {
             <section className="panel stack">
               <h2 className="panel-title">Xem chính sách & bước tiếp theo</h2>
               <div className="info-row"><span className="muted">Chính sách áp dụng</span><b>Điều khoản hợp đồng · phiên bản {TERMS_VERSION}</b></div>
-              <Link to={`/my-units/${c.contractId}/policy`} className="btn outline self-start"><Icon name="clipboard" size={15} /> Xem policy hợp đồng</Link>
+              <Link to={`/my-units/${c.contractId}/policy?from=renew`} className="btn outline self-start"><Icon name="clipboard" size={15} /> Xem policy hợp đồng</Link>
               <label className="check-line">
                 <input type="checkbox" checked={agree} disabled={!!pending || !open} onChange={(e) => { setAgree(e.target.checked); setMsg(null) }} />
                 <span>Tôi đã đọc chính sách gia hạn và đồng ý thanh toán phí gia hạn theo báo giá.</span>
