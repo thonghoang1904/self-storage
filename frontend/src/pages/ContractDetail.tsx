@@ -3,6 +3,7 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { Empty, Icon, StatusBadge, UnitArt, splitTypeName } from '../components/ui'
+import { readPolicyAcks } from './ContractPolicy'
 import type { AccessRecord, ContractDetail as Detail, Facility, Invoice, Person, Renewal, StorageUnit, UnitType } from '../types'
 
 /**
@@ -76,7 +77,6 @@ export default function ContractDetail() {
   const [people, setPeople] = useState<Person[]>([])
   const [lastVisit, setLastVisit] = useState<AccessRecord | null>(null)
   const [showRenew, setShowRenew] = useState(wantRenew)
-  const [showPolicy, setShowPolicy] = useState(false)
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
@@ -201,18 +201,14 @@ export default function ContractDetail() {
               {!ended && <Link to={`/my-units/${c.contractId}/move-in`} className="btn soft sm"><Icon name="package" size={14} /> Đưa đồ vào kho</Link>}
               {!ended && <Link to={`/support?contract=${c.contractId}`} className="btn soft sm"><Icon name="alert" size={14} /> Báo sự cố</Link>}
               {!ended && <Link to={`/support?contract=${c.contractId}&topic=return`} className="btn soft sm"><Icon name="logout" size={14} /> Yêu cầu trả kho</Link>}
-              <button type="button" className={`btn soft sm ${showPolicy ? 'active' : ''}`} onClick={() => setShowPolicy(!showPolicy)}><Icon name="clipboard" size={14} /> Xem policy hợp đồng</button>
+              <Link to={`/my-units/${c.contractId}/policy`} className="btn soft sm"><Icon name="clipboard" size={14} /> Xem policy hợp đồng</Link>
               <Link to={`/my-units?contract=${c.contractId}&tab=history`} className="btn soft sm"><Icon name="shield" size={14} /> Bảo mật & nhật ký</Link>
             </div>
-            {showPolicy && (
-              <ul className="policy-list">
-                <li>Phí thuê {fmtMoney(c.monthlyRentFee)}/tháng, hóa đơn phát hành theo từng kỳ một tháng kể từ ngày bắt đầu.</li>
-                <li>Tiền cọc {fmtMoney(c.depositPaid)}, hoàn lại sau khi trả kho và nhân viên kiểm tra kho đạt.</li>
-                <li>Có thể gia hạn sớm bất cứ lúc nào khi hợp đồng còn hiệu lực, chậm nhất 20:00 ngày {fmtDate(c.endDate)}; thời hạn mới cộng tiếp từ ngày hết hạn hiện tại.</li>
-                <li>Trả kho trước 20:00 ngày {fmtDate(c.endDate)}. Quá 24 giờ, kho bị khóa và tính phí lưu kho mỗi ngày bằng phí tháng / 30, cấn trừ vào tiền cọc.</li>
-                <li>Ra vào kho bằng CCCD của chủ hợp đồng hoặc người được ủy quyền, nhân viên cổng đối chiếu mỗi lượt.</li>
-                <li><Link to="/terms" className="link">Xem toàn bộ điều khoản & chính sách hợp đồng</Link></li>
-              </ul>
+            {!readPolicyAcks()[c.contractNumber] && !ended && (
+              <div className="notice warn-notice">
+                <span className="notice-icon warn"><Icon name="clipboard" size={16} /></span>
+                <div className="grow"><b>Bạn chưa xác nhận policy hợp đồng</b><p>Xem lại điều khoản đang áp dụng và tích xác nhận, không cần ký. <Link to={`/my-units/${c.contractId}/policy`} className="link">Xem & xác nhận</Link></p></div>
+              </div>
             )}
           </section>
 

@@ -993,3 +993,30 @@ small.center { text-align: center; }
 .purpose-preview p { margin: 4px 0 0; font-size: 13.5px; word-break: break-word; }
 .fine { font-size: 13px; margin: 0; }
 @media (max-width: 720px) { .item-measure, .movein-grid { grid-template-columns: 1fr; } }
+
+/* ---------- contract policy (Figma 96:11044, 110:362) ---------- */
+.contract-strip { display: grid; grid-template-columns: 120px minmax(0, 1.3fr) 1.2fr 1fr 1fr; gap: 20px; align-items: center; }
+.contract-strip > div:not(.unit-photo) { display: flex; flex-direction: column; gap: 3px; }
+.contract-strip b { color: var(--text-strong); }
+.unit-photo.xs { height: 76px; width: 120px; border-radius: 10px; overflow: hidden; flex: none; }
+.strip-identity { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.policy-layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 24px; align-items: start; }
+.policy-aside { position: sticky; top: 96px; }
+.policy-card { padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-tint); scroll-margin-top: 100px; }
+.policy-card h3 { margin: 8px 0 6px; font-size: 16.5px; color: var(--text-strong); }
+.policy-card p { margin: 4px 0 0; font-size: 14px; line-height: 1.6; }
+.policy-card.draft { background: var(--warn-bg); border-color: transparent; }
+.policy-fees { display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius-lg); scroll-margin-top: 100px; }
+#policy-draft { scroll-margin-top: 100px; }
+.policy-toc { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.policy-toc button { width: 100%; display: flex; gap: 12px; align-items: center; padding: 9px 10px; border: 0; border-radius: 8px; background: none; text-align: left; font: inherit; font-size: 14px; color: var(--text); cursor: pointer; }
+.policy-toc button:hover { background: var(--cyan-25); color: var(--cyan-600); }
+.policy-toc span { font-weight: 800; color: var(--cyan-600); font-variant-numeric: tabular-nums; }
+.policy-success { display: flex; flex-direction: column; gap: 24px; align-items: center; }
+.journey.done-all { border-style: solid; justify-content: center; }
+.success-block { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; max-width: 760px; }
+.success-block h2 { margin: 0; font-size: 28px; color: var(--text-strong); }
+.success-seal { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; background: var(--ok-bg); color: var(--ok); }
+.row.center { justify-content: center; }
+@media (max-width: 1000px) { .policy-layout, .contract-strip { grid-template-columns: 1fr; } .policy-aside { position: static; } }
+@media print { .policy-aside, .policy-success .row { display: none !important; } }
