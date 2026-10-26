@@ -30,6 +30,11 @@ public class ReservationsController(
     {
         if (req.ExpectedStartDate < DateOnly.FromDateTime(Now))
             throw AppException.BadRequest("Ngày bắt đầu không được ở quá khứ");
+        // A reservation not picked up by 20:00 on its start date expires as a no-show, so that is also the last
+        // moment its deposit can be paid; after 20:00 the start date has to be a later day.
+        var pickupClosesAt = req.ExpectedStartDate.ToDateTime(new TimeOnly(20, 0));
+        if (Now >= pickupClosesAt)
+            throw AppException.BadRequest("Đã quá 20:00, vui lòng chọn ngày bắt đầu từ ngày mai");
 
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         if (!await db.Facilities.AnyAsync(f => f.FacilityId == req.FacilityId && f.Status == "Active", ct))
@@ -73,6 +78,10 @@ public class ReservationsController(
             MidpointRounding.AwayFromZero);
         if (deposit <= 0)
             throw AppException.Conflict("Chính sách đặt cọc của cơ sở chưa được cấu hình hợp lệ");
+        // The grace period, but never past 20:00 on the start date: a deposit paid later would confirm a
+        // reservation that the no-show job expires (and charges the cancellation fee on) right away.
+        var graceEnds = now.AddHours(policy.CancellationGraceHours);
+        var depositDeadline = graceEnds < pickupClosesAt ? graceEnds : pickupClosesAt;
         var reservation = new Reservation
         {
             ReservationCode = $"RSV-{Now:yyyyMMdd}-{Random.Shared.Next(100000, 999999)}",
@@ -85,7 +94,7 @@ public class ReservationsController(
             DurationMonths = req.DurationMonths,
             DepositAmount = deposit,
             EstimatedTotalFee = unitType.BaseMonthlyRate * req.DurationMonths,
-            DepositDeadline = Now.AddHours(policy.CancellationGraceHours),
+            DepositDeadline = depositDeadline,
         };
         db.Reservations.Add(reservation);
         await db.SaveChangesAsync(ct);
