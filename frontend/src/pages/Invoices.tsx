@@ -15,6 +15,8 @@ export default function Invoices() {
   const { startingInvoiceId, startCheckout } = useCheckout(setError)
   const [searchParams] = useSearchParams()
   const returnedFromGateway = searchParams.get('paymentReturn') === '1'
+  /** success / failed when the backend could read the gateway's signed result, otherwise absent. */
+  const gatewayResult = searchParams.get('result')
   // Arrived from the rent page right after agreeing to the terms: put that deposit invoice first.
   const newReservationId = Number(searchParams.get('reservation')) || null
   const newCode = searchParams.get('code')
@@ -96,9 +98,11 @@ export default function Invoices() {
           </div>
         </div>
       )}
-      {returnedFromGateway && (
-        <p className="alert ok">Đã quay lại từ cổng thanh toán. Trạng thái được cập nhật khi cổng thanh toán xác nhận; bấm Làm mới nếu hóa đơn vẫn đang chờ.</p>
-      )}
+      {returnedFromGateway && (gatewayResult === 'success'
+        ? <p className="alert ok"><Icon name="check" size={16} />Thanh toán thành công. Hóa đơn đã được cập nhật.</p>
+        : gatewayResult === 'failed'
+          ? <p className="alert bad"><Icon name="alert" size={16} />Giao dịch chưa thành công hoặc đã bị hủy; hóa đơn vẫn chờ thanh toán, bạn có thể thanh toán lại.</p>
+          : <p className="alert ok">Đã quay lại từ cổng thanh toán. Trạng thái được cập nhật khi cổng thanh toán xác nhận; bấm Làm mới nếu hóa đơn vẫn đang chờ.</p>)}
 
       <div className="stat-grid three">
         <div className="stat-card">

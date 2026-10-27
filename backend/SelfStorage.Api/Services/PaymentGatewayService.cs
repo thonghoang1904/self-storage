@@ -227,35 +227,49 @@ public sealed class PaymentGatewayService(
             payment.AmountPaid, true, "SANDBOX", ct) == OnlinePaymentOutcome.Applied;
     }
 
-    public async Task<string> ProcessVnPayIpnAsync(IQueryCollection query, CancellationToken ct)
+    public async Task<string> ProcessVnPayIpnAsync(IQueryCollection query, CancellationToken ct) =>
+        (await ApplyVnPayResultAsync(query, ct)).Code;
+
+    /// <summary>
+    /// The customer's browser coming back from VNPay carries the same signed result as the IPN. Applying it here
+    /// (idempotent, so a later IPN just gets "02") confirms the payment even when VNPay cannot reach the IPN URL,
+    /// e.g. a backend on localhost. Returns "success", "failed" or null when the result could not be used.
+    /// </summary>
+    public async Task<string?> ProcessVnPayReturnAsync(IQueryCollection query, CancellationToken ct)
+    {
+        var (code, succeeded) = await ApplyVnPayResultAsync(query, ct);
+        return code is "00" or "02" ? (succeeded ? "success" : "failed") : null;
+    }
+
+    private async Task<(string Code, bool Succeeded)> ApplyVnPayResultAsync(IQueryCollection query, CancellationToken ct)
     {
         var fields = query.ToDictionary(pair => pair.Key, pair => pair.Value.ToString(), StringComparer.Ordinal);
+        var succeeded = fields.GetValueOrDefault("vnp_ResponseCode") == "00"
+            && fields.GetValueOrDefault("vnp_TransactionStatus") == "00";
         var signature = fields.GetValueOrDefault("vnp_SecureHash");
         if (string.IsNullOrWhiteSpace(signature) || !VerifyVnPaySignature(fields, signature))
-            return "97";
+            return ("97", false);
         // VNPay's IPN carries vnp_TmnCode but not vnp_Command/vnp_CurrCode (those are only in the pay URL),
         // so the latter are checked only when present.
         if (fields.GetValueOrDefault("vnp_TmnCode") != settings.VnPay.TmnCode
             || (fields.TryGetValue("vnp_CurrCode", out var currency) && currency != "VND")
             || (fields.TryGetValue("vnp_Command", out var command) && command != "pay"))
-            return "97";
+            return ("97", false);
         if (!fields.TryGetValue("vnp_TxnRef", out var reference)
             || !fields.TryGetValue("vnp_Amount", out var rawAmount)
             || !long.TryParse(rawAmount, NumberStyles.None, CultureInfo.InvariantCulture, out var amountInMinorUnits))
-            return "01";
+            return ("01", false);
 
         var amount = amountInMinorUnits / 100m;
         var expectedAmount = await db.Payments.Where(p =>
                 p.PaymentMethod == "VNPay" && p.TransactionCode == reference)
             .Select(p => (decimal?)p.AmountPaid).SingleOrDefaultAsync(ct);
-        if (expectedAmount is null) return "01";
-        if (expectedAmount.Value != amount) return "04";
-        var succeeded = fields.GetValueOrDefault("vnp_ResponseCode") == "00"
-            && fields.GetValueOrDefault("vnp_TransactionStatus") == "00";
+        if (expectedAmount is null) return ("01", false);
+        if (expectedAmount.Value != amount) return ("04", false);
         var outcome = await billing.CompleteOnlinePaymentAsync("VNPay", reference, amount, succeeded,
             fields.GetValueOrDefault("vnp_TransactionNo"), ct);
         // 02 = order already confirmed; anything recorded now (paid, failed or kept for refund) is 00.
-        return outcome == OnlinePaymentOutcome.AlreadyProcessed ? "02" : "00";
+        return (outcome == OnlinePaymentOutcome.AlreadyProcessed ? "02" : "00", succeeded);
     }
 
     public async Task ProcessMomoIpnAsync(MomoIpnRequest request, CancellationToken ct)
@@ -271,11 +285,12 @@ public sealed class PaymentGatewayService(
             request.ResultCode == 0, request.TransactionId.ToString(CultureInfo.InvariantCulture), ct);
     }
 
-    public string BuildFrontendReturnUrl(string provider)
+    public string BuildFrontendReturnUrl(string provider, string? result = null)
     {
         var uri = new UriBuilder(RequireAbsoluteUrl(settings.FrontendReturnUrl, "FrontendReturnUrl"));
         var existingQuery = uri.Query.TrimStart('?');
         var status = $"gateway={WebUtility.UrlEncode(provider)}&paymentReturn=1";
+        if (result is not null) status += $"&result={WebUtility.UrlEncode(result)}";
         uri.Query = string.IsNullOrEmpty(existingQuery) ? status : $"{existingQuery}&{status}";
         return uri.Uri.AbsoluteUri;
     }
@@ -343,7 +358,7 @@ public sealed class PaymentGatewayService(
             ["vnp_Amount"] = checked((long)(payment.AmountPaid * 100m)).ToString(CultureInfo.InvariantCulture),
             ["vnp_CreateDate"] = now.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture),
             ["vnp_CurrCode"] = "VND",
-            ["vnp_IpAddr"] = string.IsNullOrWhiteSpace(clientIp) ? "127.0.0.1" : clientIp,
+            ["vnp_IpAddr"] = VnPayIpAddress(clientIp),
             ["vnp_Locale"] = "vn",
             ["vnp_OrderInfo"] = $"Thanh toan hoa don {invoice.InvoiceNumber}",
             ["vnp_OrderType"] = "other",
@@ -358,6 +373,13 @@ public sealed class PaymentGatewayService(
         var query = string.Join("&", fields.Select(pair =>
             $"{WebUtility.UrlEncode(pair.Key)}={WebUtility.UrlEncode(pair.Value)}"));
         return $"{settings.VnPay.PaymentUrl}?{query}";
+    }
+
+    /// <summary>VNPay expects an IPv4 address; a local browser comes in as ::1 or an IPv4-mapped IPv6 address.</summary>
+    private static string VnPayIpAddress(string? clientIp)
+    {
+        if (!IPAddress.TryParse(clientIp, out var address) || IPAddress.IsLoopback(address)) return "127.0.0.1";
+        return address.IsIPv4MappedToIPv6 ? address.MapToIPv4().ToString() : address.ToString();
     }
 
     private async Task<MomoCreateResponse> CreateMomoPaymentAsync(

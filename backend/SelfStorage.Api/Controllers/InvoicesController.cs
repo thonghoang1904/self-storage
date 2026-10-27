@@ -149,7 +149,7 @@ public class InvoicesController(
 
     /// <summary>
     /// Starts or resumes a VNPay/MoMo checkout. MoMo returns its QR URL, app deep links,
-    /// and a payment URL; invoice status is confirmed only by the verified provider IPN.
+    /// and a payment URL; invoice status is confirmed only by the provider's signed result (IPN, or VNPay's return).
     /// </summary>
     [HttpPost("{id:int}/checkout/{provider}")]
     [Authorize(Roles = AppRoles.Customer)]

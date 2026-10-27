@@ -38,8 +38,21 @@ public sealed class PaymentCallbacksController(
         });
     }
 
+    /// <summary>Applies the signed result the customer brings back (see ProcessVnPayReturnAsync), then shows the invoices.</summary>
     [HttpGet("vnpay/return")]
-    public IActionResult VnPayReturn() => Redirect(paymentGateways.BuildFrontendReturnUrl("vnpay"));
+    public async Task<IActionResult> VnPayReturn(CancellationToken ct)
+    {
+        string? result = null;
+        try
+        {
+            result = await paymentGateways.ProcessVnPayReturnAsync(Request.Query, ct);
+        }
+        catch (AppException ex)
+        {
+            logger.LogWarning("VNPay return not applied: {Reason}", ex.Message);
+        }
+        return Redirect(paymentGateways.BuildFrontendReturnUrl("vnpay", result));
+    }
 
     [HttpPost("momo/ipn")]
     public async Task<IActionResult> MomoIpn(MomoIpnRequest request, CancellationToken ct)
