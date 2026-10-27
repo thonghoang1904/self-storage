@@ -146,13 +146,13 @@ export default function Gate() {
 
       <section className="panel">
         <h3 className="panel-title">Tìm & kiểm tra khách đến</h3>
-        <p className="muted">Nhập mã kho, số hợp đồng, số CCCD hoặc số điện thoại của khách hay người được ủy quyền.</p>
+        <p className="muted">Nhập mã kho, số hợp đồng, số CCCD, số điện thoại hoặc tên của khách hay người được ủy quyền. Chỉ cần gõ một phần, chữ hoa hay thường đều được (vd: <b>a</b>, <b>b-0</b>, <b>0912</b>).</p>
         <form className="search-row" onSubmit={search}>
           <span className="input-wrap grow">
             <Icon name="search" className="input-lead" />
             <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="vd: B-01, HD-DEMO-0001, 079300000456" />
           </span>
-          <button className="btn primary" type="submit" disabled={searching || query.trim().length < 2}><Icon name="search" size={16} /> {searching ? 'Đang tìm…' : 'Kiểm tra'}</button>
+          <button className="btn primary" type="submit" disabled={searching || !query.trim()}><Icon name="search" size={16} /> {searching ? 'Đang tìm…' : 'Kiểm tra'}</button>
         </form>
         {IS_DEMO && (
           <div className="quick-tries">

@@ -1477,19 +1477,23 @@ const routes: [string, RegExp, Handler][] = [
     requireRole(me, STAFF)
     const fid = Number(m[1])
     ensureAssigned(me.userId, fid)
-    const q = (query.get('q') ?? '').trim()
-    if (q.length < 2) throw bad('Nhập ít nhất 2 ký tự để tìm')
+    const q = (query.get('q') ?? '').trim().slice(0, 50)
+    if (!q) throw bad('Nhập mã kho, số hợp đồng, CCCD hoặc số điện thoại để tìm')
+    // Partial and case-insensitive, like the backend: "a" finds A-01, A-02…
     const qu = q.toUpperCase()
+    const has = (v?: string | null) => !!v && v.toUpperCase().includes(qu)
     return db.contracts
       .filter((c) => unitById(c.unitId).facilityId === fid)
       .filter((c) => {
         const cust = userById(c.customerId)
-        return unitById(c.unitId).unitCode.toUpperCase() === qu || c.contractNumber.toUpperCase() === qu
-          || cust.citizenId === q || cust.phoneNumber === q
-          || db.persons.some((p) => p.contractId === c.contractId && p.status === 'Active' && (p.citizenId === q || p.phoneNumber === q))
+        return has(unitById(c.unitId).unitCode) || has(c.contractNumber) || has(cust.fullName) || has(cust.citizenId) || has(cust.phoneNumber)
+          || db.persons.some((p) => p.contractId === c.contractId && p.status === 'Active' && (has(p.citizenId) || has(p.phoneNumber) || has(p.fullName)))
       })
-      .sort((a, b) => b.endDate.localeCompare(a.endDate))
-      .slice(0, 10)
+      .sort((a, b) => {
+        const exact = (c: Ctr) => (unitById(c.unitId).unitCode.toUpperCase() === qu || c.contractNumber.toUpperCase() === qu ? 0 : 1)
+        return exact(a) - exact(b) || unitById(a.unitId).unitCode.localeCompare(unitById(b.unitId).unitCode) || b.endDate.localeCompare(a.endDate)
+      })
+      .slice(0, 20)
       .map<VisitCandidate>((c) => {
         const cust = userById(c.customerId)
         const issues = findIssues(c)

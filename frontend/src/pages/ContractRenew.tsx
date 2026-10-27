@@ -91,9 +91,26 @@ export default function ContractRenew() {
             </section>
 
             <section className="panel stack">
-              <h2 className="panel-title">Xem chính sách & bước tiếp theo</h2>
-              <div className="info-row"><span className="muted">Chính sách áp dụng</span><b>Điều khoản hợp đồng · phiên bản {TERMS_VERSION}</b></div>
-              <Link to={`/my-units/${c.contractId}/policy?from=renew`} className="btn outline self-start"><Icon name="clipboard" size={15} /> Xem policy hợp đồng</Link>
+              <div className="row between wrap">
+                <h2 className="panel-title">Chính sách gia hạn</h2>
+                <small className="muted">Điều khoản hợp đồng · phiên bản {TERMS_VERSION}</small>
+              </div>
+              <ol className="early-rules renew-rules">
+                {[
+                  ['calendar', 'Thời gian gửi yêu cầu', `Gia hạn bất cứ lúc nào khi hợp đồng còn hiệu lực, chậm nhất 20:00 ngày ${fmtDate(c.endDate)}. Mỗi lần gia hạn từ 1 đến 12 tháng.`],
+                  ['refresh', 'Thời hạn mới', 'Thời hạn mới cộng tiếp từ ngày hết hạn hiện tại, nên gia hạn sớm không mất ngày nào.'],
+                  ['wallet', 'Phí gia hạn', `Phí = số tháng × ${fmtMoney(c.monthlyRentFee)} (giá thuê hiện tại của hợp đồng). Tiền cọc ${fmtMoney(c.depositPaid)} giữ nguyên, không phải đóng thêm.`],
+                  ['file', 'Hóa đơn & hiệu lực', 'Gửi yêu cầu xong, hệ thống tạo hóa đơn gia hạn. Ngày hết hạn mới chỉ có hiệu lực sau khi hóa đơn được thanh toán (VNPay hoặc tại quầy).'],
+                  ['alert', 'Chưa thanh toán kịp', `Nếu chưa thanh toán trước 20:00 ngày ${fmtDate(c.endDate)}, yêu cầu gia hạn hết hiệu lực và hợp đồng giữ ngày hết hạn cũ; quá hạn trả kho sẽ tính phí lưu kho theo ngày.`],
+                  ['shield', 'Một yêu cầu mỗi lần', 'Mỗi hợp đồng chỉ có một yêu cầu gia hạn đang chờ thanh toán. Hợp đồng đang quá hạn hoặc kho bị khóa cần xử lý trước khi gia hạn.'],
+                ].map(([icon, title, text]) => (
+                  <li key={title}>
+                    <span className="notice-icon info"><Icon name={icon} size={16} /></span>
+                    <div><b>{title}</b><p>{text}</p></div>
+                  </li>
+                ))}
+              </ol>
+              <Link to={`/my-units/${c.contractId}/policy?from=renew`} className="link with-icon"><Icon name="clipboard" size={14} /> Xem toàn bộ policy hợp đồng</Link>
               <label className="check-line">
                 <input type="checkbox" checked={agree} disabled={!!pending || !open} onChange={(e) => { setAgree(e.target.checked); setMsg(null) }} />
                 <span>Tôi đã đọc chính sách gia hạn và đồng ý thanh toán phí gia hạn theo báo giá.</span>
