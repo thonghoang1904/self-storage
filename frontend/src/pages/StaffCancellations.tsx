@@ -193,7 +193,7 @@ function RefundForm({ reservationId, max, onDone, onError }: { reservationId: nu
           <input value={code} maxLength={50} onChange={(e) => setCode(e.target.value.replace(/[^A-Za-z0-9-]/g, '').slice(0, 50))} placeholder={method === 'BankTransfer' ? 'Bắt buộc khi chuyển khoản' : 'Không bắt buộc'} />
         </label>
         <label className="field"><span>Ghi chú</span>
-          <input value={notes} maxLength={500} onChange={(e) => setNotes(e.target.value)} />
+          <input value={notes} maxLength={255} onChange={(e) => setNotes(e.target.value)} />
         </label>
       </div>
       <div className="row end">

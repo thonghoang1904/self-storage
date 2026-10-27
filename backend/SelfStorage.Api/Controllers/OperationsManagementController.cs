@@ -18,6 +18,8 @@ public sealed class OperationsManagementController(
 {
     private static readonly string[] FacilityStatuses = ["Active", "Maintenance", "Closed"];
     private static readonly string[] FeeMethods = ["Fixed", "DailyRate", "Percentage"];
+    // Read by code (OverdueService, early returns): renaming or deleting them breaks those flows.
+    private static readonly string[] SystemFeeCodes = ["LATE_FEE_DAILY", "EARLY_RETURN_FEE"];
 
     [HttpGet("facilities")]
     public Task<List<FacilityDto>> Facilities(CancellationToken ct) =>
@@ -53,6 +55,17 @@ public sealed class OperationsManagementController(
             throw AppException.BadRequest("Trạng thái cơ sở không hợp lệ");
         var facility = await db.Facilities.FindAsync([facilityId], ct)
             ?? throw AppException.NotFound("Không tìm thấy cơ sở");
+        if (req.Status == "Closed" && facility.Status != "Closed")
+        {
+            var now = clock.GetLocalNow().DateTime;
+            if (await db.Contracts.AnyAsync(c => c.Unit.FacilityId == facilityId
+                    && (c.Status == ContractStatus.Active || c.Status == ContractStatus.Overdue), ct)
+                || await db.Reservations.AnyAsync(r => r.FacilityId == facilityId
+                    && (r.Status == ReservationStatus.Confirmed
+                        || (r.Status == ReservationStatus.PendingDeposit && r.DepositDeadline > now)), ct))
+                throw AppException.Conflict(
+                    "Cơ sở còn hợp đồng hoặc đơn đặt kho đang hiệu lực; hãy xử lý hết trước khi đóng cơ sở");
+        }
         facility.FacilityName = req.FacilityName.Trim();
         facility.Address = req.Address.Trim();
         facility.City = req.City.Trim();
@@ -112,7 +125,8 @@ public sealed class OperationsManagementController(
         db.RentalPolicies.OrderByDescending(p => p.EffectiveDate).ThenBy(p => p.FacilityId)
             .Select(p => new RentalPolicyDto(p.PolicyId, p.PolicyName, p.FacilityId,
                 p.DepositPercent, p.CancellationGraceHours, p.CancellationFeePercent,
-                p.RenewalNoticeDays, p.MaxOverdueDaysBeforeLock, p.IsActive, p.EffectiveDate))
+                p.RenewalNoticeDays, p.MaxOverdueDaysBeforeLock, p.IsActive, p.EffectiveDate,
+                p.DepositPaymentHours))
             .ToListAsync(ct);
 
     [HttpPost("rental-policies")]
@@ -131,7 +145,8 @@ public sealed class OperationsManagementController(
             RenewalNoticeDays = req.RenewalNoticeDays,
             MaxOverdueDaysBeforeLock = req.MaxOverdueDaysBeforeLock,
             IsActive = req.IsActive,
-            EffectiveDate = req.EffectiveDate,
+            EffectiveDate = req.EffectiveDate!.Value,
+            DepositPaymentHours = req.DepositPaymentHours,
         };
         db.RentalPolicies.Add(policy);
         AddLog("RentalPolicyCreated", "Created a rental policy");
@@ -156,7 +171,8 @@ public sealed class OperationsManagementController(
         policy.RenewalNoticeDays = req.RenewalNoticeDays;
         policy.MaxOverdueDaysBeforeLock = req.MaxOverdueDaysBeforeLock;
         policy.IsActive = req.IsActive;
-        policy.EffectiveDate = req.EffectiveDate;
+        policy.EffectiveDate = req.EffectiveDate!.Value;
+        policy.DepositPaymentHours = req.DepositPaymentHours;
         AddLog("RentalPolicyUpdated", $"Updated rental policy {policyId}");
         await db.SaveChangesAsync(ct);
         return ToPolicyDto(policy);
@@ -198,6 +214,8 @@ public sealed class OperationsManagementController(
         var fee = await db.FeeConfigurations.FindAsync([feeTypeId], ct)
             ?? throw AppException.NotFound("Không tìm thấy loại phí");
         var code = req.FeeCode.Trim().ToUpperInvariant();
+        if (SystemFeeCodes.Contains(fee.FeeCode) && code != fee.FeeCode)
+            throw AppException.Conflict($"{fee.FeeCode} là phí hệ thống đang được dùng tự động; không thể đổi mã");
         if (await db.FeeConfigurations.AnyAsync(f => f.FeeTypeId != feeTypeId && f.FeeCode == code, ct))
             throw AppException.Conflict("Mã loại phí đã tồn tại");
         fee.FeeCode = code;
@@ -231,8 +249,8 @@ public sealed class OperationsManagementController(
             DiscountPercent = req.DiscountPercent,
             MaxDiscountAmount = req.MaxDiscountAmount,
             MinRentalMonths = req.MinRentalMonths,
-            StartDate = req.StartDate,
-            EndDate = req.EndDate,
+            StartDate = req.StartDate!.Value,
+            EndDate = req.EndDate!.Value,
             IsActive = req.IsActive,
         };
         db.Promotions.Add(promotion);
@@ -256,8 +274,8 @@ public sealed class OperationsManagementController(
         promotion.DiscountPercent = req.DiscountPercent;
         promotion.MaxDiscountAmount = req.MaxDiscountAmount;
         promotion.MinRentalMonths = req.MinRentalMonths;
-        promotion.StartDate = req.StartDate;
-        promotion.EndDate = req.EndDate;
+        promotion.StartDate = req.StartDate!.Value;
+        promotion.EndDate = req.EndDate!.Value;
         promotion.IsActive = req.IsActive;
         AddLog("PromotionUpdated", $"Updated promotion {code}");
         await db.SaveChangesAsync(ct);
@@ -280,6 +298,8 @@ public sealed class OperationsManagementController(
     {
         var fee = await db.FeeConfigurations.FindAsync([feeTypeId], ct)
             ?? throw AppException.NotFound("Không tìm thấy loại phí");
+        if (SystemFeeCodes.Contains(fee.FeeCode))
+            throw AppException.Conflict($"{fee.FeeCode} là phí hệ thống đang được dùng tự động; không thể xóa");
         if (await db.InvoiceDetails.AnyAsync(d => d.FeeTypeId == feeTypeId, ct))
             throw AppException.Conflict("Loại phí đã được dùng trong hóa đơn nên không thể xóa");
         db.FeeConfigurations.Remove(fee);
@@ -336,7 +356,7 @@ public sealed class OperationsManagementController(
     private static RentalPolicyDto ToPolicyDto(RentalPolicy policy) =>
         new(policy.PolicyId, policy.PolicyName, policy.FacilityId, policy.DepositPercent,
             policy.CancellationGraceHours, policy.CancellationFeePercent, policy.RenewalNoticeDays,
-            policy.MaxOverdueDaysBeforeLock, policy.IsActive, policy.EffectiveDate);
+            policy.MaxOverdueDaysBeforeLock, policy.IsActive, policy.EffectiveDate, policy.DepositPaymentHours);
 
     private static FeeConfigurationDto ToFeeDto(FeeConfiguration fee) =>
         new(fee.FeeTypeId, fee.FeeCode, fee.FeeName, fee.DefaultAmount, fee.CalculationMethod, fee.Description);

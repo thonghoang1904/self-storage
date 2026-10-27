@@ -224,7 +224,7 @@ public sealed class PaymentGatewayService(
         }
 
         return await billing.CompleteOnlinePaymentAsync(payment.PaymentMethod, payment.TransactionCode!,
-            payment.AmountPaid, true, "SANDBOX", ct);
+            payment.AmountPaid, true, "SANDBOX", ct) == OnlinePaymentOutcome.Applied;
     }
 
     public async Task<string> ProcessVnPayIpnAsync(IQueryCollection query, CancellationToken ct)
@@ -233,9 +233,11 @@ public sealed class PaymentGatewayService(
         var signature = fields.GetValueOrDefault("vnp_SecureHash");
         if (string.IsNullOrWhiteSpace(signature) || !VerifyVnPaySignature(fields, signature))
             return "97";
+        // VNPay's IPN carries vnp_TmnCode but not vnp_Command/vnp_CurrCode (those are only in the pay URL),
+        // so the latter are checked only when present.
         if (fields.GetValueOrDefault("vnp_TmnCode") != settings.VnPay.TmnCode
-            || fields.GetValueOrDefault("vnp_CurrCode") != "VND"
-            || fields.GetValueOrDefault("vnp_Command") != "pay")
+            || (fields.TryGetValue("vnp_CurrCode", out var currency) && currency != "VND")
+            || (fields.TryGetValue("vnp_Command", out var command) && command != "pay"))
             return "97";
         if (!fields.TryGetValue("vnp_TxnRef", out var reference)
             || !fields.TryGetValue("vnp_Amount", out var rawAmount)
@@ -250,9 +252,10 @@ public sealed class PaymentGatewayService(
         if (expectedAmount.Value != amount) return "04";
         var succeeded = fields.GetValueOrDefault("vnp_ResponseCode") == "00"
             && fields.GetValueOrDefault("vnp_TransactionStatus") == "00";
-        await billing.CompleteOnlinePaymentAsync("VNPay", reference, amount, succeeded,
+        var outcome = await billing.CompleteOnlinePaymentAsync("VNPay", reference, amount, succeeded,
             fields.GetValueOrDefault("vnp_TransactionNo"), ct);
-        return "00";
+        // 02 = order already confirmed; anything recorded now (paid, failed or kept for refund) is 00.
+        return outcome == OnlinePaymentOutcome.AlreadyProcessed ? "02" : "00";
     }
 
     public async Task ProcessMomoIpnAsync(MomoIpnRequest request, CancellationToken ct)

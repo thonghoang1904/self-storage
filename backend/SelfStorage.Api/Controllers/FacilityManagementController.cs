@@ -270,9 +270,11 @@ public sealed class FacilityManagementController(
     public async Task<IActionResult> RemoveStaff(int facilityId, int staffUserId, CancellationToken ct)
     {
         await EnsureManagerOwnsFacilityAsync(facilityId, ct);
+        // A facility manager manages Facility Staff only; other managers are assigned by the administrator.
         var assignment = await db.FacilityStaffAssignments.FirstOrDefaultAsync(
-            a => a.FacilityId == facilityId && a.StaffId == staffUserId && a.Status == "Active", ct)
-            ?? throw AppException.NotFound("Không tìm thấy phân công đang hoạt động");
+            a => a.FacilityId == facilityId && a.StaffId == staffUserId && a.Status == "Active"
+                && a.Staff.Role.RoleName == AppRoles.Staff, ct)
+            ?? throw AppException.NotFound("Không tìm thấy phân công nhân viên đang hoạt động");
         assignment.Status = "Ended";
         db.ActivityLogs.Add(new ActivityLog
         {
@@ -294,8 +296,13 @@ public sealed class FacilityManagementController(
         var contract = await db.Contracts.Include(c => c.Unit)
             .FirstOrDefaultAsync(c => c.ContractId == contractId && c.Unit.FacilityId == facilityId, ct)
             ?? throw AppException.NotFound("Không tìm thấy hợp đồng tại cơ sở");
-        if (contract.Status is not (ContractStatus.Active or ContractStatus.Overdue))
-            throw AppException.Conflict("Chỉ được lập phụ thu cho hợp đồng đang hoạt động");
+        if (contract.Status is not (ContractStatus.Active or ContractStatus.Overdue or ContractStatus.Terminated))
+            throw AppException.Conflict("Chỉ được lập phụ thu cho hợp đồng đang hoạt động hoặc vừa trả kho");
+        // After the return (e.g. cleaning fee) only while the deposit is still held: the charge is held back from it.
+        if (contract.Status == ContractStatus.Terminated && await db.Payments.AnyAsync(p => p.Status == "Refunded"
+                && db.Invoices.Any(i => i.InvoiceId == p.InvoiceId && i.ReservationId == contract.ReservationId
+                    && i.InvoiceType == "DEPOSIT"), ct))
+            throw AppException.Conflict("Tiền cọc của hợp đồng đã được hoàn; không thể lập thêm phụ thu");
         var fee = await db.FeeConfigurations.FindAsync([req.FeeTypeId], ct)
             ?? throw AppException.NotFound("Không tìm thấy loại phí");
         var unitPrice = fee.CalculationMethod switch
@@ -316,10 +323,14 @@ public sealed class FacilityManagementController(
         var description = string.IsNullOrWhiteSpace(notes)
             ? fee.FeeName
             : $"{fee.FeeName}: {notes}";
+        // InvoiceDetails.Description is NVARCHAR(255).
+        if (description.Length > 255) description = description[..255];
 
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var invoice = billing.CreateInvoice(contract.CustomerId, "EXTRA_CHARGE", dueDate,
             description, unitPrice, req.Quantity, contractId: contract.ContractId);
+        // Links the line to its fee type, so a fee already billed cannot be deleted.
+        foreach (var detail in invoice.Details) detail.FeeTypeId = fee.FeeTypeId;
         db.Invoices.Add(invoice);
         db.ActivityLogs.Add(new ActivityLog
         {

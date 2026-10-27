@@ -79,11 +79,13 @@ Khách chỉ xem checklist của ticket mình; nhân viên/quản lý chỉ xem 
 
 Hóa đơn cọc được tạo cùng lúc đặt kho; hóa đơn gia hạn được tạo cùng yêu cầu gia hạn. Nhân viên chỉ ghi nhận thanh toán tiền mặt/chuyển khoản đã thực nhận, đủ đúng số dư hóa đơn; các mã giao dịch được kiểm tra không trùng. Khách có thể khởi tạo thanh toán VNPay hoặc MoMo; hóa đơn chỉ được đánh dấu đã trả sau khi callback/IPN được xác minh chữ ký, mã đơn và số tiền. IPN là nguồn xác nhận chính thức, không tin trạng thái trên trang chuyển hướng. Khi trả kho, phần phí quá hạn vượt cọc được tạo thành hóa đơn; nhân viên ghi nhận khoản hoàn cọc, không được hoàn quá số dư sau khi khấu trừ phí.
 
+Giao dịch VNPay/MoMo chưa được cổng xác nhận sau 30 phút tự chuyển `Failed` để hóa đơn trả được cách khác. Nếu cổng báo thành công cho một hóa đơn không còn nhận tiền (đã hủy, hết hạn, đã trả cách khác), khoản đó được giữ ở trạng thái `RefundDue`: nhân viên xem tại `GET /api/invoices/facilities/{facilityId}/refund-due` và ghi nhận đã hoàn tại `POST /api/invoices/payments/{paymentId}/refund`. Khi trả kho, phần cọc còn lại sau phí quá hạn/phí trả sớm được cấn trừ vào hóa đơn tiền thuê/phụ thu chưa trả (`DepositOffset`); khoản còn nợ giữ lại tương ứng trong tiền cọc cho đến khi được thanh toán. Hóa đơn tiền thuê/phụ thu chưa trả quá `MaxOverdueDaysBeforeLock` ngày sẽ chặn đăng ký và ra vào kho. Chính sách thuê có `DepositPaymentHours` (hạn đóng cọc); `CancellationGraceHours` là thời gian hủy miễn phí tính từ lúc đặt.
+
 ## 3. Chạy thử trên máy
 
 Cần: .NET SDK 10, Node.js 20+, SQL Server (Express/Developer đều được).
 
-**Development local:** chỉ cần khởi động backend bằng `dotnet run`. Backend tự tạo database `SelfStorageDB` nếu chưa tồn tại, sau đó tự áp dụng schema/migration `02`–`13` theo thứ tự. Nếu database đã có dữ liệu, backend chỉ chạy các migration có thể chạy lặp lại; không chạy lại `01_schema.sql` và không xóa dữ liệu. Frontend chỉ gọi API, không kết nối hay tự cập nhật database.
+**Development local:** chỉ cần khởi động backend bằng `dotnet run`. Backend tự tạo database `SelfStorageDB` nếu chưa tồn tại, sau đó tự áp dụng schema/migration `02`–`17` theo thứ tự. Nếu database đã có dữ liệu, backend chỉ chạy các migration có thể chạy lặp lại; không chạy lại `01_schema.sql` và không xóa dữ liệu. Frontend chỉ gọi API, không kết nối hay tự cập nhật database.
 
 **Tạo database thủ công hoặc khôi phục môi trường mới:** có thể chạy một lệnh từ thư mục gốc repo:
 
@@ -99,7 +101,7 @@ sqlcmd -S .\SQLEXPRESS -U sa -C -I -f 65001 -b -i database/setup_fresh.sql
 sqlcmd -S .\SQLEXPRESS -U sa -C -I -f 65001 -b -d SelfStorageDB -i database/upgrade_existing.sql
 ```
 
-`upgrade_existing.sql` chạy các migration `02`–`13` theo đúng thứ tự; có thể chạy lại nếu cần. Nếu chạy bằng SSMS, bật **SQLCMD Mode** rồi mở script tổng tương ứng. Giữ các file migration riêng để kiểm tra thay đổi và dùng trong quy trình deploy có kiểm soát. Tự động cập nhật database hiện chỉ bật cho môi trường Development; trước khi deploy môi trường thật, cần có quy trình backup và migrate phù hợp, không reset database.
+`upgrade_existing.sql` chạy các migration `02`–`17` theo đúng thứ tự; có thể chạy lại nếu cần. Nếu chạy bằng SSMS, bật **SQLCMD Mode** rồi mở script tổng tương ứng. Giữ các file migration riêng để kiểm tra thay đổi và dùng trong quy trình deploy có kiểm soát. Tự động cập nhật database hiện chỉ bật cho môi trường Development; trước khi deploy môi trường thật, cần có quy trình backup và migrate phù hợp, không reset database.
 
 **Backend.** Chuỗi kết nối mặc định trong `appsettings.json` dùng Windows Authentication. Để dùng SQL Authentication cho môi trường Development, lưu chuỗi kết nối bằng User Secrets (không ghi mật khẩu vào file trong repo):
 

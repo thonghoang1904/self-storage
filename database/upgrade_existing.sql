@@ -12,3 +12,6 @@
 :r database\12_visit_registrations.sql
 :r database\13_email_outbox.sql
 :r database\14_early_return_requests.sql
+:r database\15_normalize_contacts.sql
+:r database\16_billing_safety.sql
+:r database\17_deposit_payment_hours.sql

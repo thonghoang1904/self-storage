@@ -2,6 +2,7 @@ using System.Data;
 using System.Linq.Expressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
 using SelfStorage.Api.Data;
 using SelfStorage.Api.Data.Entities;
@@ -113,10 +114,13 @@ public class ContractsController(
                 r.ExtensionMonths, r.RenewalFee, r.Status, r.RequestedAt, r.InvoiceId)).ToListAsync(ct);
     }
 
+    /// <summary>Staff received the renewal fee (cash by default; send a body for a bank transfer).</summary>
     [HttpPost("renewals/{renewalId:int}/confirm-payment")]
     [Authorize(Roles = AppRoles.GateRoles)]
-    public async Task<RenewalDto> ConfirmRenewalPayment(int renewalId, CancellationToken ct)
+    public async Task<RenewalDto> ConfirmRenewalPayment(int renewalId,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ConfirmPaymentRequest? req, CancellationToken ct)
     {
+        req ??= new ConfirmPaymentRequest();
         var renewal = await db.ContractRenewals.FirstOrDefaultAsync(r => r.RenewalId == renewalId, ct)
                       ?? throw AppException.NotFound("Không tìm thấy yêu cầu gia hạn");
         var contract = await db.Contracts.Include(c => c.Unit)
@@ -128,7 +132,8 @@ public class ContractsController(
         var invoice = await db.Invoices.FindAsync([invoiceId], ct)
             ?? throw AppException.NotFound("Không tìm thấy hóa đơn gia hạn");
         await billing.RecordStaffPaymentAsync(invoiceId, User.GetUserId(),
-            new RecordPaymentRequest("Cash", invoice.TotalAmount, null, "Nhân viên xác nhận đã nhận phí gia hạn"),
+            new RecordPaymentRequest(req.PaymentMethod, invoice.TotalAmount, req.TransactionCode,
+                req.PaymentNotes ?? "Nhân viên xác nhận đã nhận phí gia hạn"),
             ct);
         await db.Entry(renewal).ReloadAsync(ct);
         return ToRenewalDto(renewal);
@@ -199,6 +204,10 @@ public class ContractsController(
         if (await db.AccessRecords.AnyAsync(r => r.ContractId == id && r.Result == AccessResult.Granted
             && r.ExitTime == null, ct))
             throw AppException.Conflict("Cần xác nhận tất cả khách đã ra khỏi cơ sở trước khi trả kho");
+        if (await db.Payments.AnyAsync(p => p.Status == "Pending"
+                && db.Invoices.Any(i => i.InvoiceId == p.InvoiceId && i.ContractId == id), ct))
+            throw AppException.Conflict(
+                "Khách đang có giao dịch trực tuyến chờ xác nhận; hãy chờ giao dịch hoàn tất hoặc hết hạn rồi trả kho");
 
         var overdue = await db.OverdueRecords.Where(r => r.ContractId == id && r.ResolvedDate == null)
             .OrderByDescending(r => r.OverdueId).FirstOrDefaultAsync(ct);
@@ -206,7 +215,6 @@ public class ContractsController(
         var earlyFee = early ? await EarlyReturnFeeAsync(ct) : 0m;
         var accumulated = lateFees + earlyFee;
         var deducted = Math.Min(contract.DepositPaid, accumulated);
-        var refund = contract.DepositPaid - deducted;
         var stillOwed = accumulated - deducted;
         db.HandoverRecords.Add(new HandoverRecord
         {
@@ -214,10 +222,11 @@ public class ContractsController(
             StaffId = staffId,
             HandoverType = "CHECK_OUT",
             HandoverDateTime = now,
-            UnitConditionNotes = $"Đã xác nhận dọn sạch kho. {req.UnitConditionNotes}",
+            UnitConditionNotes = Truncate($"Đã xác nhận dọn sạch kho. {req.UnitConditionNotes}", 1000),
             CustomerSignatureConfirmed = true,
             StaffNotes = early
-                ? $"Trả kho sớm (hết hạn {contract.EndDate:dd/MM/yyyy}): {earlyReason}" + (string.IsNullOrWhiteSpace(req.StaffNotes) ? "" : $" | {req.StaffNotes}")
+                ? Truncate($"Trả kho sớm (hết hạn {contract.EndDate:dd/MM/yyyy}): {earlyReason}"
+                    + (string.IsNullOrWhiteSpace(req.StaffNotes) ? "" : $" | {req.StaffNotes}"), 500)
                 : req.StaffNotes,
         });
         contract.Status = ContractStatus.Terminated;
@@ -230,12 +239,36 @@ public class ContractsController(
             overdue.Notes = $"Trả kho: phí quá hạn {lateFees:N0}đ; cấn trừ cọc {deducted:N0}đ; còn phải thu {stillOwed:N0}đ."
                 + (string.IsNullOrWhiteSpace(req.StaffNotes) ? "" : $" {req.StaffNotes}");
         }
+        // Pending renewals (and, for an early return, rent for periods from today on) are no longer owed.
+        await CancelBillsAfterAsync(contract, today, early ? "trả kho sớm" : "trả kho", ct);
+        await db.SaveChangesAsync(ct);
+
+        // What is left of the deposit settles unpaid rent and extra charges, oldest first, whole invoices only;
+        // whatever it cannot cover stays owed and holds back the rest of the deposit until it is paid.
+        var openInvoices = await OpenRentAndChargeInvoices(id).ToListAsync(ct);
+        var (settled, unpaidRemaining) = SettleFromDeposit(contract.DepositPaid - deducted, openInvoices);
+        foreach (var invoice in settled)
+        {
+            db.Payments.Add(new Payment
+            {
+                InvoiceId = invoice.InvoiceId,
+                ReceivedByStaffId = staffId,
+                PaymentMethod = "DepositOffset",
+                AmountPaid = invoice.TotalAmount,
+                PaymentDate = now,
+                Status = "Success",
+                PaymentNotes = $"Cấn trừ từ tiền cọc khi trả kho hợp đồng {contract.ContractNumber}",
+            });
+            invoice.Status = "Paid";
+        }
+        var offset = settled.Sum(i => i.TotalAmount);
+        var refund = Math.Max(0m, contract.DepositPaid - deducted - offset - unpaidRemaining);
+
         if (early)
         {
             // The contract ends on the day the unit is handed back (the schema needs EndDate after StartDate).
             var originalEnd = contract.EndDate;
             contract.EndDate = today > contract.StartDate ? today : contract.StartDate.AddDays(1);
-            await CancelBillsAfterAsync(contract, today, "trả kho sớm", ct);
             var request = await db.EarlyReturnRequests
                 .FirstOrDefaultAsync(r => r.ContractId == id && r.Status == EarlyReturnStatus.Pending, ct);
             if (request is null)
@@ -284,7 +317,7 @@ public class ContractsController(
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return new ReturnUnitDto(id, contract.Status, contract.Unit.Status, contract.DepositPaid,
-            deducted, refund, stillOwed, now, early ? earlyFee : null);
+            deducted, refund, stillOwed, now, early ? earlyFee : null, offset, unpaidRemaining);
     }
 
     /// <summary>What returning before the end date costs (GET .../early-return-quote?returnDate=yyyy-MM-dd).</summary>
@@ -308,9 +341,16 @@ public class ContractsController(
         var fee = await EarlyReturnFeeAsync(ct);
         var total = lateFees + fee;
         var deducted = Math.Min(contract.DepositPaid, total);
-        var cancelled = await BillsAfter(contract.ContractId, date).CountAsync(ct);
+        var cancelledIds = await BillsAfter(contract.ContractId, date).Select(i => i.InvoiceId).ToListAsync(ct);
+        // Unpaid rent/extra charges that stay owed are settled from the deposit at return, as ReturnUnit does.
+        var open = (await OpenRentAndChargeInvoices(contract.ContractId).ToListAsync(ct))
+            .Where(i => !cancelledIds.Contains(i.InvoiceId)).ToList();
+        var (settled, unpaidRemaining) = SettleFromDeposit(contract.DepositPaid - deducted, open);
+        var offset = settled.Sum(i => i.TotalAmount);
         return new EarlyReturnQuoteDto(contract.ContractId, contract.EndDate, contract.EndDate.DayNumber - date.DayNumber,
-            fee, lateFees, contract.DepositPaid, deducted, contract.DepositPaid - deducted, total - deducted, cancelled);
+            fee, lateFees, contract.DepositPaid, deducted + offset,
+            Math.Max(0m, contract.DepositPaid - deducted - offset - unpaidRemaining),
+            total - deducted + unpaidRemaining, cancelledIds.Count);
     }
 
     /// <summary>The customer asks to hand the unit back early on a chosen day; staff complete it at the facility.</summary>
@@ -419,11 +459,21 @@ public class ContractsController(
         var earlyReturnFees = await db.EarlyReturnRequests
             .Where(r => r.ContractId == id && r.Status == EarlyReturnStatus.Completed)
             .SumAsync(r => (decimal?)r.EarlyReturnFee, ct) ?? 0m;
-        var refundable = Math.Max(0m, contract.DepositPaid - (latestOverdue?.AccumulatedLateFee ?? 0m) - earlyReturnFees);
+        // Deposit minus late/early-return fees, minus what was settled from it at return, minus anything still owed.
+        var feesDeducted = Math.Min(contract.DepositPaid, (latestOverdue?.AccumulatedLateFee ?? 0m) + earlyReturnFees);
+        var settledFromDeposit = await db.Payments
+            .Where(p => p.PaymentMethod == "DepositOffset" && p.Status == "Success"
+                && db.Invoices.Any(i => i.InvoiceId == p.InvoiceId && i.ContractId == id))
+            .SumAsync(p => (decimal?)p.AmountPaid, ct) ?? 0m;
+        var stillOwed = await db.Invoices
+            .Where(i => i.ContractId == id && (i.Status == "Unpaid" || i.Status == "Overdue"))
+            .SumAsync(i => (decimal?)i.TotalAmount, ct) ?? 0m;
+        var refundable = Math.Max(0m, contract.DepositPaid - feesDeducted - settledFromDeposit - stillOwed);
         var alreadyRefunded = depositInvoice.Payments.Where(p => p.Status == "Refunded").Sum(p => p.AmountPaid);
         var remaining = refundable - alreadyRefunded;
         if (req.Amount <= 0 || req.Amount > remaining)
-            throw AppException.BadRequest($"Số tiền hoàn cọc còn có thể hoàn là {Math.Max(0m, remaining):N0}đ");
+            throw AppException.BadRequest($"Số tiền hoàn cọc còn có thể hoàn là {Math.Max(0m, remaining):N0}đ"
+                + (stillOwed > 0 ? $" (khách còn nợ {stillOwed:N0}đ hóa đơn chưa thanh toán)" : ""));
 
         var now = clock.GetLocalNow().DateTime;
         var payment = new Payment
@@ -501,11 +551,19 @@ public class ContractsController(
     [Authorize(Roles = AppRoles.Customer)]
     public async Task<PersonDto> AddAuthorizedPerson(int id, AddAuthorizedPersonRequest req, CancellationToken ct)
     {
-        await LoadOwnAsync(id, ct);
-        var person = await db.AuthorizedPersons.FirstOrDefaultAsync(p => p.ContractId == id && p.CitizenId == req.CitizenId, ct);
+        var contract = await LoadOwnAsync(id, ct);
+        if (contract.Status is ContractStatus.Terminated or ContractStatus.Liquidated)
+            throw AppException.Conflict("Hợp đồng đã kết thúc, không thể thêm người được ủy quyền");
+        var citizenId = Contact.NormalizeCitizenId(req.CitizenId);
+        var ownerCitizenId = await db.Users.Where(u => u.UserId == contract.CustomerId)
+            .Select(u => u.CitizenId).SingleAsync(ct);
+        if (ownerCitizenId is not null && Contact.NormalizeCitizenId(ownerCitizenId) == citizenId)
+            throw AppException.BadRequest("Đây là CCCD của chủ hợp đồng; chủ hợp đồng không cần thêm vào danh sách ủy quyền");
+
+        var person = await db.AuthorizedPersons.FirstOrDefaultAsync(p => p.ContractId == id && p.CitizenId == citizenId, ct);
         if (person is null)
         {
-            person = new AuthorizedPerson { ContractId = id, CitizenId = req.CitizenId };
+            person = new AuthorizedPerson { ContractId = id, CitizenId = citizenId };
             db.AuthorizedPersons.Add(person);
         }
         else if (person.Status == "Active")
@@ -513,9 +571,9 @@ public class ContractsController(
             throw AppException.Conflict("Người này đã có trong danh sách");
         }
         // Re-adding a revoked person reactivates the same row (ContractID + CitizenID is unique).
-        person.FullName = req.FullName;
-        person.PhoneNumber = req.PhoneNumber;
-        person.Relationship = req.Relationship;
+        person.FullName = req.FullName.Trim();
+        person.PhoneNumber = Contact.NormalizePhone(req.PhoneNumber);
+        person.Relationship = string.IsNullOrWhiteSpace(req.Relationship) ? null : req.Relationship.Trim();
         person.Status = "Active";
         person.RevokedAt = null;
         await db.SaveChangesAsync(ct);
@@ -532,7 +590,7 @@ public class ContractsController(
                          p => p.ContractId == id && p.AuthorizedPersonId == personId && p.Status == "Active", ct)
                      ?? throw AppException.NotFound("Không tìm thấy người được ủy quyền");
         person.FullName = req.FullName.Trim();
-        person.PhoneNumber = req.PhoneNumber.Trim();
+        person.PhoneNumber = Contact.NormalizePhone(req.PhoneNumber);
         person.Relationship = string.IsNullOrWhiteSpace(req.Relationship) ? null : req.Relationship.Trim();
         await db.SaveChangesAsync(ct);
         return new PersonDto(person.AuthorizedPersonId, person.FullName, person.CitizenId, person.PhoneNumber, person.Relationship);
@@ -598,6 +656,37 @@ public class ContractsController(
     private async Task<decimal> EarlyReturnFeeAsync(CancellationToken ct) =>
         await db.FeeConfigurations.Where(f => f.FeeCode == "EARLY_RETURN_FEE")
             .Select(f => (decimal?)f.DefaultAmount).FirstOrDefaultAsync(ct) ?? 0m;
+
+    /// <summary>Unpaid rent and extra-charge invoices of a contract, oldest due first.</summary>
+    private IQueryable<Invoice> OpenRentAndChargeInvoices(int contractId) =>
+        db.Invoices.Where(i => i.ContractId == contractId
+                && (i.InvoiceType == "MONTHLY_RENT" || i.InvoiceType == "EXTRA_CHARGE")
+                && (i.Status == "Unpaid" || i.Status == "Overdue"))
+            .OrderBy(i => i.DueDate).ThenBy(i => i.InvoiceId);
+
+    /// <summary>Which open invoices the deposit left can pay in full (oldest first), and what stays owed.</summary>
+    private static (List<Invoice> Settled, decimal UnpaidRemaining) SettleFromDeposit(
+        decimal depositLeft, IEnumerable<Invoice> openInvoices)
+    {
+        var settled = new List<Invoice>();
+        var unpaid = 0m;
+        foreach (var invoice in openInvoices)
+        {
+            if (invoice.TotalAmount <= depositLeft)
+            {
+                settled.Add(invoice);
+                depositLeft -= invoice.TotalAmount;
+            }
+            else
+            {
+                unpaid += invoice.TotalAmount;
+            }
+        }
+        return (settled, unpaid);
+    }
+
+    private static string Truncate(string value, int maxLength) =>
+        value.Length <= maxLength ? value : value[..maxLength];
 
     /// <summary>Unpaid rent invoices for periods starting on or after the return date: no longer owed.</summary>
     private IQueryable<Invoice> BillsAfter(int contractId, DateOnly returnDate) =>

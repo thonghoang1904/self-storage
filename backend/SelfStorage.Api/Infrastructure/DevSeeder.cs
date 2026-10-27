@@ -116,6 +116,35 @@ public static class DevSeeder
                     Relationship = "Vợ",
                 });
                 db.Contracts.Add(contract);
+                await db.SaveChangesAsync();
+
+                // The first month is already paid, so unpaid rent does not keep the demo customer out at the gate.
+                db.Invoices.Add(new Invoice
+                {
+                    InvoiceNumber = "INV-DEMO-0001",
+                    ContractId = contract.ContractId,
+                    CustomerId = customer.UserId,
+                    InvoiceType = "MONTHLY_RENT",
+                    SubTotal = contract.MonthlyRentFee,
+                    DueDate = contract.StartDate,
+                    BillingPeriodStart = contract.StartDate,
+                    BillingPeriodEnd = contract.StartDate.AddMonths(1),
+                    Status = "Paid",
+                    Details = [new InvoiceDetail
+                    {
+                        Description = "Tiền thuê tháng đầu hợp đồng demo",
+                        Quantity = 1,
+                        UnitPrice = contract.MonthlyRentFee,
+                    }],
+                    Payments = [new Payment
+                    {
+                        ReceivedByStaffId = manager.UserId,
+                        PaymentMethod = "Cash",
+                        AmountPaid = contract.MonthlyRentFee,
+                        PaymentDate = contract.StartDate.ToDateTime(new TimeOnly(9, 0)),
+                        Status = "Success",
+                    }],
+                });
             }
         }
 

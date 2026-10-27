@@ -47,7 +47,7 @@ public sealed class OperationsReportsController(SelfStorageDbContext db, TimePro
                 .GroupBy(c => c.Status).Select(g => new { Status = g.Key, Count = g.Count() })
                 .ToDictionaryAsync(x => x.Status, x => x.Count, ct);
             var revenueGroups = await db.Payments
-                .Where(p => (p.Status == "Success" || p.Status == "Refunded")
+                .Where(p => (p.Status == "Success" || p.Status == "Refunded") && p.PaymentMethod != "DepositOffset"
                     && p.PaymentDate >= start.ToDateTime(TimeOnly.MinValue)
                     && p.PaymentDate < end.AddDays(1).ToDateTime(TimeOnly.MinValue)
                     && db.Invoices.Any(i => i.InvoiceId == p.InvoiceId
@@ -210,7 +210,7 @@ public sealed class OperationsReportsController(SelfStorageDbContext db, TimePro
             from payment in db.Payments
             join invoice in db.Invoices on payment.InvoiceId equals invoice.InvoiceId
             join contract in db.Contracts on invoice.ContractId!.Value equals contract.ContractId
-            where (payment.Status == "Success" || payment.Status == "Refunded")
+            where (payment.Status == "Success" || payment.Status == "Refunded") && payment.PaymentMethod != "DepositOffset"
                 && invoice.ReservationId == null
                 && payment.PaymentDate >= rangeStart && payment.PaymentDate < rangeEnd
                 && (facilityId == null || contract.Unit.FacilityId == facilityId)

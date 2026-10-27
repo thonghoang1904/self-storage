@@ -15,7 +15,15 @@ public sealed class OverdueService(
         using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
         do
         {
-            await ProcessOverdueContractsAsync(stoppingToken);
+            try
+            {
+                await ProcessOverdueContractsAsync(stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // One failed run (e.g. the database is briefly unavailable) must not stop the service or the host.
+                logger.LogError(ex, "Overdue processing failed; retrying on the next tick");
+            }
         } while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 
@@ -26,8 +34,46 @@ public sealed class OverdueService(
         var policies = scope.ServiceProvider.GetRequiredService<RentalPolicyService>();
         var now = clock.GetLocalNow().DateTime;
         var today = DateOnly.FromDateTime(now);
+
+        // A checkout the gateway never confirmed stops blocking the invoice; a late confirmation is still recorded.
+        var stalePayments = await db.Payments
+            .Where(p => p.Status == "Pending" && (p.PaymentMethod == "VNPay" || p.PaymentMethod == "MoMo")
+                && p.PaymentDate < now - BillingService.PendingPaymentCancelAfter)
+            .ExecuteUpdateAsync(update => update
+                .SetProperty(p => p.Status, "Failed")
+                .SetProperty(p => p.PaymentNotes,
+                    "Hết thời gian chờ cổng thanh toán xác nhận; nếu cổng báo thành công sau đó, hệ thống vẫn ghi nhận."), ct);
+        if (stalePayments > 0)
+            logger.LogInformation("Expired {Count} online checkouts the gateway never confirmed", stalePayments);
+
+        // Renewals can be paid until 20:00 on the old end date; after that a pending one is closed with its invoice
+        // (unless a checkout started in time is still waiting for the gateway).
+        var lastRenewableEndDate = now.TimeOfDay >= new TimeSpan(20, 0, 0) ? today : today.AddDays(-1);
+        var staleRenewals = await db.ContractRenewals
+            .Where(r => r.Status == "Pending" && r.OldEndDate <= lastRenewableEndDate
+                && !db.Payments.Any(p => p.InvoiceId == r.InvoiceId && p.Status == "Pending"))
+            .ToListAsync(ct);
+        foreach (var renewal in staleRenewals)
+        {
+            renewal.Status = "Rejected";
+            renewal.ProcessedAt = now;
+        }
+        var staleRenewalInvoiceIds = staleRenewals.Where(r => r.InvoiceId != null).Select(r => r.InvoiceId!.Value).ToList();
+        if (staleRenewalInvoiceIds.Count > 0)
+            await db.Invoices.Where(i => staleRenewalInvoiceIds.Contains(i.InvoiceId)
+                    && (i.Status == "Unpaid" || i.Status == "Overdue"))
+                .ExecuteUpdateAsync(update => update.SetProperty(i => i.Status, "Cancelled"), ct);
+        if (staleRenewals.Count > 0)
+        {
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation("Closed {Count} renewal requests not paid by 20:00 on the end date", staleRenewals.Count);
+        }
+
+        // Deposit not paid in time. A reservation whose deposit is being paid online right now is left alone.
         var expiredReservationIds = await db.Reservations
-            .Where(r => r.Status == ReservationStatus.PendingDeposit && r.DepositDeadline <= now)
+            .Where(r => r.Status == ReservationStatus.PendingDeposit && r.DepositDeadline <= now
+                && !db.Invoices.Any(i => i.ReservationId == r.ReservationId && i.InvoiceType == "DEPOSIT"
+                    && i.Payments.Any(p => p.Status == "Pending")))
             .Select(r => r.ReservationId)
             .ToListAsync(ct);
         var expiredReservationCount = 0;
@@ -180,7 +226,8 @@ public sealed class OverdueService(
             overdue.LockAppliedDate = lockAt;
             overdue.Notes = $"Phí lưu kho quá hạn {dailyRate:N2}đ/ngày, cấn trừ tự động vào tiền cọc.";
             contract.Status = ContractStatus.Overdue;
-            contract.Unit.Status = UnitStatus.OverdueLocked;
+            // A unit under maintenance keeps that status; the contract status alone blocks entry.
+            if (contract.Unit.Status == UnitStatus.Rented) contract.Unit.Status = UnitStatus.OverdueLocked;
         }
 
         if (contracts.Count > 0 || expiredReservationCount > 0 || noShowCount > 0)

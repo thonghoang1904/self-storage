@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
 using System.Data;
 using SelfStorage.Api.Data;
@@ -69,6 +70,10 @@ public class ReservationsController(
                 throw AppException.BadRequest($"Mã khuyến mãi yêu cầu thuê tối thiểu {promotion.MinRentalMonths} tháng");
             if (await db.Contracts.AnyAsync(c => c.CustomerId == customerId, ct))
                 throw AppException.Conflict("Mã khuyến mãi chỉ dành cho lần đầu tiên thuê kho");
+            if (await db.Reservations.AnyAsync(r => r.CustomerId == customerId && r.PromotionId != null
+                    && (r.Status == ReservationStatus.Confirmed
+                        || (r.Status == ReservationStatus.PendingDeposit && r.DepositDeadline > now)), ct))
+                throw AppException.Conflict("Ưu đãi lần đầu đã được dùng cho một đơn đặt kho khác đang mở");
             promotionDiscount = decimal.Round(unitType.BaseMonthlyRate * promotion.DiscountPercent / 100m, 2,
                 MidpointRounding.AwayFromZero);
             if (promotion.MaxDiscountAmount is decimal maxDiscount)
@@ -78,13 +83,13 @@ public class ReservationsController(
             MidpointRounding.AwayFromZero);
         if (deposit <= 0)
             throw AppException.Conflict("Chính sách đặt cọc của cơ sở chưa được cấu hình hợp lệ");
-        // The grace period, but never past 20:00 on the start date: a deposit paid later would confirm a
+        // The deposit payment window, but never past 20:00 on the start date: a deposit paid later would confirm a
         // reservation that the no-show job expires (and charges the cancellation fee on) right away.
-        var graceEnds = now.AddHours(policy.CancellationGraceHours);
-        var depositDeadline = graceEnds < pickupClosesAt ? graceEnds : pickupClosesAt;
+        var paymentWindowEnds = now.AddHours(policy.DepositPaymentHours);
+        var depositDeadline = paymentWindowEnds < pickupClosesAt ? paymentWindowEnds : pickupClosesAt;
         var reservation = new Reservation
         {
-            ReservationCode = $"RSV-{Now:yyyyMMdd}-{Random.Shared.Next(100000, 999999)}",
+            ReservationCode = BusinessCodes.New("RSV", now),
             CustomerId = customerId,
             FacilityId = req.FacilityId,
             UnitTypeId = req.UnitTypeId,
@@ -95,6 +100,8 @@ public class ReservationsController(
             DepositAmount = deposit,
             EstimatedTotalFee = unitType.BaseMonthlyRate * req.DurationMonths,
             DepositDeadline = depositDeadline,
+            // Business time (the free-cancellation window counts from here), not the database server's clock.
+            CreatedAt = now,
         };
         db.Reservations.Add(reservation);
         await db.SaveChangesAsync(ct);
@@ -102,7 +109,7 @@ public class ReservationsController(
             reservation.CustomerId,
             "DEPOSIT",
             DateOnly.FromDateTime(reservation.DepositDeadline),
-            $"Tiền cọc 1 tháng cho đơn {reservation.ReservationCode}",
+            $"Tiền cọc {policy.DepositPercent:0.##}% giá thuê tháng cho đơn {reservation.ReservationCode}",
             reservation.DepositAmount,
             reservationId: reservation.ReservationId);
         db.Invoices.Add(depositInvoice);
@@ -185,7 +192,7 @@ public class ReservationsController(
             ?? throw AppException.NotFound("Không tìm thấy đơn đặt kho");
         if (reservation.Status != ReservationStatus.Confirmed)
             throw AppException.Conflict("Chỉ đơn đã xác nhận đặt cọc mới được đặt lịch nhận kho");
-        var appointmentLocal = req.AppointmentAt.ToLocalTime().DateTime;
+        var appointmentLocal = TimeZoneInfo.ConvertTime(req.AppointmentAt, clock.LocalTimeZone).DateTime;
         if (req.AppointmentAt <= clock.GetUtcNow()
             || DateOnly.FromDateTime(appointmentLocal) != reservation.ExpectedStartDate
             || TimeOnly.FromDateTime(appointmentLocal) >= new TimeOnly(20, 0))
@@ -300,11 +307,13 @@ public class ReservationsController(
         return await Project(q.OrderBy(r => r.ExpectedStartDate)).ToListAsync(ct);
     }
 
-    /// <summary>Staff: record a cash deposit payment.</summary>
+    /// <summary>Staff: record the deposit received (cash by default; send a body for a bank transfer).</summary>
     [HttpPost("reservations/{id:int}/confirm-deposit")]
     [Authorize(Roles = AppRoles.GateRoles)]
-    public async Task<ReservationDto> ConfirmDeposit(int id, CancellationToken ct)
+    public async Task<ReservationDto> ConfirmDeposit(int id,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ConfirmPaymentRequest? req, CancellationToken ct)
     {
+        req ??= new ConfirmPaymentRequest();
         var r = await db.Reservations.FindAsync([id], ct) ?? throw AppException.NotFound("Không tìm thấy đơn đặt kho");
         await access.EnsureAssignedAsync(User.GetUserId(), r.FacilityId, ct);
         if (r.Status != ReservationStatus.PendingDeposit)
@@ -333,7 +342,8 @@ public class ReservationsController(
             i.ReservationId == id && i.InvoiceType == "DEPOSIT", ct)
             ?? throw AppException.Conflict("Không tìm thấy hóa đơn cọc cho đơn đặt kho");
         await billing.RecordStaffPaymentAsync(invoice.InvoiceId, User.GetUserId(),
-            new RecordPaymentRequest("Cash", invoice.TotalAmount, null, "Nhân viên xác nhận đã nhận tiền cọc"),
+            new RecordPaymentRequest(req.PaymentMethod, invoice.TotalAmount, req.TransactionCode,
+                req.PaymentNotes ?? "Nhân viên xác nhận đã nhận tiền cọc"),
             ct);
         return await Project(db.Reservations.Where(x => x.ReservationId == id)).SingleAsync(ct);
     }
@@ -360,10 +370,15 @@ public class ReservationsController(
             || !depositInvoice.Payments.Any(p => p.Status == "Success"
                 && p.AmountPaid == depositInvoice.TotalAmount))
             throw AppException.Conflict("Chỉ được bàn giao kho sau khi đã xác nhận thanh toán đủ tiền cọc");
+        if (await db.ReservationCancellationRequests.AnyAsync(c => c.ReservationId == id && c.Status == "Pending", ct))
+            throw AppException.Conflict("Khách đang có yêu cầu hủy đơn chờ xử lý; hãy xử lý yêu cầu hủy trước khi bàn giao");
         // Early hand-over: once the deposit is paid the unit may be handed over at any time,
         // before the booked pick-up time or the planned start date; the contract then starts today.
-        if (r.PromotionId is not null && await db.Contracts.AnyAsync(c => c.CustomerId == r.CustomerId, ct))
-            throw AppException.Conflict("Khách hàng đã có hợp đồng thuê; không thể áp dụng ưu đãi lần đầu");
+        // The first-rental discount is dropped (instead of blocking the handover) if the customer got a contract meanwhile.
+        var promotionDropped = r.PromotionId is not null
+            && await db.Contracts.AnyAsync(c => c.CustomerId == r.CustomerId, ct);
+        var promotionId = promotionDropped ? null : r.PromotionId;
+        var discount = promotionDropped ? 0m : r.PromotionDiscountAmount;
 
         var unit = await db.StorageUnits.FindAsync([req.UnitId], ct) ?? throw AppException.NotFound("Không tìm thấy kho");
         if (unit.FacilityId != r.FacilityId || unit.UnitTypeId != r.UnitTypeId || unit.Status != UnitStatus.Available)
@@ -372,10 +387,10 @@ public class ReservationsController(
         var start = DateOnly.FromDateTime(Now);
         var contract = new Contract
         {
-            ContractNumber = $"HD-{Now:yyyyMMdd}-{Random.Shared.Next(100000, 999999)}",
+            ContractNumber = BusinessCodes.New("HD", Now),
             ReservationId = r.ReservationId,
             CustomerId = r.CustomerId,
-            PromotionId = r.PromotionId,
+            PromotionId = promotionId,
             UnitId = unit.UnitId,
             StaffCreatedId = staffId,
             StartDate = start,
@@ -395,6 +410,7 @@ public class ReservationsController(
             HandoverDateTime = Now,
             UnitConditionNotes = req.UnitConditionNotes,
             CustomerSignatureConfirmed = true,
+            StaffNotes = promotionDropped ? "Không áp dụng ưu đãi lần đầu vì khách đã có hợp đồng thuê khác." : null,
         });
         if (User.IsInRole(AppRoles.Admin))
         {
@@ -420,7 +436,7 @@ public class ReservationsController(
             contractId: contract.ContractId,
             billingPeriodStart: start,
             billingPeriodEnd: firstRentalPeriodEnd);
-        firstRentInvoice.DiscountAmount = Math.Min(r.PromotionDiscountAmount, firstRentInvoice.SubTotal);
+        firstRentInvoice.DiscountAmount = Math.Min(discount, firstRentInvoice.SubTotal);
         if (firstRentInvoice.DiscountAmount == firstRentInvoice.SubTotal)
             firstRentInvoice.Status = "Paid";
         db.Invoices.Add(firstRentInvoice);
