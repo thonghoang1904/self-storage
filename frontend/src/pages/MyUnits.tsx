@@ -3,10 +3,10 @@ import { Link, useLocation } from 'react-router-dom'
 import { CITIZEN_ID_FILTER, citizenIdError, fullNameError, NAME_FILTER, normalizePhone, PHONE_FILTER, phoneError, relationshipError } from '../validation'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
-import { AppointmentPicker, depositDueAt, depositMissed, pickupMissed } from '../components/appointment'
+import { depositDueAt, depositMissed, pickupMissed } from '../components/appointment'
 import { Empty, Eyebrow, Icon, splitTypeName, StatusBadge } from '../components/ui'
 import { ContractUnitArt } from '../components/unitPhoto'
-import { DenyReasons, type AccessRecord, type Contract, type Facility, type Invoice, type Person, type Reservation } from '../types'
+import { DenyReasons, type AccessRecord, type Contract, type Invoice, type Person, type Reservation } from '../types'
 import { FormField, useValidatedForm } from '../components/form'
 
 const daysUntil = (iso: string) => Math.ceil((new Date(`${iso}T00:00:00`).getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000)
@@ -46,7 +46,6 @@ export default function MyUnits() {
   const [contracts, setContracts] = useState<Contract[] | null>(null)
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [invoices, setInvoices] = useState<Invoice[] | null>(null)
-  const [facilities, setFacilities] = useState<Facility[]>([])
   const [openId, setOpenId] = useState<number | null>(null)
   const [tab, setTab] = useState<'people' | 'history'>(wantedTab ?? 'people')
   const [error, setError] = useState('')
@@ -61,7 +60,6 @@ export default function MyUnits() {
     }).catch((e) => setError((e as Error).message))
     api<Reservation[]>('/api/reservations/my').then(setReservations).catch(() => {})
     api<Invoice[]>('/api/invoices/my').then(setInvoices).catch(() => setInvoices([]))
-    api<Facility[]>('/api/facilities').then(setFacilities).catch(() => {})
   }, [])
 
   const active = contracts?.filter((c) => c.status === 'Active' || c.status === 'Renewed').length ?? 0
@@ -219,8 +217,7 @@ export default function MyUnits() {
                         : ` đã nhận cọc. Chọn giờ đến nhận kho trong ngày ${fmtDate(r.expectedStartDate)}, nhân viên chỉ bàn giao từ giờ hẹn.`}
                     </p>
                     {r.status === 'Confirmed' && !pickupMissed(r) && (
-                      <AppointmentPicker reservation={r} operatingHours={facilities.find((f) => f.facilityName === r.facilityName)?.operatingHours}
-                        onSaved={(u) => setReservations((rs) => rs.map((x) => (x.reservationId === u.reservationId ? u : x)))} />
+                      <Link to={`/reservations/${r.reservationId}/pickup`} className="btn primary sm"><Icon name="calendar" size={14} /> {r.checkInAppointmentAt ? 'Đổi giờ nhận kho' : 'Đặt lịch nhận kho'}</Link>
                     )}
                   </div>
                 </div>

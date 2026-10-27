@@ -21,7 +21,7 @@ const PRESETS = [
   { key: 'year', label: 'Năm nay', range: () => { const d = new Date(); return [iso(new Date(d.getFullYear(), 0, 1)), iso(d)] } },
 ] as const
 
-export default function OpsRevenue() {
+export default function OpsRevenue({ title = 'Doanh Thu' }: { title?: string }) {
   const [[from, to], setRange] = useState<[string, string]>(() => PRESETS[1].range() as [string, string])
   const [preset, setPreset] = useState<string>('30')
   const [report, setReport] = useState<OperationsReport | null>(null)
@@ -61,7 +61,7 @@ export default function OpsRevenue() {
     <div className="stack-xl">
       <div className="page-title-row row between wrap">
         <div>
-          <h1>Doanh Thu</h1>
+          <h1>{title}</h1>
           <p className="muted">Doanh thu thuần theo cơ sở: tiền đã thu trừ tiền đã hoàn trong khoảng thời gian chọn.</p>
         </div>
         <button className="btn outline" onClick={exportCsv} disabled={!rows.length}><Icon name="file" size={15} /> Xuất CSV</button>

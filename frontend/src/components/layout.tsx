@@ -262,7 +262,7 @@ export function StaffLayout() {
 /** A sidebar entry: a built screen has a route, the rest of the Figma menu shows greyed out. */
 interface ConsoleNavItem { icon: string; label: string; to?: string; end?: boolean }
 
-function ConsoleLayout({ area, nav, titles }: { area: string; nav: ConsoleNavItem[]; titles: Record<string, string> }) {
+function ConsoleLayout({ area, nav, titles, customerLink = true }: { area: string; nav: ConsoleNavItem[]; titles: Record<string, string>; customerLink?: boolean }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
@@ -279,7 +279,7 @@ function ConsoleLayout({ area, nav, titles }: { area: string; nav: ConsoleNavIte
           {nav.map((n) => n.to
             ? <NavLink key={n.label} to={n.to} end={n.end}><Icon name={n.icon} /> {n.label}</NavLink>
             : <span key={n.label} className="soon" title="Chưa có màn hình"><Icon name={n.icon} /> {n.label}</span>)}
-          <Link to="/"><Icon name="arrowRight" className="flip" /> Trang khách hàng</Link>
+          {customerLink && <Link to="/"><Icon name="arrowRight" className="flip" /> Trang khách hàng</Link>}
         </nav>
         {user && (
           <div className="sidebar-user">
@@ -312,7 +312,8 @@ export function AdminLayout() {
   return (
     <ConsoleLayout
       area="Admin"
-      titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu', '/admin/support': 'Hỗ Trợ Khách Hàng', '/admin/system': 'Giao Dịch & Nhật Ký',
+      customerLink={false}
+      titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu & Thống Kê', '/admin/reports': 'Báo Cáo', '/admin/support': 'Hỗ Trợ Khách Hàng', '/admin/system': 'Giao Dịch & Nhật Ký',
         '/admin/storage': 'Kho Lưu Trữ Hệ Thống', '/admin/units': 'Kho Từng Cơ Sở', '/admin/facilities': 'Quản Lý Cơ Sở', '/admin/customers': 'Khách Hàng & Hợp Đồng',
         '/admin/policies': 'Giá & Chính Sách', '/admin/settings': 'Cài Đặt', '/admin': 'Tổng Quan Quản Lý' }}
       nav={[
@@ -320,12 +321,8 @@ export function AdminLayout() {
         { icon: 'building', label: 'Kho Lưu Trữ', to: '/admin/storage' },
         { icon: 'users', label: 'Khách Hàng', to: '/admin/customers' },
         { icon: 'user', label: 'Nhân Viên', to: '/admin/users' },
-        { icon: 'file', label: 'Hợp Đồng', to: '/admin/contracts' },
         { icon: 'chart', label: 'Doanh Thu', to: '/admin/revenue' },
-        { icon: 'phone', label: 'Hỗ Trợ Khách Hàng', to: '/admin/support' },
-        { icon: 'history', label: 'Giao Dịch & Nhật Ký', to: '/admin/system' },
-        { icon: 'mail', label: 'Email Hệ Thống', to: '/admin/emails' },
-        { icon: 'clipboard', label: 'Giá & Chính Sách', to: '/admin/policies' },
+        { icon: 'file', label: 'Báo Cáo', to: '/admin/reports' },
         { icon: 'settings', label: 'Cài Đặt', to: '/admin/settings' },
       ]}
     />

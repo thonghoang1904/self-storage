@@ -35,6 +35,8 @@ import AccountProfile from './pages/AccountProfile'
 import AdminUnits from './pages/AdminUnits'
 import { AdminSupport } from './pages/StaffSupport'
 import AdminSystem from './pages/AdminSystem'
+import AdminRevenue from './pages/AdminRevenue'
+import PickupAppointment from './pages/PickupAppointment'
 import { Login, Register } from './pages/Login'
 import MyUnits from './pages/MyUnits'
 import Rent from './pages/Rent'
@@ -86,6 +88,7 @@ export default function App() {
             <Route path="/support" element={<RequireRole roles={[Roles.Customer]}><Support /></RequireRole>} />
             <Route path="/rent" element={<RequireRole roles={[Roles.Customer]}><Rent /></RequireRole>} />
             <Route path="/invoices" element={<RequireRole roles={[Roles.Customer]}><Invoices /></RequireRole>} />
+            <Route path="/reservations/:id/pickup" element={<RequireRole roles={[Roles.Customer]}><PickupAppointment /></RequireRole>} />
             <Route path="/invoices/:id" element={<RequireRole roles={[Roles.Customer]}><InvoiceDetail /></RequireRole>} />
             <Route path="/payment-result" element={<RequireRole roles={[Roles.Customer]}><Invoices /></RequireRole>} />
           </Route>
@@ -115,7 +118,8 @@ export default function App() {
             <Route path="/admin/emails" element={<AdminEmails />} />
             <Route path="/admin/support" element={<AdminSupport />} />
             <Route path="/admin/system" element={<AdminSystem />} />
-            <Route path="/admin/revenue" element={<OpsRevenue />} />
+            <Route path="/admin/revenue" element={<AdminRevenue />} />
+            <Route path="/admin/reports" element={<OpsRevenue title="Báo Cáo" />} />
           </Route>
           <Route element={<RequireRole roles={[Roles.OpsManager]}><OpsLayout /></RequireRole>}>
             <Route path="/ops" element={<ConsoleOverview admin={false} />} />

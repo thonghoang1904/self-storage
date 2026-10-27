@@ -152,9 +152,10 @@ function toVietnamese(msg: string): string {
 
 export const fmtMoney =(n: number) => n.toLocaleString('vi-VN') + 'đ'
 // "2026-10-13" (DateOnly) must be read as a local date, not UTC midnight.
-/** Staff billing page pre-filtered by a contract, reservation or invoice code (no copying codes between pages). */
-export const billingLink = (code: string) => `/staff-billing?q=${encodeURIComponent(code)}`
 export const fmtDate = (s: string) =>
   new Date(/^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T00:00:00` : s).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
 export const fmtTime = (s: string) =>
   new Date(s).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
+
+/** Staff billing page pre-filtered by a contract, reservation or invoice code (no copying codes between pages). */
+export const billingLink = (code: string) => `/staff-billing?q=${encodeURIComponent(code)}`

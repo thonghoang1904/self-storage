@@ -28,8 +28,9 @@ export default function StaffBilling() {
   const [reservations, setReservations] = useState<Reservation[]>([])
   // Opened from another staff page with ?q=<contract / reservation code>: start already filtered.
   const location = useLocation()
-  const [q, setQ] = useState(() => new URLSearchParams(location.search).get('q') ?? '')
-  const [status, setStatus] = useState<'due' | 'Unpaid' | 'Overdue' | 'Paid' | 'Cancelled' | 'all'>('all')
+  const initialQ = new URLSearchParams(location.search).get('q') ?? ''
+  const [q, setQ] = useState(initialQ)
+  const [status, setStatus] = useState<'due' | 'Unpaid' | 'Overdue' | 'Paid' | 'Cancelled' | 'all'>(() => (initialQ ? 'all' : 'due'))
   const [type, setType] = useState('all')
   const [page, setPage] = useState(1)
   const [openId, setOpenId] = useState<number | null>(null)
@@ -117,7 +118,7 @@ export default function StaffBilling() {
             {Object.entries(TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </Select>
         </div>
-        <button className="btn ghost" onClick={() => { setQ(''); setStatus('all'); setType('all'); setPage(1) }}><Icon name="x" size={15} /> Xóa bộ lọc</button>
+        <button className="btn ghost" onClick={() => { setQ(''); setStatus('due'); setType('all'); setPage(1) }}><Icon name="x" size={15} /> Xóa bộ lọc</button>
       </div>
 
       {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}

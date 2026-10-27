@@ -63,7 +63,8 @@ export default function ContractEarlyReturn() {
     { icon: 'calendar', title: 'Ngày trả kho', text: `Trả kho trước ngày hết hạn ${fmtDate(c.endDate)} là trả sớm. Đến đúng ngày đã hẹn, trong giờ mở cửa${facility ? ` (${facility.operatingHours})` : ''}, chậm nhất 20:00.` },
     { icon: 'wallet', title: 'Tiền thuê đã trả', text: 'Tiền thuê của các kỳ đã thanh toán không được hoàn lại, kể cả khi chưa dùng hết kỳ.' },
     { icon: 'file', title: 'Hóa đơn kỳ sau', text: 'Hóa đơn tiền thuê chưa thanh toán của các kỳ bắt đầu từ ngày trả kho trở đi được hủy. Yêu cầu gia hạn đang chờ thanh toán cũng được hủy.' },
-    { icon: 'shield', title: 'Phí trả kho sớm', text: `Phí trả kho sớm ${fmtMoney(fee)} được trừ vào tiền cọc ${fmtMoney(c.depositPaid)}. Nếu còn phí quá hạn, phí này cũng được trừ vào cọc; cọc không đủ thì hệ thống lập hóa đơn phần còn thiếu.` },
+    // No early-return fee is configured (EARLY_RETURN_FEE = 0): the rule is not shown at all.
+    ...(fee > 0 ? [{ icon: 'shield', title: 'Phí trả kho sớm', text: `Phí trả kho sớm ${fmtMoney(fee)} được trừ vào tiền cọc ${fmtMoney(c.depositPaid)}. Nếu còn phí quá hạn, phí này cũng được trừ vào cọc; cọc không đủ thì hệ thống lập hóa đơn phần còn thiếu.` }] : []),
     { icon: 'package', title: 'Kiểm tra & dọn kho', text: 'Mang theo CCCD của chủ hợp đồng, dọn hết đồ ra khỏi kho. Nhân viên kiểm tra tường, sàn, cửa và khóa cùng bạn, ghi nhận hư hỏng nếu có.' },
     { icon: 'refresh', title: 'Hoàn cọc', text: 'Phần cọc còn lại được hoàn bằng tiền mặt hoặc chuyển khoản sau khi nhân viên xác nhận kho đạt. Ngày kết thúc hợp đồng đổi thành ngày trả kho thực tế.' },
     { icon: 'x', title: 'Hủy yêu cầu', text: 'Bạn có thể hủy yêu cầu khi nhân viên chưa nhận trả kho; hợp đồng tiếp tục đến ngày hết hạn như cũ.' },
@@ -158,7 +159,7 @@ export default function ContractEarlyReturn() {
               <h3 className="panel-title">Chi phí dự kiến</h3>
               {quote ? <>
                 <div className="info-row"><span className="muted">Trả sớm</span><b>{quote.daysEarly} ngày</b></div>
-                <div className="info-row"><span className="muted">Phí trả kho sớm</span><b>{fmtMoney(quote.earlyReturnFee)}</b></div>
+                {quote.earlyReturnFee > 0 && <div className="info-row"><span className="muted">Phí trả kho sớm</span><b>{fmtMoney(quote.earlyReturnFee)}</b></div>}
                 {quote.lateFees > 0 && <div className="info-row"><span className="muted">Phí quá hạn</span><b className="danger-text">{fmtMoney(quote.lateFees)}</b></div>}
                 <div className="info-row"><span className="muted">Tiền cọc</span><b>{fmtMoney(quote.depositPaid)}</b></div>
                 <div className="info-row"><span className="muted">Trừ vào cọc</span><b>− {fmtMoney(quote.depositDeducted)}</b></div>
@@ -169,7 +170,7 @@ export default function ContractEarlyReturn() {
                   <small>{quote.amountStillOwed > 0 ? `Còn phải trả thêm ${fmtMoney(quote.amountStillOwed)}` : 'Không phải trả thêm'}</small>
                 </div>
               </> : <>
-                <div className="info-row"><span className="muted">Phí trả kho sớm</span><b>{fmtMoney(fee)}</b></div>
+                {fee > 0 && <div className="info-row"><span className="muted">Phí trả kho sớm</span><b>{fmtMoney(fee)}</b></div>}
                 <div className="info-row"><span className="muted">Tiền cọc</span><b>{fmtMoney(c.depositPaid)}</b></div>
                 <small className="muted">Số tiền cụ thể nhân viên xác nhận khi bạn đến trả kho.</small>
               </>}

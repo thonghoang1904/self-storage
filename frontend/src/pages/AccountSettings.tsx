@@ -16,8 +16,7 @@ const PERMISSIONS: Record<string, string[]> = {
   [Roles.Admin]: [
     'Xem tổng quan, doanh thu và kho của mọi cơ sở',
     'Quản lý tài khoản nhân viên: thêm, đổi vai trò, khóa',
-    'Tra cứu khách hàng, sửa hợp đồng, trả kho',
-    'Theo dõi email hệ thống và gửi lại email lỗi',
+    'Tra cứu khách hàng, xem hợp đồng, trả kho',
   ],
   [Roles.OpsManager]: [
     'Xem tổng quan và doanh thu của mọi cơ sở',

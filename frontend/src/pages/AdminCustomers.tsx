@@ -38,15 +38,16 @@ export default function AdminCustomers() {
   const [busy, setBusy] = useState<number | null>(null)
   const [reload, setReload] = useState(0)
 
-  /** Lock / unlock a customer account (PUT /api/admin/users/{id}/status). */
+  /** Delete (deactivate) / restore a customer account (PUT /api/admin/users/{id}/status). */
   const setAccount = async (u: AdminUser, next: 'Active' | 'Inactive') => {
-    if (next === 'Inactive' && !window.confirm(`Khóa tài khoản ${u.fullName}? Khách sẽ không đăng nhập được cho đến khi mở lại.`)) return
+    // The API has no hard delete: "Xóa" deactivates the account (status Inactive); contracts and invoices are kept.
+    if (next === 'Inactive' && !window.confirm(`Xóa tài khoản ${u.fullName}? Khách sẽ không đăng nhập được nữa; hợp đồng và hóa đơn vẫn được giữ, có thể khôi phục lại.`)) return
     setBusy(u.userId)
     setError('')
     setNotice('')
     try {
       await api(`/api/admin/users/${u.userId}/status`, { method: 'PUT', body: { status: next } })
-      setNotice(`${next === 'Active' ? 'Đã mở khóa' : 'Đã khóa'} tài khoản ${u.username}.`)
+      setNotice(`${next === 'Active' ? 'Đã khôi phục' : 'Đã xóa'} tài khoản ${u.username}.`)
       setReload((n) => n + 1)
     } catch (e) {
       setError((e as Error).message)
@@ -149,8 +150,8 @@ export default function AdminCustomers() {
                   <td><div className="row nowrap">
                     {own.length > 0 && <Link className="link nowrap" to={`/admin/contracts?search=${encodeURIComponent(own.length > 1 ? u.email : next!.contractNumber)}`}>Xem hợp đồng</Link>}
                     {u.status === 'Active'
-                      ? <button type="button" className="btn ghost sm danger-text" disabled={busy !== null} onClick={() => void setAccount(u, 'Inactive')}>Khóa</button>
-                      : <button type="button" className="btn outline sm" disabled={busy !== null} onClick={() => void setAccount(u, 'Active')}>Mở khóa</button>}
+                      ? <button type="button" className="btn ghost sm danger-text" disabled={busy !== null} onClick={() => void setAccount(u, 'Inactive')}>Xóa</button>
+                      : <button type="button" className="btn outline sm" disabled={busy !== null} onClick={() => void setAccount(u, 'Active')}>Khôi phục</button>}
                   </div></td>
                 </tr>
               ))}

@@ -67,9 +67,6 @@ export default function Invoices() {
   const isPayable = (i: Invoice) => i.status === 'Unpaid' || i.status === 'Overdue'
   const due = invoices.filter(isPayable)
   const overdue = invoices.filter((i) => i.status === 'Overdue')
-  const year = new Date().getFullYear()
-  const paidThisYear = invoices.flatMap((i) => i.payments).filter((p) => p.status === 'Success' && p.paymentDate.startsWith(String(year)))
-    .reduce((n, p) => n + p.amountPaid, 0)
   const [tab, setTab] = useState<'due' | 'paid' | 'all'>('all')
   const [type, setType] = useState('')
   useEffect(() => { if (!loading && due.length) setTab('due') }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -104,7 +101,7 @@ export default function Invoices() {
           ? <p className="alert bad"><Icon name="alert" size={16} />Giao dịch chưa thành công hoặc đã bị hủy; hóa đơn vẫn chờ thanh toán, bạn có thể thanh toán lại.</p>
           : <p className="alert ok">Đã quay lại từ cổng thanh toán. Trạng thái được cập nhật khi cổng thanh toán xác nhận; bấm Làm mới nếu hóa đơn vẫn đang chờ.</p>)}
 
-      <div className="stat-grid three">
+      <div className="stat-grid two">
         <div className="stat-card">
           <div className="row between"><span className="muted">Cần thanh toán</span><span className="stat-icon warn"><Icon name="wallet" size={17} /></span></div>
           <b className="stat-value">{fmtMoney(due.reduce((n, i) => n + i.totalAmount, 0))}</b>
@@ -114,11 +111,6 @@ export default function Invoices() {
           <div className="row between"><span className="muted">Quá hạn</span><span className={`stat-icon ${overdue.length ? 'bad' : 'ok'}`}><Icon name="alert" size={17} /></span></div>
           <b className="stat-value">{overdue.length}</b>
           <small className={`stat-note ${overdue.length ? 'bad' : 'ok'}`}>{overdue.length ? 'Thanh toán sớm để tránh khóa kho' : 'Bạn đang thanh toán đúng hạn'}</small>
-        </div>
-        <div className="stat-card">
-          <div className="row between"><span className="muted">Đã thanh toán năm {year}</span><span className="stat-icon ok"><Icon name="check" size={17} /></span></div>
-          <b className="stat-value">{fmtMoney(paidThisYear)}</b>
-          <small className="stat-note ok">{invoices.filter((i) => i.status === 'Paid').length} hóa đơn đã thanh toán</small>
         </div>
       </div>
 

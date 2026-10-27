@@ -466,9 +466,16 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
           <StatusBadge status={v.unitStatus} />
         </div>
         {v.issues.map((i) => <p key={i.code} className="alert bad"><Icon name="alert" size={16} />{i.message}</p>)}
-        {/* Unpaid bills block entry: collect them first, then search again at the gate. */}
-        {v.issues.some((i) => i.code === 'OverdueLocked') && (
+        {/* OverdueLocked has two causes (AccessService.FindIssues): unpaid rent/extra-charge bills, which the billing page
+            collects; or the contract itself past its end and locked, which is settled by renewing or returning the unit. */}
+        {v.issues.some((i) => i.code === 'OverdueLocked' && i.message.startsWith('Còn hóa đơn')) && (
           <Link to={billingLink(v.contractNumber)} className="btn outline sm self-start"><Icon name="wallet" size={14} /> Thu tiền cho hợp đồng này</Link>
+        )}
+        {v.issues.some((i) => i.code === 'OverdueLocked' && !i.message.startsWith('Còn hóa đơn')) && (
+          <span className="row wrap">
+            <Link to={`/staff-contracts`} className="btn outline sm"><Icon name="refresh" size={14} /> Gia hạn & quá hạn</Link>
+            <Link to={`/staff-return?contract=${v.contractId}`} className="btn outline sm"><Icon name="door" size={14} /> Trả kho</Link>
+          </span>
         )}
       </section>
 

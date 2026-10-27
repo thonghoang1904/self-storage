@@ -377,6 +377,10 @@ export interface ReturnUnitResult {
   returnedAt: string
   /** Early returns only: the early-return fee. It is included in lateFeesDeducted / lateFeesStillOwed. */
   earlyReturnFee?: number
+  /** Open rent / extra-charge invoices paid from the deposit at return (payments of method DepositOffset). */
+  unpaidInvoicesOffset?: number
+  /** Open invoices the rest of the deposit could not cover: still owed by the customer. */
+  unpaidInvoicesRemaining?: number
 }
 
 /**

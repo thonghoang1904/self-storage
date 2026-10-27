@@ -44,7 +44,7 @@ const REQUEST_KINDS = [
   { key: 'visit', icon: 'calendar', title: 'Đăng ký vào kho', text: 'Vào kho để lấy đồ ra, kiểm tra hoặc sắp xếp lại đồ.',
     points: ['Chọn ngày, giờ vào và giờ rời kho', 'Chọn người đến: bạn hoặc người được ủy quyền', 'Xuất trình CCCD tại cổng khi đến'] },
   { key: 'move-in', icon: 'package', title: 'Đăng ký đưa đồ vào kho', text: 'Mang đồ mới vào kho, khai báo trước để nhân viên chuẩn bị.',
-    points: ['Khai báo danh sách đồ, kích thước, số lượng', 'Lịch chuyển đồ, phương tiện, người phụ', 'Người áp tải xuất trình CCCD tại cổng'] },
+    points: ['Khai báo danh sách đồ, kích thước, số lượng', 'Lịch chuyển đồ, phương tiện, người phụ', 'Người vào kho xuất trình CCCD tại cổng'] },
 ] as const
 
 export function VisitHub() {

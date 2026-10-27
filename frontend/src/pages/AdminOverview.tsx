@@ -1,25 +1,23 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, fmtMoney, fmtTime } from '../api'
+import { api, fmtMoney } from '../api'
 import { Icon } from '../components/ui'
-import { Roles, type AdminUser, type EmailOutboxMessage, type OperationsReport } from '../types'
+import { Roles, type AdminUser, type OperationsReport } from '../types'
 import { localToday } from '../validation'
 import { Metric } from './FacilityOverview'
 
 /**
- * Extra panels for the administrator's "Tổng Quan" (shown under ConsoleOverview): accounts, emails that failed to
- * send, each facility's last 30 days (GET /api/operations/reports/facilities) and shortcuts to every admin screen.
- * GET /api/admin/users, GET /api/admin/email-outbox?status=Failed.
+ * Extra panels for the administrator's "Tổng Quan" (shown under ConsoleOverview): accounts,
+ * each facility's last 30 days (GET /api/operations/reports/facilities) and shortcuts to every admin screen.
+ * GET /api/admin/users.
  */
 export function AdminSystemPanels() {
   const [report, setReport] = useState<OperationsReport | null>(null)
   const [users, setUsers] = useState<AdminUser[]>([])
-  const [failed, setFailed] = useState<EmailOutboxMessage[]>([])
 
   useEffect(() => {
     api<OperationsReport>(`/api/operations/reports/facilities?fromDate=${localToday(-29)}&toDate=${localToday()}`).then(setReport).catch(() => {})
     api<AdminUser[]>('/api/admin/users').then(setUsers).catch(() => {})
-    api<EmailOutboxMessage[]>('/api/admin/email-outbox?status=Failed&pageSize=50').then(setFailed).catch(() => {})
   }, [])
 
   const customers = users.filter((u) => u.roleName === Roles.Customer)
@@ -27,11 +25,10 @@ export function AdminSystemPanels() {
 
   return (
     <>
-      <div className="stat-grid">
+      <div className="stat-grid three">
         <Metric icon="users" tone="info" label="Tài khoản khách" value={String(customers.length)} note={`${customers.filter((u) => u.status !== 'Active').length} tài khoản bị khóa`} />
         <Metric icon="user" tone="info" label="Tài khoản nhân viên" value={String(staff.length)} note={`${staff.filter((u) => u.roleName === Roles.Staff).length} nhân viên cơ sở`} />
         <Metric icon="alert" tone={report?.openSupportRequests ? 'warn' : 'ok'} label="Yêu cầu hỗ trợ mở" value={String(report?.openSupportRequests ?? 0)} note={`${report?.maintenanceUnits ?? 0} kho bảo trì · ${report?.overdueLockedUnits ?? 0} kho khóa`} />
-        <Metric icon="mail" tone={failed.length ? 'bad' : 'ok'} label="Email gửi lỗi" value={String(failed.length)} note={failed.length ? 'cần gửi lại' : 'không có thư lỗi'} />
       </div>
 
       <section className="panel">
@@ -57,14 +54,7 @@ export function AdminSystemPanels() {
         </div>
       </section>
 
-      <div className="split-two">
-        <section className="panel stack-sm">
-          <div className="panel-head"><h2 className="panel-title">Email gửi lỗi</h2><Link to="/admin/emails" className="link">Xử lý →</Link></div>
-          {failed.slice(0, 6).map((m) => (
-            <div key={m.emailOutboxMessageId} className="info-row"><span><b>{m.recipientEmail}</b> <small className="muted">· {m.subject}</small></span><small className="muted">{fmtTime(m.createdAt)}</small></div>
-          ))}
-          {failed.length === 0 && <p className="muted">Không có thư gửi lỗi.</p>}
-        </section>
+      <div>
         <section className="panel stack-sm">
           <h2 className="panel-title">Lối tắt quản trị</h2>
           {[

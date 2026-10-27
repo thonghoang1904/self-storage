@@ -51,6 +51,10 @@ export default function StaffReservations() {
 
   // One action at a time: a double click must not confirm or hand over twice.
   const [busy, setBusy] = useState(false)
+  const [depositFor, setDepositFor] = useState<number | null>(null)
+  const [depMethod, setDepMethod] = useState<'Cash' | 'BankTransfer'>('Cash')
+  const [depCode, setDepCode] = useState('')
+  const [depOk, setDepOk] = useState(false)
   const act = async (fn: () => Promise<unknown>, done: string) => {
     if (busy) return
     setBusy(true)
@@ -120,10 +124,32 @@ export default function StaffReservations() {
                     {pickupMissed(r, now) && (
                       <span className="muted">Khách không đến nhận kho. Hệ thống tự hủy, hoàn cọc trừ phí hủy · <Link to="/staff-cancellations" className="link">Hủy đơn & hoàn tiền</Link></span>
                     )}
-                    {r.status === 'PendingDeposit' && !depositMissed(r, now) && (
-                      <button className="btn outline sm" disabled={busy} onClick={() => act(() => api(`/api/reservations/${r.reservationId}/confirm-deposit`, { method: 'POST' }), `Đã xác nhận cọc cho đơn ${r.reservationCode}.`)}>
-                        <Icon name="wallet" size={15} /> Đã nhận cọc
+                    {r.status === 'PendingDeposit' && !depositMissed(r, now) && depositFor !== r.reservationId && (
+                      <button className="btn outline sm" disabled={busy} onClick={() => { setDepositFor(r.reservationId); setDepMethod('Cash'); setDepCode(''); setDepOk(false) }}>
+                        <Icon name="wallet" size={15} /> Thu tiền cọc
                       </button>
+                    )}
+                    {/* Records real money: method, transfer code and an explicit "received" tick before saving. */}
+                    {r.status === 'PendingDeposit' && !depositMissed(r, now) && depositFor === r.reservationId && (
+                      <span className="stack-sm deposit-confirm">
+                        <Select value={depMethod} onChange={(e) => setDepMethod(e.target.value as 'Cash' | 'BankTransfer')} aria-label="Hình thức">
+                          <option value="Cash">Tiền mặt tại quầy</option>
+                          <option value="BankTransfer">Chuyển khoản</option>
+                        </Select>
+                        {depMethod === 'BankTransfer' && (
+                          <input value={depCode} maxLength={50} placeholder="Mã giao dịch chuyển khoản" onChange={(e) => setDepCode(e.target.value.replace(/[^A-Za-z0-9-]/g, ''))} />
+                        )}
+                        <label className="check-row"><input type="checkbox" checked={depOk} onChange={(e) => setDepOk(e.target.checked)} /> Đã nhận đủ {fmtMoney(r.depositAmount)}</label>
+                        <span className="row">
+                          <button className="btn primary sm" disabled={busy || !depOk || (depMethod === 'BankTransfer' && depCode.trim().length < 4)}
+                            onClick={() => act(() => api(`/api/reservations/${r.reservationId}/confirm-deposit`, {
+                              body: { paymentMethod: depMethod, transactionCode: depMethod === 'BankTransfer' ? depCode.trim() : null, paymentNotes: null },
+                            }).then(() => setDepositFor(null)), `Đã ghi nhận cọc ${fmtMoney(r.depositAmount)} cho đơn ${r.reservationCode}.`)}>
+                            Xác nhận đã thu
+                          </button>
+                          <button className="btn ghost sm" disabled={busy} onClick={() => setDepositFor(null)}>Hủy</button>
+                        </span>
+                      </span>
                     )}
                     {r.status === 'Confirmed' && !pickupMissed(r, now) && (
                       <>

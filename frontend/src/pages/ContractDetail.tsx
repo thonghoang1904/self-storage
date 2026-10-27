@@ -381,6 +381,8 @@ function EarlyReturnPanel({ contract: c, facility }: { contract: Detail; facilit
   const [reason, setReason] = useState('')
   const [agreed, setAgreed] = useState(false)
   const [quote, setQuote] = useState<EarlyReturnQuote | null>(null)
+  // EARLY_RETURN_FEE set to 0 by the admin: no fee wording anywhere.
+  const noFee = quote?.earlyReturnFee === 0
   const [quoteFailed, setQuoteFailed] = useState(false)
   const [tried, setTried] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -444,7 +446,7 @@ function EarlyReturnPanel({ contract: c, facility }: { contract: Detail; facilit
           <span className="notice-icon warn"><Icon name="logout" size={16} /></span>
           <div className="grow">
             <b>Yêu cầu trả kho sớm ngày {fmtDate(pending.returnDate)} đang chờ</b>
-            <p>Mang CCCD đến {c.facilityName}{facility ? ` (${facility.operatingHours})` : ''} đúng ngày hẹn. Nhân viên kiểm tra kho cùng bạn rồi hoàn cọc sau khi trừ phí trả sớm {fmtMoney(pending.earlyReturnFee)}.</p>
+            <p>Mang CCCD đến {c.facilityName}{facility ? ` (${facility.operatingHours})` : ''} đúng ngày hẹn. Nhân viên kiểm tra kho cùng bạn rồi hoàn cọc{pending.earlyReturnFee > 0 ? ` sau khi trừ phí trả sớm ${fmtMoney(pending.earlyReturnFee)}` : ''}.</p>
             <p className="muted">Lý do: {pending.reason}</p>
             <div className="row wrap">
               <Link to={`/my-units/${c.contractId}/early-return`} className="btn primary sm"><Icon name="file" size={14} /> Xem chi tiết yêu cầu</Link>
@@ -457,7 +459,9 @@ function EarlyReturnPanel({ contract: c, facility }: { contract: Detail; facilit
           <b>Trả kho trước ngày hết hạn {fmtDate(c.endDate)}</b>
           <ul className="policy-list early-policy">
             <li>Tiền thuê đã trả không được hoàn; hóa đơn tiền thuê chưa thanh toán của các kỳ sau ngày trả kho được hủy.</li>
-            <li>Phí trả kho sớm trừ vào tiền cọc {fmtMoney(c.depositPaid)}, phần cọc còn lại hoàn sau khi nhân viên kiểm tra kho đạt.</li>
+            {noFee
+              ? <li>Tiền cọc {fmtMoney(c.depositPaid)} được hoàn sau khi nhân viên kiểm tra kho đạt (trừ phí quá hạn nếu có).</li>
+              : <li>Phí trả kho sớm trừ vào tiền cọc {fmtMoney(c.depositPaid)}, phần cọc còn lại hoàn sau khi nhân viên kiểm tra kho đạt.</li>}
             <li>Đến trả kho đúng ngày đã hẹn, trước 20:00, mang CCCD của chủ hợp đồng; dọn hết đồ ra khỏi kho.</li>
             <li>Có thể hủy yêu cầu khi nhân viên chưa nhận trả kho.</li>
             <li><Link to={`/my-units/${c.contractId}/policy`} className="link">Xem toàn bộ điều khoản & chính sách hợp đồng</Link></li>
@@ -468,18 +472,18 @@ function EarlyReturnPanel({ contract: c, facility }: { contract: Detail; facilit
           {quote && !errors.date ? (
             <dl className="summary-lines">
               <div><dt>Trả sớm</dt><dd>{quote.daysEarly} ngày</dd></div>
-              <div><dt>Phí trả kho sớm</dt><dd>{fmtMoney(quote.earlyReturnFee)}</dd></div>
+              {quote.earlyReturnFee > 0 && <div><dt>Phí trả kho sớm</dt><dd>{fmtMoney(quote.earlyReturnFee)}</dd></div>}
               {quote.lateFees > 0 && <div><dt>Phí quá hạn</dt><dd>{fmtMoney(quote.lateFees)}</dd></div>}
               <div><dt>Tiền cọc</dt><dd>{fmtMoney(quote.depositPaid)}</dd></div>
               <div><dt>Dự kiến hoàn cọc</dt><dd className="cyan">{fmtMoney(quote.depositRefundDue)}</dd></div>
             </dl>
-          ) : quoteFailed && <p className="hint"><Icon name="wallet" size={15} /> Phí trả sớm theo chính sách của cơ sở, nhân viên báo cụ thể khi bạn đến trả kho.</p>}
+          ) : quoteFailed && <p className="hint"><Icon name="wallet" size={15} /> Chi phí cụ thể (nếu có) nhân viên báo khi bạn đến trả kho.</p>}
           <FormField label="Lý do trả sớm" error={tried ? errors.reason : null} hint={`${reason.trim().length}/500 ký tự`}>
             <textarea rows={2} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} aria-invalid={tried && errors.reason ? true : undefined}
               placeholder="vd: Tôi chuyển nhà sớm, không cần lưu kho nữa" />
           </FormField>
           <label className="check-row"><input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
-            Tôi hiểu tiền thuê đã trả không được hoàn và phí trả sớm được trừ vào tiền cọc.</label>
+            Tôi hiểu tiền thuê đã trả không được hoàn{noFee ? '' : ' và phí trả sớm được trừ vào tiền cọc'}.</label>
           {tried && errors.agreed && <small className="field-error"><Icon name="alert" size={12} /> {errors.agreed}</small>}
           <button className="btn primary block" type="submit" disabled={busy}>{busy ? 'Đang gửi…' : 'Gửi yêu cầu trả kho sớm'}</button>
         </form>

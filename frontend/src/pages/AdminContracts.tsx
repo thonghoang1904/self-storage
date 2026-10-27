@@ -8,7 +8,7 @@ import { Select } from '../components/Select'
 /**
  * System administrator: contracts across all facilities (AdminContractsController).
  * Search and filter (GET /api/admin/contracts), open one (GET .../{id}), change the end date or terms of an
- * active contract (PUT .../{id}), hand a unit back (POST /api/admin/contracts/{id}/return) and create a contract
+ * (read-only), hand a unit back (POST /api/admin/contracts/{id}/return) and create a contract
  * from a paid reservation (POST /api/admin/contracts/from-reservations/{id}/check-in).
  * Start date, rent and payments are never edited directly; the API refuses and its message is shown.
  */
@@ -130,17 +130,13 @@ export default function AdminContracts() {
 
 function ContractPanel({ contractId, onClose, onDone }: { contractId: number; onClose: () => void; onDone: (msg: string) => Promise<void> }) {
   const [c, setC] = useState<AdminContract | null>(null)
-  const [endDate, setEndDate] = useState('')
-  const [terms, setTerms] = useState('')
   const [returning, setReturning] = useState(false)
-  const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
+  // Contracts are read-only here: dates and prices only change through renewals and invoices.
   useEffect(() => {
     api<AdminContract>(`/api/admin/contracts/${contractId}`).then((x) => {
       setC(x)
-      setEndDate(x.endDate)
-      setTerms(x.termsConditions ?? '')
     }).catch((e) => setError((e as Error).message))
   }, [contractId])
   // The contract opens under the table: bring it into view (again once loaded) so "Chi tiết" visibly opens it.
@@ -150,29 +146,6 @@ function ContractPanel({ contractId, onClose, onDone }: { contractId: number; on
   }, [contractId, loaded])
 
   if (!c) return <section className="panel">{error ? <p className="alert bad"><Icon name="alert" size={16} />{error}</p> : <p className="muted">Đang tải hợp đồng…</p>}</section>
-
-  const editable = c.status === 'Active'
-  // The API wants the new end date after the start date and not in the past.
-  const todayIso = new Date().toLocaleDateString('sv-SE')
-  const minEnd = c.startDate >= todayIso ? new Date(new Date(`${c.startDate}T00:00:00`).getTime() + 86400000).toLocaleDateString('sv-SE') : todayIso
-  const changed = endDate !== c.endDate || terms.trim() !== (c.termsConditions ?? '')
-
-  const save = async (e: FormEvent) => {
-    e.preventDefault()
-    if (terms.trim().length > 4000) return setError('Điều khoản tối đa 4000 ký tự')
-    setError('')
-    if (!endDate || endDate < minEnd) { setError(`Ngày kết thúc mới phải từ ${fmtDate(minEnd)} trở đi (sau ngày bắt đầu, không ở quá khứ).`); return }
-    setBusy(true)
-    try {
-      const x = await api<AdminContract>(`/api/admin/contracts/${c.contractId}`, { method: 'PUT', body: { endDate, termsConditions: terms.trim() || null } })
-      setC(x)
-      await onDone(`Đã cập nhật hợp đồng ${x.contractNumber}.`)
-    } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
 
   return (
     <section className="panel admin-contract">
@@ -192,21 +165,12 @@ function ContractPanel({ contractId, onClose, onDone }: { contractId: number; on
         <div><dt>Tiền cọc</dt><dd>{fmtMoney(c.depositPaid)}</dd></div>
       </dl>
 
-      <form className="stack" onSubmit={save}>
-        <h3 className="panel-title">Chỉnh sửa hợp đồng</h3>
-        {!editable && <p className="muted">Chỉ sửa được hợp đồng đang hiệu lực; hợp đồng quá hạn xử lý theo luồng quá hạn.</p>}
-        <div className="form-grid">
-          <label className="field"><span>Ngày kết thúc</span>
-            <input id="admin-end-date" type="date" value={endDate} min={minEnd} disabled={!editable} onChange={(e) => setEndDate(e.target.value)} required />
-          </label>
-          <div className="field"><span>Không sửa trực tiếp</span><p className="muted">Ngày bắt đầu, giá thuê và thanh toán chỉ thay đổi qua gia hạn, hóa đơn.</p></div>
+      {c.termsConditions && (
+        <div className="stack-sm">
+          <h3 className="panel-title">Điều khoản riêng của hợp đồng</h3>
+          <p className="support-desc">{c.termsConditions}</p>
         </div>
-        <label className="field"><span>Điều khoản riêng của hợp đồng</span>
-          <textarea id="admin-terms" rows={4} maxLength={4000} value={terms} disabled={!editable} onChange={(e) => setTerms(e.target.value)} placeholder="Để trống nếu dùng điều khoản chung" />
-        </label>
-        {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
-        {editable && <div className="row"><button className="btn primary sm" disabled={busy || !changed}>{busy ? 'Đang lưu…' : 'Lưu thay đổi'}</button></div>}
-      </form>
+      )}
 
       {(c.status === 'Active' || c.status === 'Overdue') && (
         returning

@@ -4,12 +4,12 @@ import { localToday } from '../validation'
 import { api, billingLink, fmtDate, fmtMoney } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
-import type { OverdueSummary, Renewal, StaffContract } from '../types'
+import type { Invoice, OverdueSummary, Renewal, StaffContract } from '../types'
 import { Select } from '../components/Select'
 
 /** Figma "renewals-overdue": metrics, filters, one table of contracts to renew or collect, collection rule. */
 
-type Kind = 'renewal' | 'ending' | 'overdue' | 'active' | 'ended'
+type Kind = 'renewal' | 'ending' | 'overdue' | 'unpaid' | 'active' | 'ended'
 interface Row {
   contract: StaffContract
   kind: Kind
@@ -17,7 +17,11 @@ interface Row {
   amountDue: number
   renewal?: Renewal
   overdue?: OverdueSummary
+  /** Rent / extra-charge / fine invoices still open on the contract (what the billing page can collect). */
+  bills: Invoice[]
 }
+const BILL_TYPES = ['MONTHLY_RENT', 'EXTRA_CHARGE', 'OVERDUE_FINE']
+const ORDER: Kind[] = ['overdue', 'unpaid', 'renewal', 'ending', 'active', 'ended']
 
 const DAY = 86400000
 const asLocal = (iso: string) => new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T00:00:00` : iso)
@@ -26,6 +30,7 @@ const KIND_LABEL: Record<Kind, { label: string; tone: 'ok' | 'warn' | 'bad' | 'i
   renewal: { label: 'Chờ thu phí gia hạn', tone: 'warn' },
   ending: { label: 'Sắp hết hạn', tone: 'info' },
   overdue: { label: 'Quá hạn · khóa kho', tone: 'bad' },
+  unpaid: { label: 'Nợ hóa đơn · bị chặn ở cổng', tone: 'bad' },
   active: { label: 'Đang thuê', tone: 'ok' },
   ended: { label: 'Đã kết thúc', tone: 'muted' },
 }
@@ -36,6 +41,7 @@ export default function StaffContracts() {
   const [contracts, setContracts] = useState<StaffContract[]>([])
   const [renewals, setRenewals] = useState<Renewal[]>([])
   const [overdue, setOverdue] = useState<OverdueSummary[]>([])
+  const [invoices, setInvoices] = useState<Invoice[]>([])
   const [q, setQ] = useState('')
   const [kind, setKind] = useState<'open' | Kind | 'all'>('all')
   const [within, setWithin] = useState<'all' | '7' | '30'>('all')
@@ -55,6 +61,7 @@ export default function StaffContracts() {
       setContracts(c)
       setRenewals(r)
       setOverdue(o)
+      setInvoices(await api<Invoice[]>(`/api/invoices/facilities/${facilityId}`).catch(() => []))
     } catch (e) {
       setError((e as Error).message)
     }
@@ -65,13 +72,21 @@ export default function StaffContracts() {
     const renewal = renewals.find((r) => r.contractId === c.contractId)
     const od = overdue.find((o) => o.contractId === c.contractId)
     const daysLeft = daysUntil(c.endDate)
+    const today = localToday()
+    const bills = invoices.filter((i) => i.contractId === c.contractId && BILL_TYPES.includes(i.invoiceType)
+      && (i.status === 'Unpaid' || i.status === 'Overdue'))
+    // Past their due date these block the gate (AccessService: "Còn hóa đơn … quá hạn").
+    const lateBills = bills.filter((i) => i.status === 'Overdue' || i.dueDate < today)
     const kind: Kind = c.status === 'Terminated' || c.status === 'Liquidated' ? 'ended'
       : od || c.status === 'Overdue' ? 'overdue'
+      : lateBills.length ? 'unpaid'
       : renewal ? 'renewal'
       : daysLeft <= 7 ? 'ending' : 'active'
-    const amountDue = renewal ? renewal.renewalFee : od ? od.accumulatedLateFee : 0
-    return { contract: c, kind, daysLeft, amountDue, renewal, overdue: od }
-  }), [contracts, renewals, overdue])
+    const billsDue = bills.reduce((n, i) => n + i.totalAmount, 0)
+    // The late fee is not an invoice yet: it is billed (or taken from the deposit) when the unit is returned.
+    const amountDue = (renewal ? renewal.renewalFee : 0) + billsDue + (od ? od.accumulatedLateFee : 0)
+    return { contract: c, kind, daysLeft, amountDue, renewal, overdue: od, bills }
+  }), [contracts, renewals, overdue, invoices])
 
   const shown = rows
     .filter((r) => kind === 'all' ? true : kind === 'open' ? r.kind !== 'active' && r.kind !== 'ended' : r.kind === kind)
@@ -82,7 +97,7 @@ export default function StaffContracts() {
       const c = r.contract
       return [c.contractNumber, c.customerName, c.customerPhone, c.unitCode].some((v) => v.toLowerCase().includes(s))
     })
-    .sort((a, b) => ['overdue', 'renewal', 'ending', 'active', 'ended'].indexOf(a.kind) - ['overdue', 'renewal', 'ending', 'active', 'ended'].indexOf(b.kind) || a.daysLeft - b.daysLeft)
+    .sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind) || a.daysLeft - b.daysLeft)
   const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE))
   const current = Math.min(page, pages)
   const pageRows = shown.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE)
@@ -146,6 +161,7 @@ export default function StaffContracts() {
             <option value="renewal">Chờ thu phí gia hạn</option>
             <option value="ending">Sắp hết hạn</option>
             <option value="overdue">Quá hạn</option>
+            <option value="unpaid">Nợ hóa đơn</option>
             <option value="active">Đang thuê</option>
             <option value="ended">Đã kết thúc</option>
           </Select>
@@ -187,6 +203,8 @@ export default function StaffContracts() {
                       : <span className={r.daysLeft <= 7 ? 'warn-text' : ''}>Còn {r.daysLeft} ngày</span>}</td>
                     <td className="money">{r.amountDue > 0 ? fmtMoney(r.amountDue) : '—'}
                       {r.renewal && <><br /><small className="muted">Gia hạn {r.renewal.extensionMonths} tháng</small></>}
+                      {r.bills.length > 0 && <><br /><small className="muted">{r.bills.length} hóa đơn chưa trả</small></>}
+                      {r.overdue && <><br /><small className="muted">Phí quá hạn {fmtMoney(r.overdue.accumulatedLateFee)} · thu khi trả kho</small></>}
                       {r.overdue && <><br /><small className="muted">Cọc còn {fmtMoney(r.overdue.depositBalance)}</small></>}</td>
                     <td><span className={`badge ${k.tone}`}>{k.label}</span></td>
                     <td className="right">
@@ -211,11 +229,15 @@ export default function StaffContracts() {
                             <Link to={billingLink(c.contractNumber)} className="btn ghost sm" title="Khách chuyển khoản: ghi nhận kèm mã giao dịch">Thu chuyển khoản</Link>
                           </>
                         )}
-                        {r.overdue && <Link to={billingLink(c.contractNumber)} className="btn primary sm"><Icon name="wallet" size={14} /> Thu tiền</Link>}
+                        {/* Only when there is an open invoice to collect: the late fee itself is billed at return. */}
+                        {r.bills.length > 0 && <Link to={billingLink(c.contractNumber)} className="btn primary sm"><Icon name="wallet" size={14} /> Thu tiền</Link>}
                         {/* Opens the return page with this contract already picked, so staff never copy the code across. */}
                         {canReturn && <Link to={`/staff-return?contract=${c.contractId}`} className="btn outline sm"><Icon name="door" size={14} /> Trả kho & hoàn cọc</Link>}
                         {!canReturn && (c.status === 'Active' || c.status === 'Overdue') && (
-                          <Link to={`/staff-return?contract=${c.contractId}`} className="btn ghost sm"><Icon name="door" size={14} /> Trả kho sớm</Link>
+                          <>
+                            {!r.renewal && !r.bills.length && <small className="muted">Chưa cần xử lý</small>}
+                            <Link to={`/staff-return?contract=${c.contractId}`} className="btn ghost sm" title="Khách muốn trả trước hạn">Trả kho sớm</Link>
+                          </>
                         )}
                         {c.status === 'Terminated' && <Link to={`/staff-return?contract=${c.contractId}`} className="btn ghost sm">Hoàn cọc</Link>}
                       </span>

@@ -28,6 +28,8 @@ const statusOfAccount = (s: string) => STATUS[s] ?? { label: s, tone: 'warn' as 
 
 /** Only facility staff and facility managers are assigned to facilities. */
 const FACILITY_ROLES: string[] = [Roles.Staff, Roles.Manager]
+/** Roles an admin can pick: customer, facility staff, administrator. Existing manager/ops accounts keep theirs. */
+const PICKABLE_ROLES: string[] = [Roles.Customer, Roles.Staff, Roles.Admin]
 const isStaffAccount = (u: AdminUser) => u.roleName !== Roles.Customer
 const PAGE_SIZE = 6
 
@@ -109,7 +111,7 @@ export default function AdminUsers() {
           </span>
           <Select value={roleFilter} onChange={(e) => { setRoleFilter(e.target.value); setPage(1) }} aria-label="Vai trò">
             <option value="staff">Vai Trò: Tất Cả Nhân Sự</option>
-            {roles.map((r) => <option key={r.roleId} value={r.roleId}>Vai Trò: {roleLabel(r.roleName)}</option>)}
+            {roles.filter((r) => PICKABLE_ROLES.includes(r.roleName)).map((r) => <option key={r.roleId} value={r.roleId}>Vai Trò: {roleLabel(r.roleName)}</option>)}
             <option value="all">Mọi tài khoản (kể cả khách)</option>
           </Select>
           <Select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }} aria-label="Trạng thái">
@@ -176,7 +178,7 @@ export default function AdminUsers() {
 }
 
 function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleInfo[]; facilities: Facility[]; onCancel: () => void; onDone: (msg: string) => Promise<void> }) {
-  const staffRoles = roles.filter((r) => r.roleName !== Roles.Customer)
+  const staffRoles = roles.filter((r) => r.roleName !== Roles.Customer && PICKABLE_ROLES.includes(r.roleName))
   const form = useValidatedForm(
     { fullName: '', email: '', username: '', password: '', phoneNumber: '', citizenId: '' },
     { fullName: fullNameError, email: emailError, username: usernameError, password: passwordError, phoneNumber: phoneError, citizenId: (v) => citizenIdError(v, true) },
@@ -315,7 +317,7 @@ function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser
         <div className="form-grid">
           <label className="field"><span>Vai trò</span>
             <Select value={roleId} disabled={isMe} onChange={(e) => setRoleId(Number(e.target.value))}>
-              {roles.map((r) => <option key={r.roleId} value={r.roleId}>{roleLabel(r.roleName)}</option>)}
+              {roles.filter((r) => PICKABLE_ROLES.includes(r.roleName) || r.roleId === user.roleId).map((r) => <option key={r.roleId} value={r.roleId}>{roleLabel(r.roleName)}</option>)}
             </Select>
           </label>
           <label className="field"><span>Trạng thái</span>

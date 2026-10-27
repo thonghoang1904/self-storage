@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { checkCitizenId, checkPhone, CITIZEN_ID_FILTER, digitsOnly, PHONE_FILTER } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
-import { api, fmtDate, fmtMoney, fmtTime } from '../api'
+import { api, fmtDate, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { Empty, Icon } from '../components/ui'
 import { ContractUnitArt } from '../components/unitPhoto'
@@ -27,9 +27,9 @@ const VEHICLES = ['Tự mang (xe máy)', 'Ô tô con', 'Xe ba gác', 'Xe tải �
 const DURATIONS = [30, 60, 90, 120, 180]
 const FORBIDDEN = 'Chất cháy nổ, xăng dầu, bình gas; hóa chất, chất độc; thực phẩm tươi sống, đồ dễ hư thối; động vật, cây sống; vũ khí, hàng cấm, hàng không rõ nguồn gốc.'
 
-type Item = { key: number; name: string; category: string; quantity: number; l: string; w: string; h: string; value: string }
+type Item = { key: number; name: string; category: string; quantity: number; l: string; w: string; h: string }
 let nextKey = 1
-const newItem = (): Item => ({ key: nextKey++, name: '', category: CATEGORIES[0], quantity: 1, l: '', w: '', h: '', value: '' })
+const newItem = (): Item => ({ key: nextKey++, name: '', category: CATEGORIES[0], quantity: 1, l: '', w: '', h: '' })
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const isoDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
@@ -150,7 +150,6 @@ export default function MoveInRegistration() {
   const volume = named.reduce((n, i) => n + volumeOf(i), 0)
   const capacity = type ? type.volumeCubicMeters || type.lengthMeters * type.widthMeters * type.heightMeters : 0
   const fill = capacity ? Math.round(volume / capacity * 100) : 0
-  const declaredValue = named.reduce((n, i) => n + num(i.value) * Math.max(1, i.quantity), 0)
   const visitor = who == null ? null : people.find((p) => p.authorizedPersonId === who) ?? null
   const purpose = buildPurpose(items, vehicle, helpers, phone, note)
 
@@ -166,7 +165,7 @@ export default function MoveInRegistration() {
         : badItem ? `Kích thước "${badItem.name.trim()}" không hợp lệ (số cm từ 1 đến 2000)` : undefined,
       entry: !entrySlots.includes(entry) ? 'Giờ đến không còn hợp lệ, vui lòng chọn lại giờ'
         : exitMin <= toMin(entry) ? 'Giờ chuyển đồ vượt quá giờ đóng cửa của kho, vui lòng chọn giờ sớm hơn' : undefined,
-      citizenId: checkCitizenId(citizenId, 'Số CCCD người áp tải') || undefined,
+      citizenId: checkCitizenId(citizenId, 'Số CCCD người vào kho') || undefined,
       phone: checkPhone(phone, 'SĐT liên hệ', true) || undefined,
       agree: agree ? undefined : 'Vui lòng tích xác nhận cam kết về đồ gửi trước khi gửi đăng ký',
     }
@@ -312,7 +311,6 @@ export default function MoveInRegistration() {
                             <input inputMode="decimal" value={it.h} onChange={(e) => setItem(it.key, { h: e.target.value })} placeholder="Cao" aria-label="Cao (cm)" />
                           </div>
                         </div>
-                        <label className="field"><span>Giá trị ước tính (đ)</span><input inputMode="numeric" value={it.value} onChange={(e) => setItem(it.key, { value: e.target.value.replace(/\D/g, '') })} placeholder="Không bắt buộc" /></label>
                       </div>
                     </div>
                   ))}
@@ -349,7 +347,7 @@ export default function MoveInRegistration() {
                       <Select value={helpers} onChange={(e) => setHelpers(Number(e.target.value))}>{[0, 1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n === 0 ? 'Không có' : `${n} người`}</option>)}</Select>
                     </label>
                   </div>
-                  <span className="label">Người áp tải đồ đến kho</span>
+                  <span className="label">Người vào kho</span>
                   <div className="person-picker">
                     <button type="button" className={`person-option ${who == null ? 'active' : ''}`} onClick={() => setWho(null)}>
                       <span className="radio" /><span className="grow"><b>{user?.fullName}</b><small>Chủ hợp đồng</small></span>
@@ -361,7 +359,7 @@ export default function MoveInRegistration() {
                     ))}
                   </div>
                   <div className="form-grid two">
-                    <label className={`field ${fieldErr.citizenId ? 'has-error' : ''}`}><span>Số CCCD người áp tải *</span>
+                    <label className={`field ${fieldErr.citizenId ? 'has-error' : ''}`}><span>Số CCCD người vào kho *</span>
                       <input id="movein-citizenId" value={citizenId} inputMode="numeric" maxLength={12} onChange={(e) => { setCitizenId(cid.keep(e.target.value)); clearErr('citizenId') }} placeholder="12 chữ số trên thẻ CCCD" required aria-invalid={fieldErr.citizenId ? true : undefined} />
                       <FieldNote text={cid.hint ?? fieldErr.citizenId} />
                     </label>
@@ -370,7 +368,7 @@ export default function MoveInRegistration() {
                       <FieldNote text={tel.hint ?? fieldErr.phone} />
                     </label>
                   </div>
-                  <p className="hint"><Icon name="clock" size={15} /> Đến đúng giờ và xuất trình CCCD trùng với người áp tải đã đăng ký; xe tải lớn vui lòng gọi trước cho cơ sở.</p>
+                  <p className="hint"><Icon name="clock" size={15} /> Đến đúng giờ và xuất trình CCCD trùng với người vào kho đã đăng ký; xe tải lớn vui lòng gọi trước cho cơ sở.</p>
                 </section>
 
                 <section className="panel form-section">
@@ -380,10 +378,9 @@ export default function MoveInRegistration() {
                     <dl className="movein-grid">
                       <div><dt>Kho</dt><dd>{c.unitCode} · {c.facilityName}</dd></div>
                       <div><dt>Thời gian</dt><dd>{entry} – {exit}, ngày {dmy(date)}</dd></div>
-                      <div><dt>Người áp tải</dt><dd>{visitor ? visitor.fullName : user?.fullName}</dd></div>
+                      <div><dt>Người vào kho</dt><dd>{visitor ? visitor.fullName : user?.fullName}</dd></div>
                       <div><dt>Phương tiện</dt><dd>{vehicle}{helpers > 0 && ` · ${helpers} người phụ`}</dd></div>
                       <div><dt>Thể tích ước tính</dt><dd>{volume ? `${volume.toFixed(2)} m³` : '—'}{capacity > 0 && volume > 0 && <small className={fill > 100 ? 'danger-text' : 'muted'}> · {fill}% kho ({capacity.toFixed(1)} m³)</small>}</dd></div>
-                      <div><dt>Giá trị khai báo</dt><dd>{declaredValue ? fmtMoney(declaredValue) : '—'}</dd></div>
                     </dl>
                     {fill > 100 && <p className="alert bad"><Icon name="alert" size={15} />Đồ khai báo lớn hơn thể tích kho. Kiểm tra lại kích thước hoặc thuê thêm kho.</p>}
                     <div className="purpose-preview">
@@ -449,7 +446,7 @@ export default function MoveInRegistration() {
               )}
               <div className="notice info-notice">
                 <span className="notice-icon info"><Icon name="idCard" size={15} /></span>
-                <div><b>Tại cổng</b><p>Nhân viên đối chiếu CCCD người áp tải và danh sách đồ đã khai báo trước khi mở kho.</p></div>
+                <div><b>Tại cổng</b><p>Nhân viên đối chiếu CCCD người vào kho và danh sách đồ đã khai báo trước khi mở kho.</p></div>
               </div>
               <Link to={`/my-units/${c.contractId}`} className="btn outline block"><Icon name="clipboard" size={15} /> Xem hợp đồng</Link>
             </section>
@@ -458,7 +455,7 @@ export default function MoveInRegistration() {
               <h3 className="panel-title">Các bước tiếp theo</h3>
               <ol className="next-steps">
                 <li><span>1</span><div><b>Nhân viên duyệt</b><p>Cơ sở xem danh sách đồ và lịch chuyển, duyệt hoặc từ chối kèm ghi chú.</p></div></li>
-                <li><span>2</span><div><b>Chuyển đồ đến kho</b><p>Đến đúng khung giờ; người áp tải xuất trình CCCD tại cổng.</p></div></li>
+                <li><span>2</span><div><b>Chuyển đồ đến kho</b><p>Đến đúng khung giờ; người vào kho xuất trình CCCD tại cổng.</p></div></li>
                 <li><span>3</span><div><b>Đối chiếu & cất đồ</b><p>Nhân viên đối chiếu đồ với khai báo, mở kho để bạn sắp xếp.</p></div></li>
               </ol>
             </section>
