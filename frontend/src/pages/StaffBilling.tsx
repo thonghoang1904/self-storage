@@ -26,7 +26,7 @@ export default function StaffBilling() {
   const [contracts, setContracts] = useState<StaffContract[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [q, setQ] = useState('')
-  const [status, setStatus] = useState<'due' | 'Unpaid' | 'Overdue' | 'Paid' | 'Cancelled' | 'all'>('due')
+  const [status, setStatus] = useState<'due' | 'Unpaid' | 'Overdue' | 'Paid' | 'Cancelled' | 'all'>('all')
   const [type, setType] = useState('all')
   const [page, setPage] = useState(1)
   const [openId, setOpenId] = useState<number | null>(null)
@@ -102,19 +102,19 @@ export default function StaffBilling() {
             <input value={q} onChange={(e) => { setQ(e.target.value); setPage(1) }} placeholder="Tìm số hóa đơn, khách hàng, mã HĐ / đơn…" />
           </span>
           <Select value={status} onChange={(e) => { setStatus(e.target.value as typeof status); setPage(1) }}>
+            <option value="all">Tất cả trạng thái</option>
             <option value="due">Chờ thanh toán</option>
             <option value="Unpaid">Chưa thanh toán</option>
             <option value="Overdue">Quá hạn</option>
             <option value="Paid">Đã thanh toán</option>
             <option value="Cancelled">Đã hủy</option>
-            <option value="all">Tất cả trạng thái</option>
           </Select>
           <Select value={type} onChange={(e) => { setType(e.target.value); setPage(1) }}>
             <option value="all">Mọi loại hóa đơn</option>
             {Object.entries(TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </Select>
         </div>
-        <button className="btn ghost" onClick={() => { setQ(''); setStatus('due'); setType('all'); setPage(1) }}><Icon name="x" size={15} /> Xóa bộ lọc</button>
+        <button className="btn ghost" onClick={() => { setQ(''); setStatus('all'); setType('all'); setPage(1) }}><Icon name="x" size={15} /> Xóa bộ lọc</button>
       </div>
 
       {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}

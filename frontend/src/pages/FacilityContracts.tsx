@@ -12,19 +12,19 @@ import { Select } from '../components/Select'
  */
 
 const STATUSES = [
+  { value: '', label: 'Tất cả' },
   { value: 'Active', label: 'Đang hiệu lực' },
   { value: 'Overdue', label: 'Quá hạn' },
   { value: 'Renewed', label: 'Đã gia hạn' },
   { value: 'Terminated', label: 'Đã chấm dứt' },
   { value: 'Liquidated', label: 'Đã thanh lý' },
-  { value: '', label: 'Tất cả' },
 ]
 const pad = (n: number) => String(n).padStart(2, '0')
 const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` }
 
 export default function FacilityContracts() {
   const { facilityId } = useStaffFacility()
-  const [status, setStatus] = useState('Active')
+  const [status, setStatus] = useState('')
   const [q, setQ] = useState('')
   const [contracts, setContracts] = useState<Contract[]>([])
   const [chargeFor, setChargeFor] = useState<number | null>(null)

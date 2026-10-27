@@ -37,7 +37,7 @@ export default function StaffContracts() {
   const [renewals, setRenewals] = useState<Renewal[]>([])
   const [overdue, setOverdue] = useState<OverdueSummary[]>([])
   const [q, setQ] = useState('')
-  const [kind, setKind] = useState<'open' | Kind | 'all'>('open')
+  const [kind, setKind] = useState<'open' | Kind | 'all'>('all')
   const [within, setWithin] = useState<'all' | '7' | '30'>('all')
   const [page, setPage] = useState(1)
   const [error, setError] = useState('')
@@ -141,13 +141,13 @@ export default function StaffContracts() {
             <input value={q} onChange={(e) => { setQ(e.target.value); setPage(1) }} placeholder="Tìm mã HĐ, khách hàng, SĐT, kho…" />
           </span>
           <Select value={kind} onChange={(e) => { setKind(e.target.value as typeof kind); setPage(1) }}>
+            <option value="all">Tất cả trạng thái</option>
             <option value="open">Cần xử lý</option>
             <option value="renewal">Chờ thu phí gia hạn</option>
             <option value="ending">Sắp hết hạn</option>
             <option value="overdue">Quá hạn</option>
             <option value="active">Đang thuê</option>
             <option value="ended">Đã kết thúc</option>
-            <option value="all">Tất cả trạng thái</option>
           </Select>
           <Select value={within} onChange={(e) => { setWithin(e.target.value as typeof within); setPage(1) }}>
             <option value="all">Mọi thời hạn</option>
@@ -155,7 +155,7 @@ export default function StaffContracts() {
             <option value="30">Hết hạn ≤ 30 ngày</option>
           </Select>
         </div>
-        <button className="btn ghost" onClick={() => { setQ(''); setKind('open'); setWithin('all'); setPage(1) }}>Xóa bộ lọc</button>
+        <button className="btn ghost" onClick={() => { setQ(''); setKind('all'); setWithin('all'); setPage(1) }}>Xóa bộ lọc</button>
       </div>
 
       {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
