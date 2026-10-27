@@ -1203,3 +1203,12 @@ a.user-chip:hover { background: var(--bg-tint); }
 .request-kind .radio { margin-left: auto; width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--border); flex: none; }
 .request-kind.active .radio { border: 6px solid var(--cyan); }
 .request-kind.active .tile-icon { background: var(--cyan); color: #fff; }
+/* long staff/manager menus scroll inside the sidebar so the account + "Đăng xuất" block stays visible at the bottom */
+.sidebar { overflow: hidden; }
+.sidebar-nav { min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.18) transparent; margin-right: -8px; padding-right: 8px; }
+.sidebar-user { flex: none; }
+.sidebar-user .icon-btn { color: #c5cedb; }
+.sidebar-user .icon-btn:hover { color: #fff; background: rgba(255,255,255,.08); }
+.sidebar-user { flex-wrap: wrap; }
+.sidebar-logout { flex: 1 0 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 12px; border: 1px solid rgba(255,255,255,.14); border-radius: 10px; background: transparent; color: #e2e8f0; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.sidebar-logout:hover { background: rgba(239, 68, 68, .14); border-color: rgba(239, 68, 68, .5); color: #fecaca; }

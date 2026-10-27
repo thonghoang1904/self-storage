@@ -229,7 +229,7 @@ export function StaffLayout() {
                 <small>{roleLabel(user.role)}</small>
               </span>
               </Link>
-              <button className="icon-btn" title="Đăng xuất" onClick={() => { logout(); navigate('/login') }}><Icon name="logout" /></button>
+              <button type="button" className="sidebar-logout" title="Đăng xuất" onClick={() => { logout(); navigate('/login') }}><Icon name="logout" size={16} /> <span>Đăng xuất</span></button>
             </div>
           )}
         </aside>
@@ -289,7 +289,7 @@ function ConsoleLayout({ area, nav, titles }: { area: string; nav: ConsoleNavIte
               <small>{roleLabel(user.role)}</small>
             </span>
             </Link>
-            <button className="icon-btn" title="Đăng xuất" onClick={() => { logout(); navigate('/login') }}><Icon name="logout" /></button>
+            <button type="button" className="sidebar-logout" title="Đăng xuất" onClick={() => { logout(); navigate('/login') }}><Icon name="logout" size={16} /> <span>Đăng xuất</span></button>
           </div>
         )}
       </aside>
