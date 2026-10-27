@@ -6,7 +6,7 @@ import { FormField, useValidatedForm } from '../components/form'
 import { PageHero } from '../components/layout'
 import { Icon } from '../components/ui'
 import { Roles, roleLabel, type AccountProfile as Profile } from '../types'
-import { emailError, fullNameError, NAME_FILTER, normalizePhone, PHONE_FILTER, phoneError, passwordError, textError } from '../validation'
+import { staffCode, emailError, fullNameError, NAME_FILTER, normalizePhone, PHONE_FILTER, phoneError, passwordError, textError } from '../validation'
 import { PasswordInput } from './Login'
 
 /**
@@ -43,6 +43,7 @@ export default function AccountProfile() {
                   <span className="avatar lg">{profile.fullName.trim().split(/\s+/).slice(-2).map((w) => w[0]).join('').toUpperCase()}</span>
                   <div className="grow"><b>{profile.fullName}</b><small className="muted block">{roleLabel(profile.role ?? user.role)}</small></div>
                 </div>
+                {user.role !== Roles.Customer && <div className="info-row"><span className="muted">Mã nhân viên</span><b className="code-chip">{staffCode(profile.userId)}</b></div>}
                 <div className="info-row"><span className="muted">Tên đăng nhập</span><b>{profile.username}</b></div>
                 <div className="info-row"><span className="muted">Số CCCD</span><b>{profile.citizenId ?? '—'}</b></div>
                 <div className="info-row"><span className="muted">Ngày tạo</span><b>{fmtDate(profile.createdAt)}</b></div>

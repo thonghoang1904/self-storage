@@ -226,3 +226,12 @@ export function localToday(offsetDays = 0): string {
   d.setDate(d.getDate() + offsetDays)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+
+/** Staff code shown in the app for an account's User ID: 4 → "NV0004". */
+export const staffCode = (userId: number) => `NV${String(userId).padStart(4, '0')}`
+/** Reads a staff code typed by a manager: "NV0004", "nv-4" or plain "4" → 4; anything else → null. */
+export function parseStaffCode(value: string): number | null {
+  const m = /^\s*(?:nv\s*-?\s*)?0*(\d{1,9})\s*$/i.exec(value)
+  const n = m ? Number(m[1]) : NaN
+  return Number.isInteger(n) && n > 0 ? n : null
+}

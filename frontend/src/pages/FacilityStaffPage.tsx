@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api, fmtDate } from '../api'
+import { parseStaffCode, staffCode } from '../validation'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { FacilityStaff } from '../types'
@@ -48,8 +49,8 @@ export default function FacilityStaffPage() {
 
   const assign = async (e: FormEvent) => {
     e.preventDefault()
-    const id = Number(userId)
-    if (!Number.isInteger(id) || id <= 0) { setError('Vui lòng nhập mã tài khoản (User ID) là số'); return }
+    const id = parseStaffCode(userId)
+    if (!id) { setError('Mã nhân viên không hợp lệ, vd: NV0004'); return }
     if (await run(() => api(`/api/facility-management/facilities/${facilityId}/staff`, { body: { staffUserId: id } }), 'Đã phân công nhân viên vào cơ sở.')) setUserId('')
   }
 
@@ -58,7 +59,7 @@ export default function FacilityStaffPage() {
     `Đã gỡ ${s.fullName} khỏi cơ sở.`).then(() => setConfirmId(null))
 
   const facility = facilities.find((f) => f.facilityId === facilityId)
-  const shown = staff.filter((s) => !q.trim() || `${s.fullName} ${s.username} ${s.email}`.toLowerCase().includes(q.trim().toLowerCase()))
+  const shown = staff.filter((s) => !q.trim() || `${staffCode(s.userId)} ${s.fullName} ${s.username} ${s.email}`.toLowerCase().includes(q.trim().toLowerCase()))
   const active = staff.filter((s) => s.status === 'Active').length
 
   return (
@@ -89,10 +90,10 @@ export default function FacilityStaffPage() {
       <form className="panel assign-form" onSubmit={assign}>
         <div>
           <h2 className="panel-title"><Icon name="plus" size={18} /> Phân công nhân viên</h2>
-          <p className="muted">Nhập mã tài khoản (User ID) của nhân viên vai trò Facility Staff do quản trị hệ thống cấp.</p>
+          <p className="muted">Nhập mã nhân viên (vd: NV0004) do quản trị hệ thống cấp khi tạo tài khoản Nhân viên cơ sở.</p>
         </div>
         <div className="row wrap">
-          <input className="grow" inputMode="numeric" value={userId} onChange={(e) => setUserId(e.target.value.replace(/\D/g, ''))} placeholder="Mã tài khoản, vd: 9" aria-label="Mã tài khoản nhân viên" />
+          <input className="grow" value={userId} maxLength={12} onChange={(e) => setUserId(e.target.value.replace(/[^A-Za-z0-9-]/g, '').toUpperCase())} placeholder="Mã nhân viên, vd: NV0004" aria-label="Mã nhân viên" />
           <button className="btn primary" disabled={busy || !userId}>{busy ? 'Đang phân công…' : 'Phân công'}</button>
         </div>
       </form>
@@ -115,7 +116,7 @@ export default function FacilityStaffPage() {
               {shown.map((s) => (
                 <tr key={s.userId}>
                   <td><span className="row"><span className="avatar sm">{s.fullName.split(' ').slice(-1)[0][0]}</span><b>{s.fullName}</b></span></td>
-                  <td className="code">{s.username}<br /><small className="muted">ID {s.userId}</small></td>
+                  <td className="code">{s.username}<br /><small className="muted">{staffCode(s.userId)}</small></td>
                   <td>{s.email}</td>
                   <td>{fmtDate(s.assignedDate)}</td>
                   <td>{s.status === 'Active' ? <span className="badge ok">Đang hoạt động</span> : <StatusBadge status={s.status} />}</td>

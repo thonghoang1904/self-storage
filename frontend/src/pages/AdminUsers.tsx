@@ -4,6 +4,7 @@ import { api, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { Badge, Empty, Icon } from '../components/ui'
 import { roleLabel, Roles, type ActivityLog, type AdminUser, type Facility, type RoleInfo } from '../types'
+import { staffCode } from '../validation'
 import { FormField, PasswordChecklist, useValidatedForm } from '../components/form'
 
 /**
@@ -68,7 +69,7 @@ export default function AdminUsers() {
     .filter((u) => {
       const s = q.trim().toLowerCase()
       if (!s) return true
-      return [u.username, u.fullName, u.email, u.phoneNumber, u.citizenId ?? ''].some((v) => v.toLowerCase().includes(s))
+      return [staffCode(u.userId), String(u.userId), u.username, u.fullName, u.email, u.phoneNumber, u.citizenId ?? ''].some((v) => v.toLowerCase().includes(s))
     }), [users, roleFilter, status, q])
   const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE))
   const current = Math.min(page, pages)
@@ -126,7 +127,7 @@ export default function AdminUsers() {
       <section className="panel">
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Avatar</th><th>Họ Tên</th><th>Email</th><th>Vai Trò</th><th>Số Điện Thoại</th><th>Trạng Thái</th><th className="right">Hành Động</th></tr></thead>
+            <thead><tr><th>Avatar</th><th>Mã NV</th><th>Họ Tên</th><th>Email</th><th>Vai Trò</th><th>Số Điện Thoại</th><th>Trạng Thái</th><th className="right">Hành Động</th></tr></thead>
             <tbody>
               {pageRows.map((u) => {
                 const st = statusOfAccount(u.status)
@@ -134,6 +135,7 @@ export default function AdminUsers() {
                 return (
                   <tr key={u.userId}>
                     <td><span className="avatar sm">{initials(u.fullName)}</span></td>
+                    <td><span className="code-chip" title={`User ID ${u.userId}`}>{staffCode(u.userId)}</span></td>
                     <td><b>{u.fullName}</b>{isMe && <small className="muted"> (bạn)</small>}<br /><small className="muted">{u.username}</small></td>
                     <td className="muted">{u.email}</td>
                     <td><b>{roleLabel(u.roleName)}</b></td>
@@ -209,7 +211,7 @@ function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleIn
           facilityIds: needsFacility ? facilityIds : undefined,
         },
       })
-      await onDone(`Đã thêm nhân viên ${created.fullName} (${roleLabel(created.roleName)}).`)
+      await onDone(`Đã thêm nhân viên ${created.fullName} (${roleLabel(created.roleName)}), mã nhân viên ${staffCode(created.userId)}. Gửi mã này cho quản lý cơ sở để phân công.`)
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -298,7 +300,7 @@ function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser
   return (
     <div className="add-person">
       <div className="row between">
-        <h3 className="panel-title"><Icon name="edit" size={18} className="cyan" /> {user.fullName}</h3>
+        <h3 className="panel-title"><Icon name="edit" size={18} className="cyan" /> {user.fullName} <span className="code-chip">{staffCode(user.userId)}</span></h3>
         <button className="icon-btn" aria-label="Đóng" onClick={onCancel}><Icon name="x" /></button>
       </div>
       <form className="stack" onSubmit={submit} noValidate>
