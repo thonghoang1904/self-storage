@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { localToday } from '../validation'
-import { api, fmtDate, fmtMoney } from '../api'
+import { api, billingLink, fmtDate, fmtMoney } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { OverdueSummary, Renewal, StaffContract } from '../types'
@@ -208,11 +208,16 @@ export default function StaffContracts() {
                               }}>
                               Từ chối
                             </button>
+                            <Link to={billingLink(c.contractNumber)} className="btn ghost sm" title="Khách chuyển khoản: ghi nhận kèm mã giao dịch">Thu chuyển khoản</Link>
                           </>
                         )}
-                        {canReturn && <Link to={`/staff-return?contract=${c.contractId}`} className="btn outline sm"><Icon name="door" size={14} /> Trả kho</Link>}
+                        {r.overdue && <Link to={billingLink(c.contractNumber)} className="btn primary sm"><Icon name="wallet" size={14} /> Thu tiền</Link>}
+                        {/* Opens the return page with this contract already picked, so staff never copy the code across. */}
+                        {canReturn && <Link to={`/staff-return?contract=${c.contractId}`} className="btn outline sm"><Icon name="door" size={14} /> Trả kho & hoàn cọc</Link>}
+                        {!canReturn && (c.status === 'Active' || c.status === 'Overdue') && (
+                          <Link to={`/staff-return?contract=${c.contractId}`} className="btn ghost sm"><Icon name="door" size={14} /> Trả kho sớm</Link>
+                        )}
                         {c.status === 'Terminated' && <Link to={`/staff-return?contract=${c.contractId}`} className="btn ghost sm">Hoàn cọc</Link>}
-                        {!r.renewal && !canReturn && c.status !== 'Terminated' && <small className="muted">Chưa cần xử lý</small>}
                       </span>
                     </td>
                   </tr>

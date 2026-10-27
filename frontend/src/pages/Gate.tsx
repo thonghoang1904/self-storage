@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { api, fmtDate, fmtTime, IS_DEMO } from '../api'
+import { Link } from 'react-router-dom'
+import { api, billingLink, fmtDate, fmtTime, IS_DEMO } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import { DenyReasons, type AccessRecord, type Person, type VisitCandidate, type VisitRegistration } from '../types'
@@ -465,6 +466,10 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
           <StatusBadge status={v.unitStatus} />
         </div>
         {v.issues.map((i) => <p key={i.code} className="alert bad"><Icon name="alert" size={16} />{i.message}</p>)}
+        {/* Unpaid bills block entry: collect them first, then search again at the gate. */}
+        {v.issues.some((i) => i.code === 'OverdueLocked') && (
+          <Link to={billingLink(v.contractNumber)} className="btn outline sm self-start"><Icon name="wallet" size={14} /> Thu tiền cho hợp đồng này</Link>
+        )}
       </section>
 
       <section className="panel stack">

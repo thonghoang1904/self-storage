@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { amountError, checkMoney, checkText, firstError, textError, transactionCodeError } from '../validation'
-import { api, fmtDate, fmtMoney, fmtTime } from '../api'
+import { api, billingLink, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { FormField } from '../components/form'
 import { Empty, Icon, StatusBadge } from '../components/ui'
@@ -221,6 +221,7 @@ function Inspection({ contract: c, overdue, request, onChanged }: {
         <section className="panel">
           <h3 className="panel-title">Hợp đồng</h3>
           <div className="row between"><b className="contract-no sm">{c.contractNumber}</b><StatusBadge status={result ? result.status : c.status} /></div>
+          <Link to={billingLink(c.contractNumber)} className="link with-icon"><Icon name="wallet" size={14} /> Xem hóa đơn của hợp đồng</Link>
           <Info label="Khách hàng">{c.customerName}</Info>
           <Info label="Số điện thoại">{c.customerPhone}</Info>
           <Info label="Kho">{c.unitCode} · <StatusBadge status={result ? result.unitStatus : c.unitStatus} /></Info>
@@ -310,6 +311,7 @@ function Inspection({ contract: c, overdue, request, onChanged }: {
             {result && (
               <p className="alert ok"><Icon name="check" size={16} />
                 Đã trả kho{result.earlyReturnFee ? ` sớm (phí ${fmtMoney(result.earlyReturnFee)})` : ''}. Cấn trừ {fmtMoney(result.lateFeesDeducted)}, cần hoàn {fmtMoney(result.depositRefundDue)}{result.lateFeesStillOwed > 0 ? `, đã lập hóa đơn phí còn nợ ${fmtMoney(result.lateFeesStillOwed)}` : ''}.
+                {result.lateFeesStillOwed > 0 && <> <Link to={billingLink(c.contractNumber)} className="link">Thu tiền còn nợ</Link></>}
               </p>
             )}
             {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}

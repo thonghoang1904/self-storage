@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { checkText, firstError, localToday, transactionCodeError } from '../validation'
+import { useLocation } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { depositDueAt, depositMissed } from '../components/appointment'
 import { useStaffFacility } from '../components/layout'
@@ -25,7 +26,9 @@ export default function StaffBilling() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [contracts, setContracts] = useState<StaffContract[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
-  const [q, setQ] = useState('')
+  // Opened from another staff page with ?q=<contract / reservation code>: start already filtered.
+  const location = useLocation()
+  const [q, setQ] = useState(() => new URLSearchParams(location.search).get('q') ?? '')
   const [status, setStatus] = useState<'due' | 'Unpaid' | 'Overdue' | 'Paid' | 'Cancelled' | 'all'>('all')
   const [type, setType] = useState('all')
   const [page, setPage] = useState(1)

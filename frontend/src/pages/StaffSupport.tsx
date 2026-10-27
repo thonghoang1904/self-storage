@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { useStaffFacility } from '../components/layout'
@@ -242,7 +243,8 @@ function TicketDetail({ ticket: t, onChanged, base, admin }: { ticket: SupportRe
         <div className="info-row"><span className="muted">Mã ticket</span><b>{t.requestCode}</b></div>
         {admin && t.facilityName && <div className="info-row"><span className="muted">Cơ sở</span><b>{t.facilityName}</b></div>}
         {admin && t.customerName && <div className="info-row"><span className="muted">Khách hàng</span><b>{t.customerName}</b></div>}
-        <div className="info-row"><span className="muted">Kho</span><b>{t.unitCode}</b></div>
+        <div className="info-row"><span className="muted">Kho</span>
+          {admin ? <b>{t.unitCode}</b> : <Link to={`/facility-contracts?q=${encodeURIComponent(t.unitCode)}`} className="link"><b>{t.unitCode}</b> · xem hợp đồng</Link>}</div>
         <div className="info-row"><span className="muted">Loại sự cố</span><b>{SupportCategories[t.category] ?? t.category}</b></div>
         <div className="info-row"><span className="muted">Gửi lúc</span><b>{fmtTime(t.createdAt)}</b></div>
         <div className="info-row"><span className="muted">Nhân viên phụ trách</span><b>{t.assignedStaffName ?? 'Chưa có'}</b></div>

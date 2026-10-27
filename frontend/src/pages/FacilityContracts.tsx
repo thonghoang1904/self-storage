@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
-import { api, fmtDate, fmtMoney } from '../api'
+import { Link, useLocation } from 'react-router-dom'
+import { api, billingLink, fmtDate, fmtMoney } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import { ExtraChargeFees, type Contract, type ExtraChargeInvoice } from '../types'
@@ -25,7 +26,8 @@ const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${pad(
 export default function FacilityContracts() {
   const { facilityId } = useStaffFacility()
   const [status, setStatus] = useState('')
-  const [q, setQ] = useState('')
+  const location = useLocation()
+  const [q, setQ] = useState(() => new URLSearchParams(location.search).get('q') ?? '')
   const [contracts, setContracts] = useState<Contract[]>([])
   const [chargeFor, setChargeFor] = useState<number | null>(null)
   const [created, setCreated] = useState<ExtraChargeInvoice[]>([])
@@ -67,7 +69,8 @@ export default function FacilityContracts() {
 
       {created.length > 0 && (
         <p className="alert ok"><Icon name="check" size={16} />
-          Đã lập {created.length} hóa đơn phụ thu ({created.map((x) => x.invoiceNumber).join(', ')}), tổng {fmtMoney(total)}. Khách thấy ở mục Thanh Toán; nhân viên thu tại Hóa Đơn & Thu Tiền.
+          Đã lập {created.length} hóa đơn phụ thu ({created.map((x) => x.invoiceNumber).join(', ')}), tổng {fmtMoney(total)}. Khách thấy ở mục Thanh Toán.
+          {created.length === 1 && <> <Link to={billingLink(created[0].invoiceNumber)} className="link">Thu tiền ngay</Link></>}
         </p>
       )}
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
@@ -88,9 +91,10 @@ export default function FacilityContracts() {
                       <td className="money">{fmtMoney(c.monthlyRentFee)}<small className="muted">/tháng</small></td>
                       <td><StatusBadge status={c.status} /></td>
                       <td className="right">
-                        {billable
-                          ? <button className="btn outline sm" onClick={() => setChargeFor(chargeFor === c.contractId ? null : c.contractId)}><Icon name="plus" size={14} /> Lập phụ thu</button>
-                          : <small className="muted">—</small>}
+                        <span className="row end">
+                          {billable && <button className="btn outline sm" onClick={() => setChargeFor(chargeFor === c.contractId ? null : c.contractId)}><Icon name="plus" size={14} /> Lập phụ thu</button>}
+                          <Link to={billingLink(c.contractNumber)} className="btn ghost sm"><Icon name="wallet" size={14} /> Hóa đơn</Link>
+                        </span>
                       </td>
                     </tr>
                     {chargeFor === c.contractId && (
