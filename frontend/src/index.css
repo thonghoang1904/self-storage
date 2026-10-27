@@ -1247,3 +1247,14 @@ a.user-chip:hover { background: var(--bg-tint); }
 .donut-legend li { display: flex; align-items: center; gap: 10px; font-size: 14px; }
 .cyan { color: var(--cyan-600); }
 @media print { .sidebar, .console-top, .topbar, .page-title-row button { display: none !important; } }
+
+/* "Việc cần làm" bar under the customer header: a blocking next step, not a passive notification. */
+.action-banner { background: linear-gradient(90deg, #fff4dc, #fff9ec); border-bottom: 1px solid #f3dca6; }
+.action-banner.deposit { background: linear-gradient(90deg, var(--cyan-50), var(--cyan-25)); border-bottom-color: #bfe8f1; }
+.action-banner-inner { display: flex; align-items: center; gap: 16px; padding: 14px 0; }
+.action-banner-icon { flex: none; display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: #fff; color: var(--warn); box-shadow: var(--shadow); }
+.action-banner.deposit .action-banner-icon { color: var(--cyan-600); }
+.action-banner b { color: var(--text-strong); font-size: 15px; }
+.action-banner p { margin: 2px 0 0; font-size: 14px; color: var(--text); }
+.action-banner .btn { flex: none; }
+@media (max-width: 720px) { .action-banner-inner { flex-wrap: wrap; } .action-banner .btn { width: 100%; justify-content: center; } }

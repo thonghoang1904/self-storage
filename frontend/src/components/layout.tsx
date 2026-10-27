@@ -5,6 +5,7 @@ import { useAuth } from '../auth'
 import { GATE_ROLES, roleLabel, Roles, type Facility } from '../types'
 import { Icon, Logo } from './ui'
 import { Select } from './Select'
+import { ActionBanner } from './ActionBanner'
 
 // ------------------------------------------------------------------ demo bar
 
@@ -129,6 +130,7 @@ export function PortalLayout() {
     <div className="portal">
       <DemoBar />
       <PortalHeader />
+      <ActionBanner />
       <main className="portal-main"><Outlet /></main>
       <Footer />
     </div>

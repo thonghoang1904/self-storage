@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
-import { AppointmentPicker } from '../components/appointment'
+import { AppointmentPicker, pickupMissed } from '../components/appointment'
 import { PayButtons, TYPE_ICON, useCheckout } from '../components/checkout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { Facility, Invoice, Reservation } from '../types'
@@ -62,6 +62,26 @@ export default function Invoices() {
   const hoursOf = (r: Reservation) => facilities.find((f) => f.facilityName === r.facilityName)?.operatingHours
   const updateReservation = (u: Reservation) => setReservations((rs) => rs.map((x) => (x.reservationId === u.reservationId ? u : x)))
   const newDepositPaid = !!newReservationId && reservations.some((r) => r.reservationId === newReservationId && r.status === 'Confirmed')
+
+  // Deposit just paid (back from VNPay, or confirmed while this page waited): go straight to booking the pickup
+  // time instead of leaving it in a notification. Reservations already confirmed before arriving are left alone.
+  const navigate = useNavigate()
+  const confirmedAtStart = useRef<Set<number> | null>(null)
+  useEffect(() => {
+    if (loading) return
+    const waiting = reservations.filter((r) => r.status === 'Confirmed' && !r.checkInAppointmentAt && !pickupMissed(r))
+    if (confirmedAtStart.current === null) {
+      confirmedAtStart.current = new Set(reservations.filter((r) => r.status === 'Confirmed').map((r) => r.reservationId))
+      // Coming back from the gateway: the payment was applied before this page loaded.
+      if (returnedFromGateway && gatewayResult !== 'failed' && waiting.length) {
+        const r = waiting.reduce((a, b) => (b.reservationId > a.reservationId ? b : a))
+        navigate(`/reservations/${r.reservationId}/pickup?paid=1`, { replace: true })
+      }
+      return
+    }
+    const fresh = waiting.find((r) => !confirmedAtStart.current!.has(r.reservationId))
+    if (fresh) navigate(`/reservations/${fresh.reservationId}/pickup?paid=1`)
+  }, [loading, reservations, returnedFromGateway, gatewayResult, navigate])
 
   const isNew = (i: Invoice) => !!newReservationId && i.reservationId === newReservationId && i.invoiceType === 'DEPOSIT'
   const isPayable = (i: Invoice) => i.status === 'Unpaid' || i.status === 'Overdue'

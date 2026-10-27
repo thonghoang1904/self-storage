@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { AppointmentPicker, pickupMissed } from '../components/appointment'
 import { PageHero } from '../components/layout'
@@ -16,6 +16,7 @@ export default function PickupAppointment() {
   const [facility, setFacility] = useState<Facility | null>(null)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
+  const justPaid = new URLSearchParams(useLocation().search).get('paid') === '1'
 
   useEffect(() => {
     api<Reservation[]>('/api/reservations/my')
@@ -35,7 +36,10 @@ export default function PickupAppointment() {
         Chọn giờ bạn đến cơ sở nhận kho. Nhân viên chỉ bàn giao kho từ giờ hẹn, trong ngày bắt đầu thuê.
       </PageHero>
       <div className="container page-body">
-        <Link to="/my-units" className="link with-icon"><Icon name="arrowLeft" size={15} /> Quay lại kho của tôi</Link>
+        <Link to="/my-units" className="link with-icon"><Icon name="arrowRight" size={15} className="flip" /> Quay lại kho của tôi</Link>
+        {justPaid && r?.status === 'Confirmed' && !saved && (
+          <p className="alert ok"><Icon name="check" size={16} />Đã thanh toán cọc thành công. Bước cuối: chọn giờ bạn đến nhận kho.</p>
+        )}
         {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
         {!r ? (!error && <p className="muted">Đang tải…</p>) : (
           <div className="policy-layout">
