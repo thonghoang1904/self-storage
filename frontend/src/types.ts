@@ -577,7 +577,10 @@ export interface VisitRegistration {
   reviewNotes: string | null
 }
 
-export const VisitPurposes = ['Gửi đồ vào kho', 'Lấy đồ ra', 'Sắp xếp lại đồ', 'Tham quan và kiểm tra kho', 'Khác']
+/** Purposes for "Đăng ký vào kho". Bringing items in is not one of them: it has its own flow ("Đăng ký đưa đồ vào kho"). */
+export const VisitPurposes = ['Lấy đồ ra', 'Kiểm tra đồ trong kho', 'Sắp xếp lại đồ', 'Tham quan kho', 'Khác']
+/** Purpose text of registrations made with "Đăng ký đưa đồ vào kho" starts with this. */
+export const MOVE_IN_PREFIX = 'Gửi đồ vào kho'
 
 // ---- operations manager: rental policies, fee table, promotions (OperationsManagementController)
 

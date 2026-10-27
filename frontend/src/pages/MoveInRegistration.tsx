@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { CITIZEN_ID_FILTER, PHONE_FILTER, checkCitizenId, checkPhone, digitsOnly, firstError } from '../validation'
+import { checkCitizenId, checkPhone, CITIZEN_ID_FILTER, digitsOnly, PHONE_FILTER } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
@@ -17,7 +17,8 @@ import { termsHref } from './Terms'
  * approving and at the gate. A dedicated item table would need a new backend endpoint.
  */
 
-export const MOVE_IN_PREFIX = 'Gửi đồ vào kho'
+export { MOVE_IN_PREFIX } from '../types'
+import { MOVE_IN_PREFIX } from '../types'
 const PURPOSE_MAX = 255
 
 const CATEGORIES = ['Đồ nội thất', 'Điện tử - điện máy', 'Thùng hàng / carton', 'Quần áo - chăn màn', 'Sách - hồ sơ giấy tờ', 'Dụng cụ - thể thao', 'Khác']
@@ -96,6 +97,9 @@ export default function MoveInRegistration() {
   const [who, setWho] = useState<number | null>(null)
   const [citizenId, setCitizenId] = useState('')
   const [phone, setPhone] = useState('')
+  /** Errors shown under the field they belong to. */
+  const [fieldErr, setFieldErr] = useState<{ items?: string; entry?: string; citizenId?: string; phone?: string; agree?: string; submit?: string }>({})
+  const clearErr = (k: keyof typeof fieldErr) => setFieldErr((f) => (f[k] || f.submit ? { ...f, [k]: undefined, submit: undefined } : f))
   const cid = useInputFilter(CITIZEN_ID_FILTER)
   const tel = useInputFilter(PHONE_FILTER)
   const [agree, setAgree] = useState(false)
@@ -149,20 +153,30 @@ export default function MoveInRegistration() {
   const visitor = who == null ? null : people.find((p) => p.authorizedPersonId === who) ?? null
   const purpose = buildPurpose(items, vehicle, helpers, phone, note)
 
-  const setItem = (key: number, patch: Partial<Item>) => setItems((is) => is.map((i) => (i.key === key ? { ...i, ...patch } : i)))
+  const setItem = (key: number, patch: Partial<Item>) => { setItems((is) => is.map((i) => (i.key === key ? { ...i, ...patch } : i))); clearErr('items') }
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
     setNotice('')
-    if (named.length === 0) return setError('Vui lòng khai báo ít nhất một món đồ')
     const badItem = items.find((i) => i.name.trim() && [i.l, i.w, i.h].some((d) => d.trim() && (!num(d) || num(d) > 2000)))
-    if (badItem) return setError(`Kích thước "${badItem.name.trim()}" không hợp lệ (số cm từ 1 đến 2000)`)
-    const problem = firstError(checkCitizenId(citizenId, 'Số CCCD người áp tải'), checkPhone(phone, 'SĐT liên hệ', true))
-    if (problem) return setError(problem)
-    if (!entrySlots.includes(entry)) return setError('Giờ đến không còn hợp lệ, vui lòng chọn lại giờ')
-    if (exitMin <= toMin(entry)) return setError('Giờ chuyển đồ vượt quá giờ đóng cửa của kho, vui lòng chọn giờ sớm hơn')
-    if (!agree) return setError('Vui lòng xác nhận cam kết về đồ gửi trước khi gửi đăng ký')
+    const errs: typeof fieldErr = {
+      items: named.length === 0 ? 'Vui lòng khai báo ít nhất một món đồ'
+        : badItem ? `Kích thước "${badItem.name.trim()}" không hợp lệ (số cm từ 1 đến 2000)` : undefined,
+      entry: !entrySlots.includes(entry) ? 'Giờ đến không còn hợp lệ, vui lòng chọn lại giờ'
+        : exitMin <= toMin(entry) ? 'Giờ chuyển đồ vượt quá giờ đóng cửa của kho, vui lòng chọn giờ sớm hơn' : undefined,
+      citizenId: checkCitizenId(citizenId, 'Số CCCD người áp tải') || undefined,
+      phone: checkPhone(phone, 'SĐT liên hệ', true) || undefined,
+      agree: agree ? undefined : 'Vui lòng tích xác nhận cam kết về đồ gửi trước khi gửi đăng ký',
+    }
+    setFieldErr(errs)
+    const first = (['items', 'entry', 'citizenId', 'phone', 'agree'] as const).find((k) => errs[k])
+    if (first) {
+      const el = document.getElementById(`movein-${first}`)
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement) el.focus({ preventScroll: true })
+      return
+    }
     setBusy(true)
     try {
       const r = await api<VisitRegistration>(`/api/contracts/${id}/visit-registrations`, {
@@ -182,7 +196,7 @@ export default function MoveInRegistration() {
       await loadRows()
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (err) {
-      setError((err as Error).message)
+      setFieldErr({ submit: (err as Error).message })
     } finally {
       setBusy(false)
     }
@@ -269,7 +283,7 @@ export default function MoveInRegistration() {
                     <span className="notice-icon warn"><Icon name="alert" size={16} /></span>
                     <div><b>Đồ không được gửi</b><p>{FORBIDDEN}</p></div>
                   </div>
-                  <Link to={`/my-units/${c.contractId}/visit`} className="link with-icon">Chỉ vào kho, không mang đồ? Đăng ký vào kho <Icon name="arrowRight" size={14} /></Link>
+                  <Link to={`/my-units/${c.contractId}/visit`} className="link with-icon">Chỉ vào lấy đồ, kiểm tra hay sắp xếp đồ? Đăng ký vào kho <Icon name="arrowRight" size={14} /></Link>
                 </section>
 
                 <section className="panel form-section">
@@ -301,7 +315,8 @@ export default function MoveInRegistration() {
                       </div>
                     </div>
                   ))}
-                  <button type="button" className="btn dashed block" onClick={() => setItems((is) => [...is, newItem()])}><Icon name="plus" size={16} /> Thêm món đồ</button>
+                  <button id="movein-items" type="button" className="btn dashed block" onClick={() => { setItems((is) => [...is, newItem()]); clearErr('items') }}><Icon name="plus" size={16} /> Thêm món đồ</button>
+                  <FieldNote text={fieldErr.items} />
                   <label className="field"><span>Ghi chú cho nhân viên</span>
                     <textarea rows={3} maxLength={120} value={note} onChange={(e) => setNote(e.target.value)} placeholder="vd: Có đồ dễ vỡ, cần xe đẩy hàng" />
                   </label>
@@ -318,8 +333,9 @@ export default function MoveInRegistration() {
                     <label className="field"><span>Ngày chuyển đồ *</span>
                       <input type="date" value={date} min={c.startDate > today ? c.startDate : today} max={c.endDate} onChange={(e) => setDate(e.target.value)} required />
                     </label>
-                    <label className="field"><span>Giờ đến *</span>
-                      <select value={entry} onChange={(e) => setEntry(e.target.value)}>{entrySlots.map((s) => <option key={s}>{s}</option>)}</select>
+                    <label className={`field ${fieldErr.entry ? 'has-error' : ''}`}><span>Giờ đến *</span>
+                      <select id="movein-entry" value={entry} onChange={(e) => { setEntry(e.target.value); clearErr('entry') }} aria-invalid={fieldErr.entry ? true : undefined}>{entrySlots.map((s) => <option key={s}>{s}</option>)}</select>
+                      <FieldNote text={fieldErr.entry} />
                     </label>
                     <label className="field"><span>Thời gian bốc xếp dự kiến</span>
                       <select value={duration} onChange={(e) => setDuration(Number(e.target.value))}>{DURATIONS.map((d) => <option key={d} value={d}>{d < 60 ? `${d} phút` : `${d / 60} giờ`}</option>)}</select>
@@ -344,12 +360,13 @@ export default function MoveInRegistration() {
                     ))}
                   </div>
                   <div className="form-grid two">
-                    <label className="field"><span>Số CCCD người áp tải *</span>
-                      <input value={citizenId} inputMode="numeric" maxLength={12} onChange={(e) => setCitizenId(cid.keep(e.target.value))} placeholder="12 chữ số trên thẻ CCCD" required />
-                      <FieldNote text={cid.hint} />
+                    <label className={`field ${fieldErr.citizenId ? 'has-error' : ''}`}><span>Số CCCD người áp tải *</span>
+                      <input id="movein-citizenId" value={citizenId} inputMode="numeric" maxLength={12} onChange={(e) => { setCitizenId(cid.keep(e.target.value)); clearErr('citizenId') }} placeholder="12 chữ số trên thẻ CCCD" required aria-invalid={fieldErr.citizenId ? true : undefined} />
+                      <FieldNote text={cid.hint ?? fieldErr.citizenId} />
                     </label>
-                    <label className="field"><span>SĐT liên hệ khi đến</span>
-                      <input value={phone} inputMode="tel" maxLength={15} onChange={(e) => setPhone(tel.keep(e.target.value))} placeholder={visitor?.phoneNumber ?? '09xx xxx xxx'} />
+                    <label className={`field ${fieldErr.phone ? 'has-error' : ''}`}><span>SĐT liên hệ khi đến</span>
+                      <input id="movein-phone" value={phone} inputMode="tel" maxLength={15} onChange={(e) => { setPhone(tel.keep(e.target.value)); clearErr('phone') }} placeholder={visitor?.phoneNumber ?? '09xx xxx xxx'} aria-invalid={fieldErr.phone ? true : undefined} />
+                      <FieldNote text={tel.hint ?? fieldErr.phone} />
                     </label>
                   </div>
                   <p className="hint"><Icon name="clock" size={15} /> Đến đúng giờ và xuất trình CCCD trùng với người áp tải đã đăng ký; xe tải lớn vui lòng gọi trước cho cơ sở.</p>
@@ -374,9 +391,11 @@ export default function MoveInRegistration() {
                     </div>
                   </div>
                   <label className="check-line">
-                    <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
+                    <input id="movein-agree" type="checkbox" checked={agree} onChange={(e) => { setAgree(e.target.checked); clearErr('agree') }} />
                     <span>Tôi cam kết đồ mang vào đúng như khai báo, không thuộc danh mục cấm và tôi chịu trách nhiệm về nguồn gốc đồ gửi.</span>
                   </label>
+                  <FieldNote text={fieldErr.agree} />
+                  {fieldErr.submit && <p className="alert bad"><Icon name="alert" size={16} />{fieldErr.submit}</p>}
                   <p className="muted fine">Sau khi gửi, đăng ký ở trạng thái chờ duyệt. Bạn có thể hủy khi nhân viên chưa duyệt.</p>
                   <div className="row between wrap">
                     <Link to={`/my-units/${c.contractId}`} className="btn outline">Quay lại</Link>

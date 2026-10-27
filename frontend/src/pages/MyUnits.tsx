@@ -113,8 +113,7 @@ export default function MyUnits() {
                     </div>
                     {(c.status === 'Active' || c.status === 'Renewed') && (
                       <div className="row">
-                        <Link to={`/my-units/${c.contractId}/visit`} className="btn ghost sm grow"><Icon name="calendar" size={14} /> Đăng Ký Vào Kho</Link>
-                        <Link to={`/my-units/${c.contractId}/move-in`} className="btn ghost sm grow"><Icon name="package" size={14} /> Đưa Đồ Vào Kho</Link>
+                        <Link to={`/visit?contract=${c.contractId}`} className="btn ghost sm grow"><Icon name="calendar" size={14} /> Đăng Ký Vào Kho</Link>
                       </div>
                     )}
                     {c.status === 'Active' && left > 0 && (

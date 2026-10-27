@@ -139,7 +139,7 @@ function seed(): Db {
 
   const records: Rec[] = [
     { accessRecordId: 1, contractId: 1, facilityId: 1, unitId: unit(1, 'B-01').unitId, authorizedPersonId: null, verifiedByStaffId: 3, result: 'Granted', denyReason: null, purpose: 'Gửi đồ', entryTime: localIso(addDays(atToday(9, 10), -3)), exitTime: localIso(addDays(atToday(9, 45), -3)) },
-    { accessRecordId: 2, contractId: 1, facilityId: 1, unitId: unit(1, 'B-01').unitId, authorizedPersonId: 1, verifiedByStaffId: 3, result: 'Granted', denyReason: null, purpose: 'Lấy đồ', entryTime: localIso(addDays(atToday(17, 20), -1)), exitTime: localIso(addDays(atToday(17, 40), -1)) },
+    { accessRecordId: 2, contractId: 1, facilityId: 1, unitId: unit(1, 'B-01').unitId, authorizedPersonId: 1, verifiedByStaffId: 3, result: 'Granted', denyReason: null, purpose: 'Lấy đồ ra', entryTime: localIso(addDays(atToday(17, 20), -1)), exitTime: localIso(addDays(atToday(17, 40), -1)) },
     { accessRecordId: 3, contractId: 4, facilityId: 1, unitId: unit(1, 'C-02').unitId, authorizedPersonId: null, verifiedByStaffId: 3, result: 'Denied', denyReason: 'OverdueLocked', purpose: null, entryTime: localIso(atToday(7, 5)), exitTime: null },
     { accessRecordId: 4, contractId: 3, facilityId: 1, unitId: unit(1, 'C-01').unitId, authorizedPersonId: null, verifiedByStaffId: 3, result: 'Granted', denyReason: null, purpose: 'Lấy hàng', entryTime: localIso(atToday(6, 40)), exitTime: localIso(atToday(7, 15)) },
     { accessRecordId: 5, contractId: 5, facilityId: 1, unitId: unit(1, 'D-01').unitId, authorizedPersonId: 2, verifiedByStaffId: 3, result: 'Granted', denyReason: null, purpose: 'Nhập hàng', companionCount: 2, entryTime: localIso(atToday(6, 50)), exitTime: null },
@@ -162,8 +162,8 @@ function seed(): Db {
     unitTypes, units, reservations, contracts, persons, records,
     visits: [
       // Người Nhà of B-01 is approved to come in now (gate demo); the owner has one waiting for staff tomorrow.
-      { visitRegistrationId: 1, contractId: 1, customerId: 4, authorizedPersonId: 1, scheduledEntryAt: tz(new Date(now.getTime() - 3600000)), scheduledExitAt: tz(new Date(now.getTime() + 3 * 3600000)), purpose: 'Lấy đồ', status: 'Approved', requestedAt: localIso(addDays(now, -1)), reviewedAt: localIso(addDays(now, -1)), reviewNotes: null },
-      { visitRegistrationId: 2, contractId: 1, customerId: 4, authorizedPersonId: null, scheduledEntryAt: tz(addDays(atToday(9, 0), 1)), scheduledExitAt: tz(addDays(atToday(10, 30), 1)), purpose: 'Gửi thêm đồ', status: 'Pending', requestedAt: localIso(now), reviewedAt: null, reviewNotes: null },
+      { visitRegistrationId: 1, contractId: 1, customerId: 4, authorizedPersonId: 1, scheduledEntryAt: tz(new Date(now.getTime() - 3600000)), scheduledExitAt: tz(new Date(now.getTime() + 3 * 3600000)), purpose: 'Lấy đồ ra', status: 'Approved', requestedAt: localIso(addDays(now, -1)), reviewedAt: localIso(addDays(now, -1)), reviewNotes: null },
+      { visitRegistrationId: 2, contractId: 1, customerId: 4, authorizedPersonId: null, scheduledEntryAt: tz(addDays(atToday(9, 0), 1)), scheduledExitAt: tz(addDays(atToday(10, 30), 1)), purpose: 'Kiểm tra đồ trong kho', status: 'Pending', requestedAt: localIso(now), reviewedAt: null, reviewNotes: null },
       { visitRegistrationId: 3, contractId: 5, customerId: 7, authorizedPersonId: 2, scheduledEntryAt: tz(atToday(6, 30)), scheduledExitAt: tz(atToday(12, 0)), purpose: 'Nhập hàng', status: 'Approved', requestedAt: localIso(addDays(now, -1)), reviewedAt: localIso(addDays(now, -1)), reviewNotes: null },
       { visitRegistrationId: 4, contractId: 3, customerId: 5, authorizedPersonId: null, scheduledEntryAt: tz(addDays(atToday(14, 0), 1)), scheduledExitAt: tz(addDays(atToday(15, 0), 1)), purpose: 'Kiểm tra kho', status: 'Pending', requestedAt: localIso(now), reviewedAt: null, reviewNotes: null },
     ],
