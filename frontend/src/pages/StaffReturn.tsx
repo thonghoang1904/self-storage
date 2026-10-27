@@ -6,6 +6,7 @@ import { useStaffFacility } from '../components/layout'
 import { FormField } from '../components/form'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { EarlyReturnQuote, EarlyReturnRequest, OverdueSummary, ReturnUnitResult, StaffContract } from '../types'
+import { Select } from '../components/Select'
 
 /**
  * Figma "storage-return-inspection": find a contract, check its return schedule and deposit,
@@ -378,10 +379,10 @@ function RefundCard({ contract: c, returned, refundDue }: { contract: StaffContr
         <>
           <div className="form-grid">
             <label className="field"><span>Hình thức hoàn</span>
-              <select value={method} onChange={(e) => setMethod(e.target.value as typeof method)}>
+              <Select value={method} onChange={(e) => setMethod(e.target.value as typeof method)}>
                 <option value="Cash">Tiền mặt</option>
                 <option value="BankTransfer">Chuyển khoản</option>
-              </select>
+              </Select>
             </label>
             <label className="field"><span>Số tiền hoàn (đ)</span>
               <input type="number" min={1} max={left} value={amount} onChange={(e) => setAmount(e.target.value)} required />

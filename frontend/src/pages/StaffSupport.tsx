@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { useStaffFacility } from '../components/layout'
+import type { Facility } from '../types'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import { SupportCategories, SupportPriorities, type SupportChecklistItem, type SupportRequest, type SupportUpdate } from '../types'
+import { Select } from '../components/Select'
 
 /**
  * Figma "support-incident-management": metrics, filters, ticket list on the left and the selected
@@ -15,6 +17,27 @@ const PRIORITY_ORDER = ['Urgent', 'High', 'Medium', 'Low']
 
 export default function StaffSupport() {
   const { facilityId } = useStaffFacility()
+  return <SupportWorkspace facilityId={facilityId} />
+}
+
+/**
+ * Admin "Hỗ trợ khách hàng": every facility's tickets (GET /api/admin/support-requests), with the same status flow
+ * and checklist as staff, plus a reply that does not change the status (POST .../{id}/messages).
+ */
+export function AdminSupport() {
+  const [facilities, setFacilities] = useState<Facility[]>([])
+  const [facilityId, setFacilityId] = useState<number | null>(null)
+  useEffect(() => { api<Facility[]>('/api/operations/facilities').then(setFacilities).catch(() => setFacilities([])) }, [])
+  return <SupportWorkspace admin facilityId={facilityId} facilities={facilities} onFacility={setFacilityId} />
+}
+
+function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacility }: {
+  admin?: boolean
+  facilityId: number | null | undefined
+  facilities?: Facility[]
+  onFacility?: (id: number | null) => void
+}) {
+  const base = admin ? '/api/admin/support-requests' : '/api/support-requests'
   const [rows, setRows] = useState<SupportRequest[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [q, setQ] = useState('')
@@ -24,13 +47,15 @@ export default function StaffSupport() {
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
-    if (!facilityId) return
+    if (!admin && !facilityId) return
     try {
-      setRows(await api<SupportRequest[]>(`/api/support-requests/facilities/${facilityId}`))
+      setRows(await api<SupportRequest[]>(admin
+        ? `/api/admin/support-requests?pageSize=200${facilityId ? `&facilityId=${facilityId}` : ''}`
+        : `/api/support-requests/facilities/${facilityId}`))
     } catch (e) {
       setError((e as Error).message)
     }
-  }, [facilityId])
+  }, [admin, facilityId])
   useEffect(() => { void load() }, [load])
 
   const shown = useMemo(() => rows
@@ -39,7 +64,7 @@ export default function StaffSupport() {
     .filter((r) => category === 'all' || r.category === category)
     .filter((r) => {
       const s = q.trim().toLowerCase()
-      return !s || [r.requestCode, r.title, r.unitCode, r.description].some((v) => v.toLowerCase().includes(s))
+      return !s || [r.requestCode, r.title, r.unitCode, r.description, r.customerName ?? ''].some((v) => v.toLowerCase().includes(s))
     })
     .sort((a, b) => PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority) || a.createdAt.localeCompare(b.createdAt)),
   [rows, status, priority, category, q])
@@ -57,7 +82,9 @@ export default function StaffSupport() {
       <div className="page-title-row row between wrap">
         <div>
           <h1>Hỗ Trợ & Sự Cố</h1>
-          <p className="muted">Tiếp nhận ticket của khách tại cơ sở, làm theo checklist và cập nhật tiến độ cho khách.</p>
+          <p className="muted">{admin
+            ? 'Toàn bộ ticket của khách ở mọi cơ sở: theo dõi, phản hồi khách và xử lý thay khi cần.'
+            : 'Tiếp nhận ticket của khách tại cơ sở, làm theo checklist và cập nhật tiến độ cho khách.'}</p>
         </div>
         <button className="btn outline" onClick={() => void load()}><Icon name="refresh" size={15} /> Làm mới</button>
       </div>
@@ -73,24 +100,30 @@ export default function StaffSupport() {
         <div className="filter-controls">
           <span className="input-wrap grow-2">
             <Icon name="search" size={16} className="input-lead" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm mã ticket, tiêu đề, kho…" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={admin ? 'Tìm mã ticket, tiêu đề, kho, khách…' : 'Tìm mã ticket, tiêu đề, kho…'} />
           </span>
-          <select value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
+          {admin && (
+            <Select value={facilityId ?? ''} onChange={(e) => onFacility?.(e.target.value ? Number(e.target.value) : null)} aria-label="Cơ sở">
+              <option value="">Mọi cơ sở</option>
+              {facilities.map((f) => <option key={f.facilityId} value={f.facilityId}>{f.facilityName}</option>)}
+            </Select>
+          )}
+          <Select value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
             <option value="active">Cần xử lý</option>
             <option value="Open">Mới gửi</option>
             <option value="InProgress">Đang xử lý</option>
             <option value="Resolved">Đã xử lý</option>
             <option value="Closed">Đã đóng</option>
             <option value="all">Tất cả trạng thái</option>
-          </select>
-          <select value={priority} onChange={(e) => setPriority(e.target.value)}>
+          </Select>
+          <Select value={priority} onChange={(e) => setPriority(e.target.value)}>
             <option value="all">Mọi mức độ</option>
             {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{SupportPriorities[p].label}</option>)}
-          </select>
-          <select value={category} onChange={(e) => setCategory(e.target.value)}>
+          </Select>
+          <Select value={category} onChange={(e) => setCategory(e.target.value)}>
             <option value="all">Mọi loại sự cố</option>
             {Object.entries(SupportCategories).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
         </div>
         <button className="btn ghost" onClick={() => { setQ(''); setStatus('active'); setPriority('all'); setCategory('all') }}><Icon name="x" size={15} /> Xóa bộ lọc</button>
       </div>
@@ -111,7 +144,7 @@ export default function StaffSupport() {
                   <span className="row between wrap"><small className="code">{r.requestCode}</small><span className="row"><span className={`badge ${p.tone}`}>{p.label}</span><StatusBadge status={r.status} /></span></span>
                   <b>{r.title}</b>
                   <small className="muted clamp-2">{r.description}</small>
-                  <small className="muted">Kho {r.unitCode} · {SupportCategories[r.category] ?? r.category} · {fmtTime(r.createdAt)}{r.assignedStaffName ? ` · ${r.assignedStaffName}` : ''}</small>
+                  <small className="muted">{admin && r.facilityName ? `${r.facilityName} · ` : ''}Kho {r.unitCode}{admin && r.customerName ? ` · ${r.customerName}` : ''} · {SupportCategories[r.category] ?? r.category} · {fmtTime(r.createdAt)}{r.assignedStaffName ? ` · ${r.assignedStaffName}` : ''}</small>
                 </button>
               )
             })}
@@ -120,7 +153,7 @@ export default function StaffSupport() {
         </section>
 
         {selected
-          ? <TicketDetail key={selected.requestId} ticket={selected} onChanged={load} />
+          ? <TicketDetail key={selected.requestId} ticket={selected} onChanged={load} base={base} admin={admin} />
           : <section className="panel"><Empty icon="clipboard">Chọn một ticket để xem chi tiết.</Empty></section>}
       </div>
     </div>
@@ -137,7 +170,7 @@ function Metric({ icon, tone, label, value, note }: { icon: string; tone: string
   )
 }
 
-function TicketDetail({ ticket: t, onChanged }: { ticket: SupportRequest; onChanged: () => Promise<void> }) {
+function TicketDetail({ ticket: t, onChanged, base, admin }: { ticket: SupportRequest; onChanged: () => Promise<void>; base: string; admin: boolean }) {
   const [items, setItems] = useState<SupportChecklistItem[]>([])
   const [updates, setUpdates] = useState<SupportUpdate[]>([])
   const [note, setNote] = useState('')
@@ -147,12 +180,12 @@ function TicketDetail({ ticket: t, onChanged }: { ticket: SupportRequest; onChan
 
   const loadDetail = useCallback(async () => {
     const [c, u] = await Promise.all([
-      api<SupportChecklistItem[]>(`/api/support-requests/${t.requestId}/checklist`).catch(() => []),
-      api<SupportUpdate[]>(`/api/support-requests/${t.requestId}/updates`).catch(() => []),
+      api<SupportChecklistItem[]>(`${base}/${t.requestId}/checklist`).catch(() => []),
+      api<SupportUpdate[]>(`${base}/${t.requestId}/updates`).catch(() => []),
     ])
     setItems(c)
     setUpdates(u)
-  }, [t.requestId])
+  }, [base, t.requestId])
   useEffect(() => { void loadDetail() }, [loadDetail, t.status])
 
   const run = async (key: string, fn: () => Promise<unknown>, done: string) => {
@@ -173,21 +206,28 @@ function TicketDetail({ ticket: t, onChanged }: { ticket: SupportRequest; onChan
   const setStatus = (status: string, fallback: string, done: string) => {
     const message = note.trim() || fallback
     return run(status, async () => {
-      await api(`/api/support-requests/${t.requestId}`, { method: 'PUT', body: { status, actionMessage: message } })
+      await api(`${base}/${t.requestId}`, { method: 'PUT', body: { status, actionMessage: message } })
       setNote('')
     }, done)
   }
 
   const toggle = (item: SupportChecklistItem) => run(`item-${item.checklistItemId}`,
-    () => api(`/api/support-requests/${t.requestId}/checklist/${item.checklistItemId}`, { method: 'PUT', body: { isCompleted: !item.isCompleted, notes: item.notes } }),
+    () => api(`${base}/${t.requestId}/checklist/${item.checklistItemId}`, { method: 'PUT', body: { isCompleted: !item.isCompleted, notes: item.notes } }),
     item.isCompleted ? 'Đã bỏ đánh dấu mục checklist.' : 'Đã hoàn tất mục checklist.')
 
   const p = SupportPriorities[t.priority] ?? { label: t.priority, tone: 'muted' as const }
   const doneCount = items.filter((i) => i.isCompleted).length
   const allDone = items.length > 0 && doneCount === items.length
-  // The API lets only the staff member who took the ticket update it; the list gives the name, not the id.
+  // The staff API lets only the staff member who took the ticket update it (the list gives the name, not the id);
+  // an admin may act on any ticket.
   const { user } = useAuth()
-  const othersTicket = !!t.assignedStaffName && t.assignedStaffName !== user?.fullName
+  const othersTicket = !admin && !!t.assignedStaffName && t.assignedStaffName !== user?.fullName
+
+  // Admin only: reply to the customer without moving the status (closed tickets take no replies).
+  const reply = () => run('reply', async () => {
+    await api(`${base}/${t.requestId}/messages`, { body: { message: note.trim() } })
+    setNote('')
+  }, 'Đã gửi phản hồi cho khách.')
   const editable = t.status === 'InProgress' && !othersTicket
 
   return (
@@ -200,6 +240,8 @@ function TicketDetail({ ticket: t, onChanged }: { ticket: SupportRequest; onChan
       </div>
       <div className="info-box">
         <div className="info-row"><span className="muted">Mã ticket</span><b>{t.requestCode}</b></div>
+        {admin && t.facilityName && <div className="info-row"><span className="muted">Cơ sở</span><b>{t.facilityName}</b></div>}
+        {admin && t.customerName && <div className="info-row"><span className="muted">Khách hàng</span><b>{t.customerName}</b></div>}
         <div className="info-row"><span className="muted">Kho</span><b>{t.unitCode}</b></div>
         <div className="info-row"><span className="muted">Loại sự cố</span><b>{SupportCategories[t.category] ?? t.category}</b></div>
         <div className="info-row"><span className="muted">Gửi lúc</span><b>{fmtTime(t.createdAt)}</b></div>
@@ -244,6 +286,11 @@ function TicketDetail({ ticket: t, onChanged }: { ticket: SupportRequest; onChan
       {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
 
+      {admin && t.status !== 'Closed' && (
+        <button className="btn outline self-start" disabled={busy !== '' || !note.trim() || note.trim().length > 1000} onClick={() => void reply()}>
+          <Icon name="mail" size={15} /> Gửi phản hồi (giữ trạng thái)
+        </button>
+      )}
       {t.status === 'Open' && (
         <button className="btn primary self-start" disabled={busy !== ''} onClick={() => void setStatus('InProgress', 'Nhân viên đã tiếp nhận yêu cầu và đang xử lý.', `Đã tiếp nhận ${t.requestCode}.`)}>
           <Icon name="user" size={15} /> Tiếp nhận ticket

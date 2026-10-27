@@ -5,6 +5,7 @@ import { api, fmtDate, fmtMoney } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { OverdueSummary, Renewal, StaffContract } from '../types'
+import { Select } from '../components/Select'
 
 /** Figma "renewals-overdue": metrics, filters, one table of contracts to renew or collect, collection rule. */
 
@@ -139,7 +140,7 @@ export default function StaffContracts() {
             <Icon name="search" size={16} className="input-lead" />
             <input value={q} onChange={(e) => { setQ(e.target.value); setPage(1) }} placeholder="Tìm mã HĐ, khách hàng, SĐT, kho…" />
           </span>
-          <select value={kind} onChange={(e) => { setKind(e.target.value as typeof kind); setPage(1) }}>
+          <Select value={kind} onChange={(e) => { setKind(e.target.value as typeof kind); setPage(1) }}>
             <option value="open">Cần xử lý</option>
             <option value="renewal">Chờ thu phí gia hạn</option>
             <option value="ending">Sắp hết hạn</option>
@@ -147,12 +148,12 @@ export default function StaffContracts() {
             <option value="active">Đang thuê</option>
             <option value="ended">Đã kết thúc</option>
             <option value="all">Tất cả trạng thái</option>
-          </select>
-          <select value={within} onChange={(e) => { setWithin(e.target.value as typeof within); setPage(1) }}>
+          </Select>
+          <Select value={within} onChange={(e) => { setWithin(e.target.value as typeof within); setPage(1) }}>
             <option value="all">Mọi thời hạn</option>
             <option value="7">Hết hạn ≤ 7 ngày</option>
             <option value="30">Hết hạn ≤ 30 ngày</option>
-          </select>
+          </Select>
         </div>
         <button className="btn ghost" onClick={() => { setQ(''); setKind('open'); setWithin('all'); setPage(1) }}>Xóa bộ lọc</button>
       </div>

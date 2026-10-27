@@ -5,6 +5,7 @@ import { api, fmtTime } from '../api'
 import { FormField, leavingToSubmit } from '../components/form'
 import { Badge, Empty, Eyebrow, Icon, StatusBadge } from '../components/ui'
 import { SupportCategories, SupportPriorities, type Contract, type SupportChecklistItem, type SupportRequest, type SupportUpdate } from '../types'
+import { Select } from '../components/Select'
 
 const EMPTY_FORM = { contractId: 0, category: 'LockIssue', priority: 'Medium', title: '', description: '' }
 
@@ -101,14 +102,14 @@ export default function Support() {
               ) : (
                 <>
                   <label className="field"><span>Kho cần hỗ trợ</span>
-                    <select value={form.contractId} onChange={(e) => setForm({ ...form, contractId: Number(e.target.value) })}>
+                    <Select value={form.contractId} onChange={(e) => setForm({ ...form, contractId: Number(e.target.value) })}>
                       {contracts.map((c) => <option key={c.contractId} value={c.contractId}>Kho {c.unitCode} · {c.facilityName} ({c.contractNumber})</option>)}
-                    </select>
+                    </Select>
                   </label>
                   <label className="field"><span>Loại sự cố</span>
-                    <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                    <Select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
                       {Object.entries(SupportCategories).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                    </select>
+                    </Select>
                   </label>
                   <div className="field"><span>Mức độ</span>
                     <div className="segmented fill">

@@ -5,6 +5,7 @@ import { Empty, Icon } from '../components/ui'
 import { SuspensionStatuses, type ContractSuspension } from '../types'
 import { localToday } from '../validation'
 import { ContractStrip, Hero, Loading, useContract } from './ContractPolicy'
+import { Select } from '../components/Select'
 
 /**
  * Figma "Tạm ngưng hợp đồng giữa kỳ" (96:10415): the customer asks to pause a contract for a period.
@@ -139,7 +140,7 @@ export default function ContractSuspend() {
               </div>
               <span className={`badge ${n >= SUSPEND_RULES.minDays && n <= SUSPEND_RULES.maxDays ? 'info' : 'bad'} self-start`}>{n} ngày tạm ngưng</span>
               <label className="field"><span>Lý do tạm ngưng *</span>
-                <select value={reason} disabled={!eligible} onChange={(e) => setReason(e.target.value)}>{REASONS.map((r) => <option key={r}>{r}</option>)}</select>
+                <Select value={reason} disabled={!eligible} onChange={(e) => setReason(e.target.value)}>{REASONS.map((r) => <option key={r}>{r}</option>)}</Select>
               </label>
               <label className="field"><span>Ghi chú thêm{reason === 'Khác' ? ' *' : ''}</span>
                 <textarea rows={3} maxLength={500} value={notes} disabled={!eligible} onChange={(e) => setNotes(e.target.value)} placeholder="vd: Đi công tác nước ngoài 2 tháng, cần giữ đồ trong kho" />

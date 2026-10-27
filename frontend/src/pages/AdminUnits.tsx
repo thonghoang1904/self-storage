@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { api, fmtMoney } from '../api'
 import { Empty, Icon, StatusBadge, splitTypeName } from '../components/ui'
 import type { Facility, StorageUnit } from '../types'
+import { Select } from '../components/Select'
 
 /**
  * System administrator: every unit of every facility with its status
@@ -60,9 +61,9 @@ export default function AdminUnits() {
 
       <div className="panel filter-bar">
         <label className="field inline"><span>Cơ sở</span>
-          <select value={facilityId} onChange={(e) => setParams(new URLSearchParams({ facility: e.target.value }))} aria-label="Chọn cơ sở">
+          <Select value={facilityId} onChange={(e) => setParams(new URLSearchParams({ facility: e.target.value }))} aria-label="Chọn cơ sở">
             {facilities.map((f) => <option key={f.facilityId} value={f.facilityId}>{f.facilityName}{f.status !== 'Active' ? ` (${f.status === 'Closed' ? 'đã đóng' : 'tạm ngưng'})` : ''}</option>)}
-          </select>
+          </Select>
         </label>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm mã kho, khu vực, loại kho…" aria-label="Tìm kho" />
       </div>

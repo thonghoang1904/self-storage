@@ -44,6 +44,21 @@ export default function Rent() {
   /** Latest cancellation request of each reservation that can still have one. */
   const [cancellations, setCancellations] = useState<Record<number, CancellationRequest | undefined>>({})
   const [cancelling, setCancelling] = useState<number | null>(null)
+  // Unpaid reservations are cancelled straight away (POST /api/reservations/{id}/cancel), after one confirmation.
+  const [dropping, setDropping] = useState<number | null>(null)
+  const dropReservation = async (r: Reservation) => {
+    if (busy) return
+    setBusy(true); setError('')
+    try {
+      const u = await api<Reservation>(`/api/reservations/${r.reservationId}/cancel`, { method: 'POST' })
+      setReservations((rs) => rs.map((x) => (x.reservationId === u.reservationId ? u : x)))
+      setDropping(null)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
   // Step 3: read the contract terms and agree before the reservation (and its deposit invoice) is created.
   const [signing, setSigning] = useState(false)
   const navigate = useNavigate()
@@ -300,7 +315,9 @@ export default function Rent() {
                   const cr = cancellations[r.reservationId]
                   // Past the deposit time or 20:00 on the start date the API refuses a cancellation; the system expires it.
                   const late = depositMissed(r) || pickupMissed(r)
-                  const canCancel = (r.status === 'PendingDeposit' || r.status === 'Confirmed') && cr?.status !== 'Pending' && !late
+                  // Not paid yet: cancel directly. Deposit paid: staff must review a cancellation request (refund rules).
+                  const canDrop = r.status === 'PendingDeposit' && !late
+                  const canCancel = r.status === 'Confirmed' && cr?.status !== 'Pending' && !late
                   return (
                   <Fragment key={r.reservationId}>
                   <tr>
@@ -316,6 +333,19 @@ export default function Rent() {
                       {cr && <><br /><span className={`badge ${CancellationStatuses[cr.status]?.tone ?? 'muted'}`}>{CancellationStatuses[cr.status]?.label ?? cr.status}</span></>}
                     </td>
                     <td>
+                      {canDrop && dropping !== r.reservationId && (
+                        <button type="button" className="link-btn danger-text" onClick={() => setDropping(r.reservationId)}>Hủy đơn</button>
+                      )}
+                      {canDrop && dropping === r.reservationId && (
+                        <span className="stack-sm">
+                          <small>Hủy đơn chưa đặt cọc? Kho giữ chỗ sẽ được trả lại.</small>
+                          {error && <small className="danger-text">{error}</small>}
+                          <span className="row">
+                            <button type="button" className="btn danger sm" disabled={busy} onClick={() => void dropReservation(r)}>{busy ? 'Đang hủy…' : 'Xác nhận hủy'}</button>
+                            <button type="button" className="btn ghost sm" disabled={busy} onClick={() => setDropping(null)}>Không</button>
+                          </span>
+                        </span>
+                      )}
                       {canCancel && cancelling !== r.reservationId && (
                         <button type="button" className="link-btn danger-text" onClick={() => setCancelling(r.reservationId)}>Yêu cầu hủy</button>
                       )}

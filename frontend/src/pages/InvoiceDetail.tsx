@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { AppointmentPicker } from '../components/appointment'
-import { INVOICE_TYPE, PAY_METHOD, PAY_STATUS, PayButtons, SandboxPayButton, TYPE_ICON, moneyInWords, useCheckout } from '../components/checkout'
+import { INVOICE_TYPE, moneyInWords, PAY_METHOD, PAY_STATUS, PayButtons, TYPE_ICON, useCheckout } from '../components/checkout'
 import { Icon, StatusBadge } from '../components/ui'
 import type { ContractDetail, Facility, Invoice, Reservation } from '../types'
 import { termsHref } from './Terms'
@@ -77,7 +77,6 @@ export default function InvoiceDetail() {
     const t = window.setInterval(() => { if (document.visibilityState === 'visible') void load(true) }, 10000)
     return () => window.clearInterval(t)
   }, [unpaid, load])
-  const onSandboxPaid = () => { void load(true) }
 
   if (!invoice) {
     return (
@@ -213,7 +212,6 @@ export default function InvoiceDetail() {
               </dl>
               {payable && <>
                 <PayButtons invoiceId={invoice.invoiceId} startingInvoiceId={startingInvoiceId} startCheckout={(i) => void startCheckout(i)} />
-                <SandboxPayButton invoiceId={invoice.invoiceId} onPaid={onSandboxPaid} onError={setError} />
                 <small className="muted">Hoặc thanh toán tiền mặt / chuyển khoản tại quầy{facilityName ? ` cơ sở ${facilityName}` : ''}, đọc mã <b className="code">{invoice.invoiceNumber}</b> cho nhân viên.</small>
               </>}
             </section>

@@ -4,6 +4,7 @@ import { monthRange } from '../consoleData'
 import { Empty, Icon, splitTypeName } from '../components/ui'
 import type { OperationsReportRow } from '../types'
 import { Metric } from './FacilityOverview'
+import { Select } from '../components/Select'
 
 /**
  * Operations manager "Vận Hành Kho": state of the units of every facility, by unit type
@@ -49,10 +50,10 @@ export default function OpsStorage() {
           <h1>Vận Hành Kho</h1>
           <p className="muted">Tình trạng kho của từng cơ sở theo loại kho: trống, đang thuê, bảo trì và khóa do quá hạn.</p>
         </div>
-        <select value={facilityId} onChange={(e) => setFacilityId(e.target.value)} aria-label="Cơ sở">
+        <Select value={facilityId} onChange={(e) => setFacilityId(e.target.value)} aria-label="Cơ sở">
           <option value="">Tất cả cơ sở</option>
           {facilities.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-        </select>
+        </Select>
       </div>
 
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}

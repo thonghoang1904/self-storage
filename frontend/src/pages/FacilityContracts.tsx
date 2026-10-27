@@ -3,6 +3,7 @@ import { api, fmtDate, fmtMoney } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import { ExtraChargeFees, type Contract, type ExtraChargeInvoice } from '../types'
+import { Select } from '../components/Select'
 
 /**
  * Contracts of the facility (GET /api/facilities/{id}/contracts?status) and billing an extra charge on one
@@ -144,9 +145,9 @@ function ChargeForm({ contract: c, facilityId, onDone }: { contract: Contract; f
       <b>Phụ thu cho hợp đồng {c.contractNumber} · kho {c.unitCode}</b>
       <div className="form-grid four">
         <label className="field"><span>Loại phí</span>
-          <select value={feeTypeId} onChange={(e) => setFeeTypeId(Number(e.target.value))}>
+          <Select value={feeTypeId} onChange={(e) => setFeeTypeId(Number(e.target.value))}>
             {ExtraChargeFees.map((f) => <option key={f.feeTypeId} value={f.feeTypeId}>{f.feeName}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="field"><span>{fee.perDay ? 'Số ngày' : 'Số lượng'}</span>
           <input type="number" min={1} max={365} value={quantity} onChange={(e) => setQuantity(Math.max(1, Math.min(365, Number(e.target.value) || 1)))} />

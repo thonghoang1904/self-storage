@@ -33,6 +33,8 @@ import ContractSuspend from './pages/ContractSuspend'
 import AccountSecurity from './pages/AccountSecurity'
 import AccountProfile from './pages/AccountProfile'
 import AdminUnits from './pages/AdminUnits'
+import { AdminSupport } from './pages/StaffSupport'
+import AdminSystem from './pages/AdminSystem'
 import { Login, Register } from './pages/Login'
 import MyUnits from './pages/MyUnits'
 import Rent from './pages/Rent'
@@ -111,6 +113,8 @@ export default function App() {
             <Route path="/admin/users" element={<AdminUsers />} />
             <Route path="/admin/contracts" element={<AdminContracts />} />
             <Route path="/admin/emails" element={<AdminEmails />} />
+            <Route path="/admin/support" element={<AdminSupport />} />
+            <Route path="/admin/system" element={<AdminSystem />} />
             <Route path="/admin/revenue" element={<OpsRevenue />} />
           </Route>
           <Route element={<RequireRole roles={[Roles.OpsManager]}><OpsLayout /></RequireRole>}>

@@ -4,7 +4,8 @@ import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { depositDueAt, depositMissed } from '../components/appointment'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
-import type { Invoice, Reservation, StaffContract } from '../types'
+import type { Invoice, RefundDuePayment, Reservation, StaffContract } from '../types'
+import { Select } from '../components/Select'
 
 /**
  * Staff billing: invoices of the facility (GET /api/invoices/facilities/{id}) and recording a cash or
@@ -100,24 +101,26 @@ export default function StaffBilling() {
             <Icon name="search" size={16} className="input-lead" />
             <input value={q} onChange={(e) => { setQ(e.target.value); setPage(1) }} placeholder="Tìm số hóa đơn, khách hàng, mã HĐ / đơn…" />
           </span>
-          <select value={status} onChange={(e) => { setStatus(e.target.value as typeof status); setPage(1) }}>
+          <Select value={status} onChange={(e) => { setStatus(e.target.value as typeof status); setPage(1) }}>
             <option value="due">Chờ thanh toán</option>
             <option value="Unpaid">Chưa thanh toán</option>
             <option value="Overdue">Quá hạn</option>
             <option value="Paid">Đã thanh toán</option>
             <option value="Cancelled">Đã hủy</option>
             <option value="all">Tất cả trạng thái</option>
-          </select>
-          <select value={type} onChange={(e) => { setType(e.target.value); setPage(1) }}>
+          </Select>
+          <Select value={type} onChange={(e) => { setType(e.target.value); setPage(1) }}>
             <option value="all">Mọi loại hóa đơn</option>
             {Object.entries(TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
         </div>
         <button className="btn ghost" onClick={() => { setQ(''); setStatus('due'); setType('all'); setPage(1) }}><Icon name="x" size={15} /> Xóa bộ lọc</button>
       </div>
 
       {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+
+      {facilityId && <RefundDuePanel facilityId={facilityId} onDone={async (msg) => { setNotice(msg); await load() }} />}
 
       <section className="panel">
         <div>
@@ -230,10 +233,10 @@ function PaymentForm({ invoice: inv, customer, onCancel, onDone }: { invoice: In
       <p className="muted">Khách {customer} · {inv.details[0]?.description} · Số tiền phải thu đúng <b>{fmtMoney(inv.totalAmount)}</b>.</p>
       <div className="form-grid">
         <label className="field"><span>Hình thức</span>
-          <select value={method} onChange={(e) => setMethod(e.target.value as typeof method)}>
+          <Select value={method} onChange={(e) => setMethod(e.target.value as typeof method)}>
             <option value="Cash">Tiền mặt tại quầy</option>
             <option value="BankTransfer">Chuyển khoản</option>
-          </select>
+          </Select>
         </label>
         <label className="field"><span>Mã giao dịch {method === 'BankTransfer' ? '' : '(không bắt buộc)'}</span>
           <input value={code} onChange={(e) => setCode(e.target.value.replace(/[^A-Za-z0-9-]/g, '').slice(0, 50))} required={method === 'BankTransfer'} placeholder={method === 'BankTransfer' ? 'Mã chuyển khoản ngân hàng' : ''} />
@@ -244,6 +247,89 @@ function PaymentForm({ invoice: inv, customer, onCancel, onDone }: { invoice: In
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
       <div className="row">
         <button className="btn primary sm" type="submit" disabled={busy || !confirmed}>{busy ? 'Đang ghi nhận…' : 'Xác nhận đã thu'}</button>
+        <button className="btn ghost sm" type="button" onClick={onCancel}>Hủy</button>
+      </div>
+    </form>
+  )
+}
+
+/**
+ * Online payments that reached an invoice already cancelled (GET /api/invoices/facilities/{id}/refund-due): the
+ * money has to go back to the customer. Staff pay it back in cash or by transfer and record it
+ * (POST /api/invoices/payments/{paymentId}/refund); the payment then becomes Reversed and leaves this list.
+ */
+function RefundDuePanel({ facilityId, onDone }: { facilityId: number; onDone: (msg: string) => Promise<void> }) {
+  const [rows, setRows] = useState<RefundDuePayment[]>([])
+  const [openId, setOpenId] = useState<number | null>(null)
+  const load = useCallback(() => api<RefundDuePayment[]>(`/api/invoices/facilities/${facilityId}/refund-due`).then(setRows).catch(() => setRows([])), [facilityId])
+  useEffect(() => { void load() }, [load])
+  if (rows.length === 0) return null
+  const total = rows.reduce((s, r) => s + r.amount, 0)
+  return (
+    <section className="panel stack">
+      <div>
+        <h2 className="panel-title"><Icon name="alert" size={18} className="cyan" /> Tiền cần hoàn cho khách ({rows.length})</h2>
+        <p className="muted">Khách đã thanh toán online sau khi hóa đơn bị hủy. Tổng {fmtMoney(total)} cần trả lại khách; hoàn xong thì ghi nhận tại đây.</p>
+      </div>
+      {rows.map((r) => (
+        <div key={r.paymentId} className="stack-sm">
+          <div className="row between wrap">
+            <div>
+              <b>{r.customerName}</b> · {r.invoiceNumber} ({typeLabel(r.invoiceType).toLowerCase()})
+              <small className="muted block">Nhận {fmtMoney(r.amount)} qua {r.paymentMethod} lúc {fmtTime(r.paymentDate)}{r.gatewayReference ? ` · mã ${r.gatewayReference}` : ''}</small>
+            </div>
+            {openId !== r.paymentId && <button className="btn outline sm" onClick={() => setOpenId(r.paymentId)}>Ghi nhận đã hoàn</button>}
+          </div>
+          {openId === r.paymentId && (
+            <RefundForm payment={r} onCancel={() => setOpenId(null)} onDone={async (msg) => { setOpenId(null); await load(); await onDone(msg) }} />
+          )}
+        </div>
+      ))}
+    </section>
+  )
+}
+
+function RefundForm({ payment: p, onCancel, onDone }: { payment: RefundDuePayment; onCancel: () => void; onDone: (msg: string) => Promise<void> }) {
+  const [method, setMethod] = useState<'Cash' | 'BankTransfer'>('BankTransfer')
+  const [code, setCode] = useState('')
+  const [notes, setNotes] = useState('')
+  const [confirmed, setConfirmed] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (busy) return
+    const invalid = method === 'BankTransfer' || code.trim() ? transactionCodeError(code) : null
+    const problem = firstError(invalid ?? '', checkText(notes, 'Ghi chú', 150, true), confirmed ? '' : `Vui lòng xác nhận đã trả lại ${fmtMoney(p.amount)} cho khách`)
+    if (problem) return setError(problem)
+    setError(''); setBusy(true)
+    try {
+      await api(`/api/invoices/payments/${p.paymentId}/refund`, { body: { paymentMethod: method, transactionCode: code.trim() || null, notes: notes.trim() || null } })
+      await onDone(`Đã ghi nhận hoàn ${fmtMoney(p.amount)} cho ${p.customerName} (${p.invoiceNumber}).`)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <form className="add-person" onSubmit={submit}>
+      <div className="form-grid">
+        <label className="field"><span>Hình thức hoàn</span>
+          <Select value={method} onChange={(e) => setMethod(e.target.value as typeof method)}>
+            <option value="BankTransfer">Chuyển khoản</option>
+            <option value="Cash">Tiền mặt tại quầy</option>
+          </Select>
+        </label>
+        <label className="field"><span>Mã giao dịch {method === 'BankTransfer' ? '' : '(không bắt buộc)'}</span>
+          <input value={code} onChange={(e) => setCode(e.target.value.replace(/[^A-Za-z0-9-]/g, '').slice(0, 50))} placeholder={method === 'BankTransfer' ? 'Mã chuyển khoản hoàn tiền' : 'Số phiếu chi (nếu có)'} />
+        </label>
+      </div>
+      <label className="field"><span>Ghi chú</span><input value={notes} maxLength={150} onChange={(e) => setNotes(e.target.value)} placeholder="Không bắt buộc" /></label>
+      <label className="check-row"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> Tôi đã trả lại đủ {fmtMoney(p.amount)} cho khách</label>
+      {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+      <div className="row">
+        <button className="btn primary sm" type="submit" disabled={busy || !confirmed}>{busy ? 'Đang lưu…' : 'Xác nhận đã hoàn'}</button>
         <button className="btn ghost sm" type="button" onClick={onCancel}>Hủy</button>
       </div>
     </form>

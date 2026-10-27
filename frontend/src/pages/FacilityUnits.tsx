@@ -6,6 +6,7 @@ import type { StorageUnit, UnitType } from '../types'
 import { Metric } from './FacilityOverview'
 import { CODE_FILTER, textError, unitCodeError } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
+import { Select } from '../components/Select'
 
 /**
  * Facility manager: the units of the facility (#43, Figma "storage-management").
@@ -86,6 +87,14 @@ export default function FacilityUnits() {
     () => api(`/api/facility-management/facilities/${facilityId}/units/${u.unitId}/status`, { method: 'PUT', body: { status: next } }),
     next === 'UnderMaintenance' ? `Kho ${u.unitCode} đã chuyển sang bảo trì.` : `Kho ${u.unitCode} đã hoạt động trở lại.`)
 
+  // DELETE only works for an empty or maintenance unit that never had a contract, reservation or ticket;
+  // otherwise the API answers 409 and the unit should go to maintenance instead.
+  const [removing, setRemoving] = useState<number | null>(null)
+  const removeUnit = async (u: StorageUnit) => {
+    const ok = await run(() => api(`/api/facility-management/facilities/${facilityId}/units/${u.unitId}`, { method: 'DELETE' }), `Đã xóa kho ${u.unitCode}.`)
+    if (ok) setRemoving(null)
+  }
+
   const selectedType = types.find((t) => t.unitTypeId === form?.unitTypeId) ?? (form ? types[0] : undefined)
 
   return (
@@ -119,9 +128,9 @@ export default function FacilityUnits() {
               <FieldNote text={code.hint} />
             </label>
             <label className="field"><span>Loại kho</span>
-              <select value={form.unitTypeId} onChange={(e) => setForm({ ...form, unitTypeId: Number(e.target.value) })} required>
+              <Select value={form.unitTypeId} onChange={(e) => setForm({ ...form, unitTypeId: Number(e.target.value) })} required>
                 {types.map((t) => <option key={t.unitTypeId} value={t.unitTypeId}>{splitTypeName(t.typeName).name}</option>)}
-              </select>
+              </Select>
             </label>
             <label className="field"><span>Tầng</span>
               <input type="number" min={1} max={100} value={form.floorNumber} onChange={(e) => setForm({ ...form, floorNumber: Number(e.target.value) || 1 })} required />
@@ -149,17 +158,17 @@ export default function FacilityUnits() {
             <Icon name="search" size={16} className="input-lead" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm mã kho, khu vực…" />
           </span>
-          <select value={typeId} onChange={(e) => setTypeId(Number(e.target.value))}>
+          <Select value={typeId} onChange={(e) => setTypeId(Number(e.target.value))}>
             <option value={0}>Tất cả loại kho</option>
             {types.map((t) => <option key={t.unitTypeId} value={t.unitTypeId}>{splitTypeName(t.typeName).name}</option>)}
-          </select>
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+          </Select>
+          <Select value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="all">Tất cả trạng thái</option>
             <option value="Available">Còn trống</option>
             <option value="Rented">Đang cho thuê</option>
             <option value="UnderMaintenance">Đang bảo trì</option>
             <option value="OverdueLocked">Khóa do quá hạn</option>
-          </select>
+          </Select>
         </div>
         <button className="btn ghost" onClick={() => { setQ(''); setStatus('all'); setTypeId(0) }}>Xóa bộ lọc</button>
       </div>
@@ -190,6 +199,18 @@ export default function FacilityUnits() {
                           onClick={() => { setForm({ unitId: u.unitId, unitTypeId: u.unitTypeId, unitCode: u.unitCode, floorNumber: u.floorNumber, zoneArea: u.zoneArea ?? '' }); setError(''); setNotice(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
                           <Icon name="edit" size={15} />
                         </button>
+                        {(u.status === 'Available' || u.status === 'UnderMaintenance') && removing !== u.unitId && (
+                          <button className="icon-action" title="Xóa kho" disabled={busy} onClick={() => { setRemoving(u.unitId); setError(''); setNotice('') }}>
+                            <Icon name="trash" size={15} />
+                          </button>
+                        )}
+                        {removing === u.unitId && (
+                          <>
+                            <small>Xóa kho {u.unitCode}?</small>
+                            <button className="btn danger sm" disabled={busy} onClick={() => void removeUnit(u)}>Xóa</button>
+                            <button className="btn ghost sm" disabled={busy} onClick={() => setRemoving(null)}>Không</button>
+                          </>
+                        )}
                       </span>
                     </td>
                   </tr>

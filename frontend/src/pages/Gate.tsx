@@ -5,6 +5,7 @@ import { Empty, Icon, StatusBadge } from '../components/ui'
 import { DenyReasons, type AccessRecord, type Person, type VisitCandidate, type VisitRegistration } from '../types'
 import { CITIZEN_ID_FILTER } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
+import { Select } from '../components/Select'
 
 const REFRESH_MS = 5000
 const hhmm = (iso: string) => iso.slice(11, 16)
@@ -374,7 +375,10 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
   regs: VisitRegistration[]
   onRecorded: (r: AccessRecord) => void
 }) {
-  const people: Person[] = [v.customer, ...v.authorizedPersons]
+  // CCCD recorded at the gate in this session (PUT .../customers/{id}/citizen-id) replaces the one on file.
+  const [holderCid, setHolderCid] = useState<string | null>(null)
+  const holder = holderCid ? { ...v.customer, citizenId: holderCid } : v.customer
+  const people: Person[] = [holder, ...v.authorizedPersons]
   // Searched by someone's CCCD or phone: preselect that person.
   const [personIdx, setPersonIdx] = useState(() =>
     Math.max(0, people.findIndex((p) => p.citizenId === query || p.phoneNumber === query)))
@@ -389,6 +393,25 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
   const matches = typed !== '' && typed === (person.citizenId ?? '').trim()
   const alreadyInside = v.peopleInside.includes(person.fullName)
   const reg = activeRegistration(regs, v.contractId, person.authorizedPersonId)
+  const isHolder = person.authorizedPersonId == null
+  const [cidSaved, setCidSaved] = useState('')
+
+  // Only the holder's CCCD can be recorded here (staff checked the card in person); a co-signer's lives in the contract.
+  const recordCid = async () => {
+    if (busy || !v.customerId) return
+    setBusy(true); setError(''); setCidSaved('')
+    try {
+      const p = await api<Person>(`/api/gate/facilities/${facilityId}/customers/${v.customerId}/citizen-id`, {
+        method: 'PUT', body: { citizenId: typed, notes: person.citizenId ? `Sửa CCCD tại cổng (cũ: ${person.citizenId})` : 'Ghi nhận CCCD tại cổng' },
+      })
+      setHolderCid(p.citizenId ?? typed)
+      setCidSaved(person.citizenId ? 'Đã cập nhật số CCCD trong hồ sơ khách.' : 'Đã ghi nhận số CCCD vào hồ sơ khách.')
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const run = async (fn: () => Promise<AccessRecord>) => {
     setBusy(true)
@@ -451,7 +474,7 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
         </div>
         <div className="person-picker">
           {people.map((p, i) => (
-            <button key={i} type="button" className={`person-option ${i === personIdx ? 'active' : ''}`} onClick={() => { setPersonIdx(i); setCitizenId(''); setError('') }}>
+            <button key={i} type="button" className={`person-option ${i === personIdx ? 'active' : ''}`} onClick={() => { setPersonIdx(i); setCitizenId(''); setError(''); setCidSaved('') }}>
               <span className="radio" />
               <span className="grow">
                 <b>{p.fullName}</b>
@@ -471,6 +494,19 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
           </span>
           <FieldNote text={cid.hint} />
         </label>
+        {isHolder && v.customerId != null && !person.citizenId && (
+          <div className="alert warn stack-sm">
+            <span><Icon name="idCard" size={16} /> Hồ sơ của {person.fullName} chưa có số CCCD. Kiểm tra thẻ tận tay, gõ số trên thẻ rồi ghi nhận vào hồ sơ trước khi cho vào.</span>
+            <button type="button" className="btn outline sm self-start" disabled={busy || typed.length !== 12} onClick={recordCid}>Ghi nhận CCCD vào hồ sơ</button>
+          </div>
+        )}
+        {isHolder && v.customerId != null && person.citizenId && typed.length === 12 && !matches && (
+          <div className="alert warn stack-sm">
+            <span><Icon name="alert" size={16} /> Số trên thẻ khác hồ sơ. Chỉ sửa khi đã đối chiếu thẻ CCCD gốc của chính chủ hợp đồng (ví dụ khách đổi thẻ mới); nếu không phải chính chủ, hãy ghi nhận từ chối.</span>
+            <button type="button" className="btn outline sm self-start" disabled={busy} onClick={recordCid}>Cập nhật CCCD trong hồ sơ</button>
+          </div>
+        )}
+        {cidSaved && <p className="alert ok"><Icon name="check" size={16} />{cidSaved}</p>}
         <label className="field">
           <span>Mục đích (không bắt buộc)</span>
           <input value={purpose} maxLength={255} placeholder={reg?.purpose ?? 'Gửi đồ, lấy đồ…'} onChange={(e) => setPurpose(e.target.value)} />
@@ -486,9 +522,9 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
           </button>
           {alreadyInside && <small className="muted">Người này đang ở trong kho, hãy xác nhận ra trước.</small>}
           <div className="deny-row">
-            <select value={denyReason} onChange={(e) => setDenyReason(e.target.value)}>
+            <Select value={denyReason} onChange={(e) => setDenyReason(e.target.value)}>
               {Object.entries(DenyReasons).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-            </select>
+            </Select>
             <button className="btn danger" disabled={busy} onClick={deny}>Ghi nhận từ chối</button>
           </div>
         </div>

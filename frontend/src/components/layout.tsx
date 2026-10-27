@@ -4,6 +4,7 @@ import { api, IS_DEMO } from '../api'
 import { useAuth } from '../auth'
 import { GATE_ROLES, roleLabel, Roles, type Facility } from '../types'
 import { Icon, Logo } from './ui'
+import { Select } from './Select'
 
 // ------------------------------------------------------------------ demo bar
 
@@ -243,9 +244,9 @@ export function StaffLayout() {
             {facilities.length > 0 && (
               <label className="facility-select">
                 <Icon name="building" size={16} />
-                <select value={facilityId ?? ''} onChange={(e) => setFacilityId(Number(e.target.value))}>
+                <Select value={facilityId ?? ''} onChange={(e) => setFacilityId(Number(e.target.value))}>
                   {facilities.map((f) => <option key={f.facilityId} value={f.facilityId}>{f.facilityName}</option>)}
-                </select>
+                </Select>
               </label>
             )}
           </header>
@@ -311,7 +312,7 @@ export function AdminLayout() {
   return (
     <ConsoleLayout
       area="Admin"
-      titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu',
+      titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu', '/admin/support': 'Hỗ Trợ Khách Hàng', '/admin/system': 'Giao Dịch & Nhật Ký',
         '/admin/storage': 'Kho Lưu Trữ Hệ Thống', '/admin/units': 'Kho Từng Cơ Sở', '/admin/facilities': 'Quản Lý Cơ Sở', '/admin/customers': 'Khách Hàng & Hợp Đồng',
         '/admin/policies': 'Giá & Chính Sách', '/admin/settings': 'Cài Đặt', '/admin': 'Tổng Quan Quản Lý' }}
       nav={[
@@ -321,6 +322,8 @@ export function AdminLayout() {
         { icon: 'user', label: 'Nhân Viên', to: '/admin/users' },
         { icon: 'file', label: 'Hợp Đồng', to: '/admin/contracts' },
         { icon: 'chart', label: 'Doanh Thu', to: '/admin/revenue' },
+        { icon: 'phone', label: 'Hỗ Trợ Khách Hàng', to: '/admin/support' },
+        { icon: 'history', label: 'Giao Dịch & Nhật Ký', to: '/admin/system' },
         { icon: 'mail', label: 'Email Hệ Thống', to: '/admin/emails' },
         { icon: 'clipboard', label: 'Giá & Chính Sách', to: '/admin/policies' },
         { icon: 'settings', label: 'Cài Đặt', to: '/admin/settings' },

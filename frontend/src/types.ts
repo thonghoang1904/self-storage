@@ -428,6 +428,9 @@ export interface SupportRequest {
   status: string
   createdAt: string
   assignedStaffName: string | null
+  /** Admin list only (GET /api/admin/support-requests). */
+  facilityName?: string
+  customerName?: string
 }
 
 export interface SupportUpdate {
@@ -479,6 +482,20 @@ export interface AccessIssue {
 }
 
 /** A contract the visitor may be coming for, found by the staff lookup at the gate. */
+/** GET /api/invoices/facilities/{id}/refund-due: online money that arrived after its invoice was cancelled. */
+export interface RefundDuePayment {
+  paymentId: number
+  invoiceId: number
+  invoiceNumber: string
+  invoiceType: string
+  customerName: string
+  paymentMethod: string
+  gatewayReference: string | null
+  amount: number
+  paymentDate: string
+  notes: string | null
+}
+
 export interface VisitCandidate {
   contractId: number
   contractNumber: string
@@ -494,6 +511,8 @@ export interface VisitCandidate {
   /** Someone on this contract has a staff-approved visit registration covering now. */
   hasApprovedVisitRegistration?: boolean
   canEnter: boolean
+  /** The contract holder's account, for recording the CCCD at the gate. */
+  customerId?: number
 }
 
 export interface AccessRecord {
@@ -596,6 +615,8 @@ export interface RentalPolicy {
   maxOverdueDaysBeforeLock: number
   isActive: boolean
   effectiveDate: string
+  /** Hours the customer has to pay the deposit after booking (separate from the free-cancellation window). */
+  depositPaymentHours?: number
 }
 
 export interface FeeConfiguration {

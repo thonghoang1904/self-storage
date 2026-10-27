@@ -6,7 +6,7 @@ import { FormField, useValidatedForm } from '../components/form'
 import { PageHero } from '../components/layout'
 import { Icon } from '../components/ui'
 import { Roles, roleLabel, type AccountProfile as Profile } from '../types'
-import { staffCode, emailError, fullNameError, NAME_FILTER, normalizePhone, PHONE_FILTER, phoneError, passwordError, textError } from '../validation'
+import { citizenIdError, CITIZEN_ID_FILTER, staffCode, emailError, fullNameError, NAME_FILTER, normalizePhone, PHONE_FILTER, phoneError, passwordError, textError } from '../validation'
 import { PasswordInput } from './Login'
 
 /**
@@ -59,17 +59,20 @@ export default function AccountProfile() {
 }
 
 function ProfileForm({ profile, onSaved }: { profile: Profile; onSaved: (p: Profile) => void }) {
-  const initial = { fullName: profile.fullName, email: profile.email, phoneNumber: profile.phoneNumber, address: profile.address ?? '' }
+  // An account without a CCCD (e.g. made by an admin) may fill it in once; after that only staff change it.
+  const needsCid = !profile.citizenId
+  const initial = { fullName: profile.fullName, email: profile.email, phoneNumber: profile.phoneNumber, address: profile.address ?? '', citizenId: '' }
   const form = useValidatedForm(
     initial,
-    { fullName: fullNameError, email: emailError, phoneNumber: phoneError, address: (v) => textError(v, 'Địa chỉ', 5, 255, true) },
-    { fullName: NAME_FILTER, phoneNumber: PHONE_FILTER },
+    { fullName: fullNameError, email: emailError, phoneNumber: phoneError, address: (v) => textError(v, 'Địa chỉ', 5, 255, true),
+      citizenId: (v) => (v ? citizenIdError(v) : null) },
+    { fullName: NAME_FILTER, phoneNumber: PHONE_FILTER, citizenId: CITIZEN_ID_FILTER },
   )
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null)
   const f = form.values
   const changed = f.fullName.trim() !== profile.fullName || f.email.trim() !== profile.email
-    || normalizePhone(f.phoneNumber) !== profile.phoneNumber || f.address.trim() !== (profile.address ?? '')
+    || normalizePhone(f.phoneNumber) !== profile.phoneNumber || f.address.trim() !== (profile.address ?? '') || (needsCid && !!f.citizenId)
 
   const save = async (e: FormEvent) => {
     e.preventDefault()
@@ -80,9 +83,10 @@ function ProfileForm({ profile, onSaved }: { profile: Profile; onSaved: (p: Prof
     try {
       const p = await api<Profile>('/api/auth/me', {
         method: 'PUT',
-        body: { fullName: f.fullName.trim(), email: f.email.trim(), phoneNumber: normalizePhone(f.phoneNumber), address: f.address.trim() || null },
+        body: { fullName: f.fullName.trim(), email: f.email.trim(), phoneNumber: normalizePhone(f.phoneNumber), address: f.address.trim() || null,
+          ...(needsCid && f.citizenId ? { citizenId: f.citizenId } : {}) },
       })
-      form.reset({ fullName: p.fullName, email: p.email, phoneNumber: p.phoneNumber, address: p.address ?? '' })
+      form.reset({ fullName: p.fullName, email: p.email, phoneNumber: p.phoneNumber, address: p.address ?? '', citizenId: '' })
       onSaved(p)
       setMsg({ tone: 'ok', text: 'Đã lưu thông tin tài khoản.' })
     } catch (err) {
@@ -100,7 +104,13 @@ function ProfileForm({ profile, onSaved }: { profile: Profile; onSaved: (p: Prof
         <FormField label="Số điện thoại *" error={form.error('phoneNumber')}><input {...form.field('phoneNumber')} inputMode="tel" maxLength={15} autoComplete="tel" /></FormField>
         <FormField label="Email *" error={form.error('email')}><input {...form.field('email')} type="email" maxLength={100} autoComplete="email" /></FormField>
         <FormField label="Địa chỉ" error={form.error('address')}><input {...form.field('address')} maxLength={255} autoComplete="street-address" placeholder="Không bắt buộc" /></FormField>
+        {needsCid && (
+          <FormField label="Số CCCD" error={form.error('citizenId')}>
+            <input {...form.field('citizenId')} inputMode="numeric" maxLength={12} placeholder="12 chữ số trên thẻ CCCD" />
+          </FormField>
+        )}
       </div>
+      {needsCid && <small className="muted">Tài khoản chưa có số CCCD. Bạn chỉ tự nhập được một lần; sau đó muốn sửa phải mang thẻ CCCD đến cơ sở. Cần có CCCD để đăng ký vào kho.</small>}
       {msg && <p className={`alert ${msg.tone}`}><Icon name={msg.tone === 'ok' ? 'check' : 'alert'} size={16} />{msg.text}</p>}
       <div className="row">
         <button className="btn primary" type="submit" disabled={busy || !changed}>{busy ? 'Đang lưu…' : 'Lưu thay đổi'}</button>

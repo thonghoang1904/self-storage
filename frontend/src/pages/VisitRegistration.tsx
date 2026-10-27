@@ -7,6 +7,7 @@ import { Empty, Icon } from '../components/ui'
 import { ContractUnitArt } from '../components/unitPhoto'
 import { MOVE_IN_PREFIX, VisitPurposes, type Contract, type ContractDetail, type Facility, type Person, type VisitRegistration } from '../types'
 import { FieldNote, useInputFilter } from '../components/form'
+import { Select } from '../components/Select'
 
 /**
  * Figma "Đăng ký vào kho" (120:2111): the customer books a time to come to the unit, for themselves or an
@@ -319,22 +320,22 @@ export default function VisitRegistrationPage({ contractId, picker }: { contract
                       <FieldNote text={fieldErr.time} />
                     </label>
                     <label className="field"><span>Giờ đến dự kiến *</span>
-                      <select value={entry} onChange={(e) => setEntry(e.target.value)}>
+                      <Select value={entry} onChange={(e) => setEntry(e.target.value)}>
                         {entrySlots.map((s) => <option key={s} value={s}>{s}</option>)}
                         {entrySlots.length === 0 && <option value="">Hết giờ trong ngày, chọn ngày khác</option>}
-                      </select>
+                      </Select>
                     </label>
                     <label className="field"><span>Giờ rời kho dự kiến *</span>
-                      <select value={exit} onChange={(e) => setExit(e.target.value)}>
+                      <Select value={exit} onChange={(e) => setExit(e.target.value)}>
                         {exitSlots.map((s) => <option key={s} value={s}>{s}</option>)}
-                      </select>
+                      </Select>
                     </label>
                   </div>
                   <p className="hint"><Icon name="clock" size={15} /> Giờ hoạt động: {facility?.operatingHours ?? '—'} hằng ngày. Lịch trên là đề xuất, chưa được xác nhận.</p>
                   <label className={`field ${fieldErr.purpose && purpose !== 'Khác' ? 'has-error' : ''}`}><span>Mục đích vào kho *</span>
-                    <select id={purpose === 'Khác' ? undefined : 'visit-purpose'} value={purpose} onChange={(e) => { setPurpose(e.target.value); clearErr('purpose') }}>
+                    <Select id={purpose === 'Khác' ? undefined : 'visit-purpose'} value={purpose} onChange={(e) => { setPurpose(e.target.value); clearErr('purpose') }}>
                       {VisitPurposes.map((p) => <option key={p}>{p}</option>)}
-                    </select>
+                    </Select>
                     {purpose !== 'Khác' && <FieldNote text={fieldErr.purpose} />}
                   </label>
                   <p className="hint"><Icon name="package" size={15} /> Mang đồ vào kho? <Link to={`/my-units/${c.contractId}/move-in`} className="link">Dùng Đăng ký đưa đồ vào kho</Link> để khai báo danh sách đồ, phương tiện và người phụ.</p>

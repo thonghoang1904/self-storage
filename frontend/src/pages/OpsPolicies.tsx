@@ -5,6 +5,7 @@ import { Badge, Empty, Icon, splitTypeName } from '../components/ui'
 import { FeeMethods, type Facility, type FeeConfiguration, type Promotion, type RentalPolicy, type UnitType } from '../types'
 import { CODE_FILTER } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
+import { Select } from '../components/Select'
 
 /**
  * #44 Operations manager, Figma "policy-fee-discount-management" (75:29417): rental policies, the fee table,
@@ -110,11 +111,11 @@ export default function OpsPolicies() {
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tab === 'fees' ? 'Tìm mã hoặc tên phí…' : tab === 'promotions' ? 'Tìm mã khuyến mãi…' : tab === 'pricing' ? 'Tìm loại kho…' : 'Tìm chính sách…'} />
           </span>
           {(tab === 'policies' || tab === 'promotions') && (
-            <select value={status} onChange={(e) => setStatus(e.target.value as typeof status)} aria-label="Trạng thái">
+            <Select value={status} onChange={(e) => setStatus(e.target.value as typeof status)} aria-label="Trạng thái">
               <option value="all">Trạng thái: Tất cả</option>
               <option value="on">{tab === 'promotions' ? 'Trạng thái: Đang chạy' : 'Trạng thái: Đang bật'}</option>
               <option value="off">{tab === 'promotions' ? 'Trạng thái: Không chạy' : 'Trạng thái: Đã tắt'}</option>
-            </select>
+            </Select>
           )}
         </div>
       </div>
@@ -141,6 +142,7 @@ export default function OpsPolicies() {
               <PolicyItem key={p.policyId} code={`CS-${String(p.policyId).padStart(3, '0')}`} badge={p.isActive ? (p.effectiveDate > todayIso() ? { label: 'Chờ hiệu lực', tone: 'info' } : { label: 'Đang bật', tone: 'ok' }) : { label: 'Đã tắt', tone: 'muted' }}
                 title={p.policyName} meta={`${facilityName(p.facilityId)} · hiệu lực từ ${fmtDate(p.effectiveDate)}`} onEdit={() => setEditing({ tab: 'policies', id: p.policyId })}>
                 <span>Cọc <b>{pct(p.depositPercent)}</b></span>
+                <span>Đóng cọc trong <b>{p.depositPaymentHours ?? 24} giờ</b></span>
                 <span>Hủy miễn phí <b>{p.cancellationGraceHours} giờ</b>, sau đó phí <b>{pct(p.cancellationFeePercent)}</b></span>
                 <span>Nhắc gia hạn trước <b>{p.renewalNoticeDays} ngày</b></span>
                 <span>Khóa kho sau <b>{p.maxOverdueDaysBeforeLock} ngày</b> quá hạn</span>
@@ -174,6 +176,7 @@ export default function OpsPolicies() {
               <>
                 <p className="muted">{current.policyName} · từ {fmtDate(current.effectiveDate)}</p>
                 <div className="info-row"><span className="muted">Tiền cọc</span><b>{pct(current.depositPercent)} giá tháng</b></div>
+                <div className="info-row"><span className="muted">Hạn đóng cọc</span><b>{current.depositPaymentHours ?? 24} giờ sau khi đặt</b></div>
                 <div className="info-row"><span className="muted">Hủy miễn phí trong</span><b>{current.cancellationGraceHours} giờ</b></div>
                 <div className="info-row"><span className="muted">Phí hủy sau đó</span><b>{pct(current.cancellationFeePercent)}</b></div>
                 <div className="info-row"><span className="muted">Nhắc gia hạn trước</span><b>{current.renewalNoticeDays} ngày</b></div>
@@ -275,15 +278,16 @@ function FormShell({ title, busy, error, onCancel, onSubmit, children }: { title
 }
 
 function PolicyForm({ policy, facilities, onCancel, onSaved }: { policy?: RentalPolicy; facilities: Facility[]; onCancel: () => void; onSaved: (m: string) => void }) {
-  const [f, setF] = useState(() => policy ?? { policyName: '', facilityId: null, depositPercent: 100, cancellationGraceHours: 24, cancellationFeePercent: 10, renewalNoticeDays: 7, maxOverdueDaysBeforeLock: 1, isActive: true, effectiveDate: todayIso() })
+  const [f, setF] = useState(() => policy ?? { policyName: '', facilityId: null, depositPercent: 100, cancellationGraceHours: 24, cancellationFeePercent: 10, renewalNoticeDays: 7, maxOverdueDaysBeforeLock: 1, isActive: true, effectiveDate: todayIso(), depositPaymentHours: 24 })
   const { busy, error, save } = useSave(onSaved)
   const set = (k: string, v: unknown) => setF({ ...f, [k]: v })
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    const body = { policyName: f.policyName.trim(), facilityId: f.facilityId, depositPercent: Number(f.depositPercent), cancellationGraceHours: Number(f.cancellationGraceHours), cancellationFeePercent: Number(f.cancellationFeePercent), renewalNoticeDays: Number(f.renewalNoticeDays), maxOverdueDaysBeforeLock: Number(f.maxOverdueDaysBeforeLock), isActive: f.isActive, effectiveDate: f.effectiveDate }
+    const body = { depositPaymentHours: Number(f.depositPaymentHours ?? 24), policyName: f.policyName.trim(), facilityId: f.facilityId, depositPercent: Number(f.depositPercent), cancellationGraceHours: Number(f.cancellationGraceHours), cancellationFeePercent: Number(f.cancellationFeePercent), renewalNoticeDays: Number(f.renewalNoticeDays), maxOverdueDaysBeforeLock: Number(f.maxOverdueDaysBeforeLock), isActive: f.isActive, effectiveDate: f.effectiveDate }
     void save(policy ? `/api/operations/rental-policies/${policy.policyId}` : '/api/operations/rental-policies', policy ? 'PUT' : 'POST', body, `Đã lưu chính sách "${body.policyName}".`, firstError(
       checkText(f.policyName, 'Tên chính sách', 100, false, 3),
       Number(f.depositPercent) > 0 && Number(f.depositPercent) <= 100 ? '' : 'Tiền cọc từ 0,01% đến 100% giá tháng',
+      checkInt(f.depositPaymentHours ?? 24, 'Hạn đóng cọc (giờ)', 1, 720),
       checkInt(f.cancellationGraceHours, 'Thời gian hủy miễn phí (giờ)', 0, 8760),
       Number(f.cancellationFeePercent) >= 0 && Number(f.cancellationFeePercent) <= 100 ? '' : 'Phí hủy từ 0% đến 100%',
       checkInt(f.renewalNoticeDays, 'Số ngày nhắc gia hạn', 0, 365),
@@ -296,12 +300,13 @@ function PolicyForm({ policy, facilities, onCancel, onSaved }: { policy?: Rental
       <div className="form-grid">
         <label className="field"><span>Tên chính sách *</span><input value={f.policyName} maxLength={100} onChange={(e) => set('policyName', e.target.value)} required /></label>
         <label className="field"><span>Áp dụng cho</span>
-          <select value={f.facilityId ?? ''} onChange={(e) => set('facilityId', e.target.value ? Number(e.target.value) : null)}>
+          <Select value={f.facilityId ?? ''} onChange={(e) => set('facilityId', e.target.value ? Number(e.target.value) : null)}>
             <option value="">Toàn hệ thống</option>
             {facilities.map((x) => <option key={x.facilityId} value={x.facilityId}>{x.facilityName}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="field"><span>Tiền cọc (% giá tháng) *</span><input type="number" min={0.01} max={100} step="0.01" value={f.depositPercent} onChange={(e) => set('depositPercent', e.target.value)} required /></label>
+        <label className="field"><span>Hạn đóng cọc sau khi đặt (giờ)</span><input type="number" min={1} max={720} value={f.depositPaymentHours ?? 24} onChange={(e) => set('depositPaymentHours', e.target.value)} /></label>
         <label className="field"><span>Hủy miễn phí trong (giờ)</span><input type="number" min={0} max={8760} value={f.cancellationGraceHours} onChange={(e) => set('cancellationGraceHours', e.target.value)} /></label>
         <label className="field"><span>Phí hủy sau thời gian đó (%)</span><input type="number" min={0} max={100} step="0.01" value={f.cancellationFeePercent} onChange={(e) => set('cancellationFeePercent', e.target.value)} /></label>
         <label className="field"><span>Nhắc gia hạn trước (ngày)</span><input type="number" min={0} max={365} value={f.renewalNoticeDays} onChange={(e) => set('renewalNoticeDays', e.target.value)} /></label>
@@ -335,9 +340,9 @@ function FeeForm({ fee, onCancel, onSaved }: { fee?: FeeConfiguration; onCancel:
         <label className="field"><span>Mã phí *</span><input value={f.feeCode} maxLength={50} placeholder="VD: CLEANING_FEE" onChange={(e) => set('feeCode', e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))} required /></label>
         <label className="field"><span>Tên phí *</span><input value={f.feeName} maxLength={100} onChange={(e) => set('feeName', e.target.value)} required /></label>
         <label className="field"><span>Cách tính *</span>
-          <select value={f.calculationMethod} onChange={(e) => set('calculationMethod', e.target.value)}>
+          <Select value={f.calculationMethod} onChange={(e) => set('calculationMethod', e.target.value)}>
             {Object.entries(FeeMethods).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="field"><span>{f.calculationMethod === 'Percentage' ? 'Tỷ lệ (%)' : 'Số tiền (đ)'} *</span><input type="number" min={0} step="any" value={f.defaultAmount} onChange={(e) => set('defaultAmount', e.target.value)} required /></label>
       </div>

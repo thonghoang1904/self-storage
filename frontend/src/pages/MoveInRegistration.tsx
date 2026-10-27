@@ -19,6 +19,7 @@ import { termsHref } from './Terms'
 
 export { MOVE_IN_PREFIX } from '../types'
 import { MOVE_IN_PREFIX } from '../types'
+import { Select } from '../components/Select'
 const PURPOSE_MAX = 255
 
 const CATEGORIES = ['Đồ nội thất', 'Điện tử - điện máy', 'Thùng hàng / carton', 'Quần áo - chăn màn', 'Sách - hồ sơ giấy tờ', 'Dụng cụ - thể thao', 'Khác']
@@ -273,11 +274,11 @@ export default function MoveInRegistration() {
                 <section className="panel form-section">
                   <div className="section-head"><span className="step-no">01</span><div><h3>Kho nhận đồ</h3><p className="muted">Chọn hợp đồng / kho bạn muốn đưa đồ vào.</p></div></div>
                   <label className="field"><span>Hợp đồng & kho *</span>
-                    <select value={c.contractId} onChange={(e) => navigate(`/my-units/${e.target.value}/move-in`)} aria-label="Chọn hợp đồng">
+                    <Select value={c.contractId} onChange={(e) => navigate(`/my-units/${e.target.value}/move-in`)} aria-label="Chọn hợp đồng">
                       {(active.length ? active : [{ contractId: c.contractId, contractNumber: c.contractNumber, unitCode: c.unitCode, facilityName: c.facilityName } as Contract]).map((x) => (
                         <option key={x.contractId} value={x.contractId}>{x.unitCode} · {x.facilityName} · {x.contractNumber}</option>
                       ))}
-                    </select>
+                    </Select>
                   </label>
                   <div className="notice warn-notice">
                     <span className="notice-icon warn"><Icon name="alert" size={16} /></span>
@@ -297,7 +298,7 @@ export default function MoveInRegistration() {
                       <div className="form-grid two">
                         <label className="field"><span>Tên đồ *</span><input value={it.name} maxLength={60} onChange={(e) => setItem(it.key, { name: e.target.value })} placeholder="vd: Tủ lạnh, thùng sách" /></label>
                         <label className="field"><span>Loại đồ</span>
-                          <select value={it.category} onChange={(e) => setItem(it.key, { category: e.target.value })}>{CATEGORIES.map((x) => <option key={x}>{x}</option>)}</select>
+                          <Select value={it.category} onChange={(e) => setItem(it.key, { category: e.target.value })}>{CATEGORIES.map((x) => <option key={x}>{x}</option>)}</Select>
                         </label>
                       </div>
                       <div className="item-measure">
@@ -334,18 +335,18 @@ export default function MoveInRegistration() {
                       <input type="date" value={date} min={c.startDate > today ? c.startDate : today} max={c.endDate} onChange={(e) => setDate(e.target.value)} required />
                     </label>
                     <label className={`field ${fieldErr.entry ? 'has-error' : ''}`}><span>Giờ đến *</span>
-                      <select id="movein-entry" value={entry} onChange={(e) => { setEntry(e.target.value); clearErr('entry') }} aria-invalid={fieldErr.entry ? true : undefined}>{entrySlots.map((s) => <option key={s}>{s}</option>)}</select>
+                      <Select id="movein-entry" value={entry} onChange={(e) => { setEntry(e.target.value); clearErr('entry') }} aria-invalid={fieldErr.entry ? true : undefined}>{entrySlots.map((s) => <option key={s}>{s}</option>)}</Select>
                       <FieldNote text={fieldErr.entry} />
                     </label>
                     <label className="field"><span>Thời gian bốc xếp dự kiến</span>
-                      <select value={duration} onChange={(e) => setDuration(Number(e.target.value))}>{DURATIONS.map((d) => <option key={d} value={d}>{d < 60 ? `${d} phút` : `${d / 60} giờ`}</option>)}</select>
+                      <Select value={duration} onChange={(e) => setDuration(Number(e.target.value))}>{DURATIONS.map((d) => <option key={d} value={d}>{d < 60 ? `${d} phút` : `${d / 60} giờ`}</option>)}</Select>
                     </label>
                     <label className="field"><span>Giờ rời kho</span><input value={exit} readOnly /></label>
                     <label className="field"><span>Phương tiện</span>
-                      <select value={vehicle} onChange={(e) => setVehicle(e.target.value)}>{VEHICLES.map((v) => <option key={v}>{v}</option>)}</select>
+                      <Select value={vehicle} onChange={(e) => setVehicle(e.target.value)}>{VEHICLES.map((v) => <option key={v}>{v}</option>)}</Select>
                     </label>
                     <label className="field"><span>Số người phụ bốc xếp</span>
-                      <select value={helpers} onChange={(e) => setHelpers(Number(e.target.value))}>{[0, 1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n === 0 ? 'Không có' : `${n} người`}</option>)}</select>
+                      <Select value={helpers} onChange={(e) => setHelpers(Number(e.target.value))}>{[0, 1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n === 0 ? 'Không có' : `${n} người`}</option>)}</Select>
                     </label>
                   </div>
                   <span className="label">Người áp tải đồ đến kho</span>

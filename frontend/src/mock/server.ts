@@ -450,6 +450,14 @@ function markPaid(inv: Invoice, paid: Paid, now: string) {
 }
 
 type Paid = { method: string; code: string | null; at: string; staffId: number | null }
+/** Payments as rows (the demo derives them from the invoices), for /api/payments/my and /api/admin/payments. */
+function paymentRows() {
+  return allInvoices().flatMap(({ customerId, invoice: i }) => i.payments.map((p) => ({
+    paymentId: i.invoiceId * 10 + p.paymentId, invoiceId: i.invoiceId, invoiceNumber: i.invoiceNumber, paymentMethod: p.paymentMethod, status: p.status,
+    amountPaid: p.amountPaid, paymentDate: p.paymentDate, transactionCode: p.transactionCode, invoiceStatus: i.status, paymentNotes: p.paymentNotes,
+    customerId, customerName: db.users.find((u) => u.userId === customerId)?.fullName ?? '',
+  }))).sort((a, b) => b.paymentDate.localeCompare(a.paymentDate))
+}
 /** Invoices derived from deposits and renewals (the demo keeps no separate invoice table). */
 function allInvoices(): { customerId: number; facilityId: number; invoice: Invoice }[] {
   const payments = (id: number, amount: number, p: Paid | undefined, fallbackAt: string, note: string) => [{
@@ -766,6 +774,13 @@ const routes: [string, RegExp, Handler][] = [
     if (!fullName || !phoneNumber) throw bad('Họ tên và số điện thoại không được để trống')
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw bad('Email không hợp lệ')
     if (db.users.some((x) => x.userId !== u.userId && x.email.toLowerCase() === email.toLowerCase())) throw conflict('Email đã được sử dụng')
+    const cid = String(body.citizenId ?? '').replace(/\D/g, '')
+    if (cid) {
+      if (u.citizenId && u.citizenId !== cid) throw conflict('Số CCCD đã lưu không thể tự thay đổi. Vui lòng mang CCCD đến cơ sở để nhân viên cập nhật.')
+      if (!/^\d{12}$/.test(cid)) throw bad('Số CCCD phải gồm đúng 12 chữ số')
+      if (db.users.some((x) => x.userId !== u.userId && x.citizenId === cid)) throw conflict('Số CCCD đã được đăng ký cho tài khoản khác')
+      u.citizenId = cid
+    }
     Object.assign(u, { fullName, email, phoneNumber, address: String(body.address ?? '').trim() || null })
     addLog(u.userId, 'PROFILE_UPDATED', 'Cập nhật thông tin tài khoản')
     return profileOf(u)
@@ -1396,6 +1411,134 @@ const routes: [string, RegExp, Handler][] = [
     return supportDto(r)
   }],
 
+  // ---- admin support (AdminSupportRequestsController): every facility; Admin may act on any ticket
+  ['GET', /^\/api\/admin\/support-requests$/, (_m, { token, query }) => {
+    requireRole(currentUser(token), [Roles.Admin, Roles.OpsManager])
+    const fid = Number(query.get('facilityId') ?? 0)
+    const status = query.get('status')
+    return db.supports.filter((r) => (!fid || r.facilityId === fid) && (!status || r.status === status))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((r) => ({ ...supportDto(r), facilityId: r.facilityId, facilityName: facilityById(r.facilityId)?.facilityName ?? '', customerId: r.customerId, customerName: userById(r.customerId).fullName }))
+  }],
+  ['GET', /^\/api\/admin\/support-requests\/(\d+)\/updates$/, (m, { token }) => {
+    requireRole(currentUser(token), [Roles.Admin, Roles.OpsManager])
+    return db.supportUpdates.filter((u) => u.requestId === Number(m[1])).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.updateId - b.updateId)
+      .map<SupportUpdate>((u) => ({ updateId: u.updateId, updatedBy: userById(u.updatedByUserId).fullName, actionMessage: u.actionMessage, previousStatus: u.previousStatus, newStatus: u.newStatus, createdAt: u.createdAt }))
+  }],
+  ['GET', /^\/api\/admin\/support-requests\/(\d+)\/checklist$/, (m, { token }) => {
+    requireRole(currentUser(token), [Roles.Admin, Roles.OpsManager])
+    const r = db.supports.find((x) => x.requestId === Number(m[1]))
+    if (!r) throw notFound('Không tìm thấy yêu cầu hỗ trợ')
+    return checklistOf(r).map(checklistDto)
+  }],
+  ['POST', /^\/api\/admin\/support-requests\/(\d+)\/messages$/, (m, { token, body }) => {
+    const me = currentUser(token); requireRole(me, [Roles.Admin])
+    const r = db.supports.find((x) => x.requestId === Number(m[1]))
+    if (!r) throw notFound('Không tìm thấy yêu cầu hỗ trợ')
+    if (r.status === 'Closed') throw conflict('Yêu cầu đã đóng, không thể thêm phản hồi')
+    const msg = String(body.message ?? '').trim()
+    if (!msg) throw bad('Nội dung phản hồi không được để trống')
+    const u = { updateId: nextId(), requestId: r.requestId, updatedByUserId: me.userId, actionMessage: msg, previousStatus: null, newStatus: null, createdAt: localIso(new Date()) }
+    db.supportUpdates.push(u)
+    return { updateId: u.updateId, updatedBy: me.fullName, actionMessage: msg, previousStatus: null, newStatus: null, createdAt: u.createdAt }
+  }],
+  ['PUT', /^\/api\/admin\/support-requests\/(\d+)\/checklist\/(\d+)$/, (m, { token, body }) => {
+    const me = currentUser(token); requireRole(me, [Roles.Admin])
+    const r = db.supports.find((x) => x.requestId === Number(m[1]))
+    const item = r ? checklistOf(r).find((c) => c.checklistItemId === Number(m[2])) : undefined
+    if (!r || !item) throw notFound('Không tìm thấy mục checklist')
+    if (r.status !== 'InProgress') throw conflict('Chỉ được cập nhật checklist khi ticket đang được xử lý')
+    const done = body.isCompleted === true
+    item.isCompleted = done; item.completedByStaffId = done ? me.userId : null; item.completedAt = done ? localIso(new Date()) : null
+    item.notes = String(body.notes ?? '').trim() || null
+    db.supportUpdates.push({ updateId: nextId(), requestId: r.requestId, updatedByUserId: me.userId, actionMessage: `Checklist ${done ? 'hoàn tất' : 'bỏ hoàn tất'}: ${item.description}`, previousStatus: r.status, newStatus: r.status, createdAt: localIso(new Date()) })
+    return checklistDto(item)
+  }],
+  ['PUT', /^\/api\/admin\/support-requests\/(\d+)$/, (m, { token, body }) => {
+    const me = currentUser(token); requireRole(me, [Roles.Admin])
+    const status = String(body.status)
+    if (!SUPPORT_STATUSES.includes(status)) throw bad('Trạng thái yêu cầu không hợp lệ')
+    const r = db.supports.find((x) => x.requestId === Number(m[1]))
+    if (!r) throw notFound('Không tìm thấy yêu cầu hỗ trợ')
+    if (r.status === 'Closed' || (r.status === 'Resolved' && status !== 'Closed')) throw conflict('Yêu cầu đã kết thúc xử lý')
+    const ok = r.status === 'Open' ? status === 'InProgress' : r.status === 'InProgress' ? status === 'InProgress' || status === 'Resolved' : r.status === 'Resolved' ? status === 'Closed' : false
+    if (!ok) throw conflict(`Không thể chuyển yêu cầu từ ${r.status} sang ${status}`)
+    if (status === 'Resolved' && checklistOf(r).some((c) => !c.isCompleted)) throw conflict('Cần hoàn tất toàn bộ checklist trước khi đánh dấu ticket đã xử lý')
+    const prev = r.status
+    r.status = status
+    r.resolvedAt = status === 'Resolved' || status === 'Closed' ? localIso(new Date()) : null
+    db.supportUpdates.push({ updateId: nextId(), requestId: r.requestId, updatedByUserId: me.userId, actionMessage: String(body.actionMessage ?? ''), previousStatus: prev, newStatus: status, createdAt: localIso(new Date()) })
+    return supportDto(r)
+  }],
+
+  // ---- payments as rows (PaymentsController / SystemAdminController)
+  ['GET', /^\/api\/payments\/my$/, (_m, { token }) => {
+    const me = customerOnly(token)
+    return paymentRows().filter((p) => p.customerId === me.userId).map(({ customerId: _c, customerName: _n, ...p }) => p)
+  }],
+  ['POST', /^\/api\/payments\/(\d+)\/cancel$/, () => { throw conflict('Chỉ hủy được giao dịch đang chờ thanh toán') }],
+  ['GET', /^\/api\/admin\/payments$/, (_m, { token, query }) => {
+    requireRole(currentUser(token), [Roles.Admin])
+    const st = query.get('status'); const meth = query.get('method'); const q = (query.get('search') ?? '').toLowerCase()
+    const page = Number(query.get('page') ?? 1); const size = Number(query.get('pageSize') ?? 50)
+    return paymentRows().filter((p) => (!st || p.status === st) && (!meth || p.paymentMethod === meth)
+      && (!q || p.invoiceNumber.toLowerCase().includes(q) || (p.transactionCode ?? '').toLowerCase().includes(q)))
+      .slice((page - 1) * size, page * size)
+      .map((p) => ({ paymentId: p.paymentId, invoiceId: p.invoiceId, invoiceNumber: p.invoiceNumber, customerId: p.customerId, customerName: p.customerName, paymentMethod: p.paymentMethod, status: p.status, amountPaid: p.amountPaid, paymentDate: p.paymentDate, transactionCode: p.transactionCode }))
+  }],
+  ['GET', /^\/api\/admin\/activity-logs$/, (_m, { token, query }) => {
+    requireRole(currentUser(token), [Roles.Admin])
+    const a = (query.get('action') ?? '').toLowerCase(); const from = query.get('from'); const to = query.get('to')
+    const page = Number(query.get('page') ?? 1); const size = Number(query.get('pageSize') ?? 50)
+    return (db.logs ?? []).filter((l) => (!a || l.action.toLowerCase().includes(a)) && (!from || l.createdAt >= from) && (!to || l.createdAt <= to))
+      .sort((x, y) => y.createdAt.localeCompare(x.createdAt)).slice((page - 1) * size, page * size)
+      .map((l) => ({ logId: l.logId, userId: l.userId, username: db.users.find((u) => u.userId === l.userId)?.username ?? null, action: l.action, details: l.details, ipAddress: l.ipAddress, createdAt: l.createdAt }))
+  }],
+  ['GET', /^\/api\/admin\/dashboard$/, (_m, { token }) => {
+    requireRole(currentUser(token), [Roles.Admin])
+    const month = localIso(new Date()).slice(0, 7)
+    return {
+      generatedAt: localIso(new Date()), totalUsers: db.users.length, activeUsers: db.users.filter((u) => (u.status ?? 'Active') === 'Active').length,
+      facilities: db.facilities.length, totalUnits: db.units.length, availableUnits: db.units.filter((u) => u.status === 'Available').length,
+      rentedUnits: db.units.filter((u) => u.status === 'Rented').length, activeContracts: db.contracts.filter((c) => c.status === 'Active').length,
+      overdueContracts: db.contracts.filter((c) => c.status === 'Overdue').length,
+      openSupportRequests: db.supports.filter((r) => r.status === 'Open' || r.status === 'InProgress').length,
+      pendingPayments: 0, pendingEmails: (db.emails ?? []).filter((e) => e.status === 'Pending').length, failedEmails: (db.emails ?? []).filter((e) => e.status === 'Failed').length,
+      revenueThisMonth: paymentRows().filter((p) => p.status === 'Success' && p.paymentDate.startsWith(month)).reduce((t, p) => t + p.amountPaid, 0),
+    }
+  }],
+  ['GET', /^\/api\/invoices\/facilities\/(\d+)\/refund-due$/, (m, { token }) => {
+    const me = currentUser(token); requireRole(me, STAFF); ensureAssigned(me.userId, Number(m[1]))
+    return []   // the demo never receives a late online payment
+  }],
+  ['PUT', /^\/api\/gate\/facilities\/(\d+)\/customers\/(\d+)\/citizen-id$/, (m, { token, body }) => {
+    const me = currentUser(token); requireRole(me, STAFF); ensureAssigned(me.userId, Number(m[1]))
+    const cust = db.users.find((u) => u.userId === Number(m[2]) && u.role === Roles.Customer)
+    if (!cust) throw notFound('Không tìm thấy khách hàng tại cơ sở này')
+    const cid = String(body.citizenId ?? '').replace(/\D/g, '')
+    if (!/^\d{12}$/.test(cid)) throw bad('Số CCCD phải gồm đúng 12 chữ số')
+    if (db.users.some((u) => u.citizenId === cid && u.userId !== cust.userId)) throw conflict('Số CCCD đã được đăng ký cho tài khoản khác')
+    cust.citizenId = cid
+    return { authorizedPersonId: null, fullName: cust.fullName, citizenId: cid, phoneNumber: cust.phoneNumber, relationship: 'Chủ hợp đồng' }
+  }],
+  ['POST', /^\/api\/reservations\/(\d+)\/cancel$/, (m, { token }) => {
+    const me = customerOnly(token)
+    const r = db.reservations.find((x) => x.reservationId === Number(m[1]) && x.customerId === me.userId)
+    if (!r) throw notFound('Không tìm thấy đơn đặt kho')
+    if (r.status !== 'PendingDeposit') throw conflict('Chỉ hủy trực tiếp được đơn chưa đặt cọc; đơn đã đặt cọc cần gửi yêu cầu hủy')
+    r.status = 'Cancelled'
+    return reservationDto(r)
+  }],
+  ['DELETE', /^\/api\/facility-management\/facilities\/(\d+)\/units\/(\d+)$/, (m, { token }) => {
+    const me = currentUser(token); requireRole(me, [Roles.Manager]); ensureAssigned(me.userId, Number(m[1]))
+    const u = db.units.find((x) => x.unitId === Number(m[2]) && x.facilityId === Number(m[1]))
+    if (!u) throw notFound('Không tìm thấy kho tại cơ sở')
+    if (u.status !== 'Available' && u.status !== 'UnderMaintenance') throw conflict('Chỉ xóa được kho đang trống hoặc đang bảo trì')
+    if (db.contracts.some((c) => c.unitId === u.unitId) || db.supports.some((r) => r.unitId === u.unitId)) throw conflict('Kho đã có lịch sử hợp đồng hoặc hỗ trợ nên không thể xóa; hãy chuyển sang bảo trì')
+    db.units = db.units.filter((x) => x !== u)
+    return undefined
+  }],
+
   // ---- visit registrations (customer books entry/exit times; staff approves; the gate admits only approved ones)
   ['GET', /^\/api\/contracts\/(\d+)\/visit-registrations$/, (m, { token }) => {
     const me = currentUser(token)
@@ -1500,6 +1643,7 @@ const routes: [string, RegExp, Handler][] = [
         return {
           contractId: c.contractId, contractNumber: c.contractNumber, contractStatus: c.status,
           startDate: c.startDate, endDate: c.endDate, unitCode: unitById(c.unitId).unitCode, unitStatus: unitById(c.unitId).status,
+          customerId: cust.userId,
           customer: { authorizedPersonId: null, fullName: cust.fullName, citizenId: cust.citizenId, phoneNumber: cust.phoneNumber, relationship: 'Chủ hợp đồng' },
           authorizedPersons: db.persons.filter((p) => p.contractId === c.contractId && p.status === 'Active').map(personDto),
           peopleInside: db.records.filter((r) => r.contractId === c.contractId && r.result === 'Granted' && !r.exitTime).map((r) => recordDto(r).visitorName),
