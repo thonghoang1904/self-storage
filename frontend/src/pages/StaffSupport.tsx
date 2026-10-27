@@ -50,7 +50,7 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
     if (!admin && !facilityId) return
     try {
       setRows(await api<SupportRequest[]>(admin
-        ? `/api/admin/support-requests?pageSize=200${facilityId ? `&facilityId=${facilityId}` : ''}`
+        ? `/api/admin/support-requests?pageSize=100${facilityId ? `&facilityId=${facilityId}` : ''}`
         : `/api/support-requests/facilities/${facilityId}`))
     } catch (e) {
       setError((e as Error).message)
