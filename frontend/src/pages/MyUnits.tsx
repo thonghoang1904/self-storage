@@ -68,6 +68,8 @@ export default function MyUnits() {
   const ending = contracts?.filter((c) => c.status === 'Active' && daysUntil(c.endDate) <= 45) ?? []
   const unpaid = invoices?.filter((i) => i.status === 'Unpaid' || i.status === 'Overdue') ?? []
   const history = [...(invoices ?? [])].sort((a, b) => (b.payments[0]?.paymentDate ?? b.createdAt).localeCompare(a.payments[0]?.paymentDate ?? a.createdAt)).slice(0, 5)
+  // Deposits belong to the reservation card above, not to the notification list.
+  const notices = unpaid.filter((i) => i.invoiceType !== 'DEPOSIT')
   const unitOf = (i: Invoice) => contracts?.find((c) => c.contractId === i.contractId)?.unitCode
 
   return (
@@ -82,6 +84,15 @@ export default function MyUnits() {
 
       <div className="container page-body">
         {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+
+        {openReservations.length > 0 && (
+          <section className="stack">
+            <h2 className="section-title with-icon"><Icon name="clipboard" size={20} className="cyan" /> Đơn Đặt Kho Đang Xử Lý</h2>
+            <div className="order-cards">
+              {openReservations.map((r) => <OrderCard key={r.reservationId} r={r} />)}
+            </div>
+          </section>
+        )}
 
         <section className="stack">
           <div className="row between wrap">
@@ -194,31 +205,12 @@ export default function MyUnits() {
 
             <div className="stack">
               <h3 className="aside-title">Thông Báo Mới Nhất</h3>
-              {unpaid.slice(0, 3).map((i) => (
+              {notices.slice(0, 3).map((i) => (
                 <div key={`i${i.invoiceId}`} className="notice">
                   <span className="notice-icon warn"><Icon name="wallet" size={16} /></span>
                   <div className="grow">
                     <div className="notice-head"><b>Yêu cầu thanh toán</b><small>{ago(i.createdAt)}</small></div>
                     <p>{unitOf(i) ? `Kho ${unitOf(i)}` : 'Hóa đơn'} {i.invoiceNumber} cần thanh toán {fmtMoney(i.totalAmount)} trước ngày {fmtDate(i.dueDate)}. <Link to="/invoices" className="link">Thanh toán</Link></p>
-                  </div>
-                </div>
-              ))}
-              {openReservations.map((r) => (
-                <div key={`r${r.reservationId}`} className="notice">
-                  <span className="notice-icon warn"><Icon name="calendar" size={16} /></span>
-                  <div className="grow">
-                    <div className="notice-head"><b>{depositMissed(r) ? 'Quá hạn đặt cọc' : pickupMissed(r) ? 'Quá hạn nhận kho' : r.status === 'PendingDeposit' ? 'Chờ đặt cọc' : r.checkInAppointmentAt ? 'Đã hẹn nhận kho' : 'Đặt lịch nhận kho'}</b><small>Nhận kho {fmtDate(r.expectedStartDate)}</small></div>
-                    <p>
-                      Đơn {r.reservationCode} ({splitTypeName(r.unitTypeName).name}, {r.facilityName})
-                      {depositMissed(r) ? ' không được đặt cọc kịp nên sẽ tự hủy. Bạn có thể đặt kho lại.'
-                        : pickupMissed(r) ? ` đã quá 20:00 ngày ${fmtDate(r.expectedStartDate)} mà chưa nhận kho nên sẽ tự hủy; tiền cọc được hoàn sau khi trừ phí hủy.`
-                        : r.status === 'PendingDeposit' ? ` cần đặt cọc ${fmtMoney(r.depositAmount)} trước ${fmtTime(depositDueAt(r))}.`
-                        : r.checkInAppointmentAt ? ` — đến cơ sở đúng giờ hẹn để nhân viên bàn giao kho.`
-                        : ` đã nhận cọc. Chọn giờ đến nhận kho trong ngày ${fmtDate(r.expectedStartDate)}, nhân viên chỉ bàn giao từ giờ hẹn.`}
-                    </p>
-                    {r.status === 'Confirmed' && !pickupMissed(r) && (
-                      <Link to={`/reservations/${r.reservationId}/pickup`} className="btn primary sm"><Icon name="calendar" size={14} /> {r.checkInAppointmentAt ? 'Đổi giờ nhận kho' : 'Đặt lịch nhận kho'}</Link>
-                    )}
                   </div>
                 </div>
               ))}
@@ -231,7 +223,7 @@ export default function MyUnits() {
                   </div>
                 </div>
               ))}
-              {unpaid.length + openReservations.length + ending.length === 0 && <p className="muted">Không có thông báo mới.</p>}
+              {notices.length + ending.length === 0 && <p className="muted">Không có thông báo mới.</p>}
             </div>
           </aside>
         </div>
@@ -367,5 +359,45 @@ function History({ contractId }: { contractId: number }) {
       </table>
       {rows?.length === 0 && <Empty icon="history">Chưa có lượt ra vào.</Empty>}
     </div>
+  )
+}
+
+/**
+ * A reservation on its way to a unit, shown like an order tracker: deposit → pickup time → handover, with the one
+ * thing the customer has to do next as the main button (not hidden among notifications).
+ */
+function OrderCard({ r }: { r: Reservation }) {
+  const lateDeposit = depositMissed(r)
+  const latePickup = pickupMissed(r)
+  const step = r.status === 'PendingDeposit' ? 0 : r.checkInAppointmentAt ? 2 : 1
+  const steps = ['Thanh toán cọc', 'Đặt lịch nhận kho', 'Nhận kho tại cơ sở']
+  return (
+    <article className={`order-card ${lateDeposit || latePickup ? 'late' : step < 2 ? 'todo' : ''}`}>
+      <div className="row between wrap">
+        <div><b className="code">{r.reservationCode}</b><small className="muted block">{splitTypeName(r.unitTypeName).name} · {r.facilityName} · nhận kho {fmtDate(r.expectedStartDate)}</small></div>
+        <StatusBadge status={r.status} />
+      </div>
+      <ol className="order-steps">
+        {steps.map((t, i) => <li key={t} className={i < step ? 'done' : i === step ? 'current' : ''}><span>{i < step ? <Icon name="check" size={13} /> : i + 1}</span>{t}</li>)}
+      </ol>
+      {lateDeposit ? <p className="alert bad"><Icon name="alert" size={16} />Quá hạn đặt cọc, đơn sẽ tự hủy. Bạn có thể đặt kho lại.</p>
+        : latePickup ? <p className="alert bad"><Icon name="alert" size={16} />Đã quá 20:00 ngày {fmtDate(r.expectedStartDate)} mà chưa nhận kho; đơn sẽ tự hủy, cọc hoàn sau khi trừ phí hủy.</p>
+        : step === 0 ? (
+          <div className="order-next">
+            <span>Thanh toán <b>{fmtMoney(r.depositAmount)}</b> trước <b>{fmtTime(depositDueAt(r))}</b> để giữ kho.</span>
+            <Link to={`/invoices?reservation=${r.reservationId}`} className="btn primary"><Icon name="wallet" size={16} /> Thanh toán cọc</Link>
+          </div>
+        ) : step === 1 ? (
+          <div className="order-next">
+            <span>Đã nhận cọc. <b>Chọn giờ đến nhận kho</b> trong ngày {fmtDate(r.expectedStartDate)}, trước 20:00.</span>
+            <Link to={`/reservations/${r.reservationId}/pickup`} className="btn primary"><Icon name="calendar" size={16} /> Đặt lịch nhận kho</Link>
+          </div>
+        ) : (
+          <div className="order-next">
+            <span>Hẹn nhận kho lúc <b>{fmtTime(r.checkInAppointmentAt!)}</b>. Mang CCCD đến đúng giờ để nhân viên bàn giao kho.</span>
+            <Link to={`/reservations/${r.reservationId}/pickup`} className="btn outline"><Icon name="calendar" size={16} /> Đổi giờ</Link>
+          </div>
+        )}
+    </article>
   )
 }
