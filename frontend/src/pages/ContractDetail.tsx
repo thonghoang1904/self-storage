@@ -1,18 +1,16 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { api, ApiError, fmtDate, fmtMoney, fmtTime } from '../api'
+import { useCallback, useEffect, useState } from 'react'
+import { Link, useLocation, useParams } from 'react-router-dom'
+import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
-import { FormField } from '../components/form'
-import { Badge, Empty, Icon, StatusBadge, UnitArt, splitTypeName } from '../components/ui'
+import { Empty, Icon, StatusBadge, UnitArt, splitTypeName } from '../components/ui'
 import { photoVariant } from '../components/unitPhoto'
-import type { AccessRecord, ContractDetail as Detail, EarlyReturnQuote, EarlyReturnRequest, Facility, Invoice, Person, Renewal, StorageUnit, UnitType } from '../types'
-import { textError } from '../validation'
+import type { AccessRecord, ContractDetail as Detail, Facility, Invoice, Person, Renewal, StorageUnit, UnitType } from '../types'
 
 /**
  * Figma "customer-storage-contract-detail": the unit and its contract, the contract's invoices,
  * access status, overdue fees / deposit balance and the renewal request (GET /api/contracts/{id},
- * GET/POST /api/contracts/{id}/renewals), and the early-return request (GET/POST/DELETE
- * /api/contracts/{id}/early-return-requests, cost preview from GET .../early-return-quote).
+ * GET/POST /api/contracts/{id}/renewals). Early return goes through a support request
+ * (topic=return): the API only completes a return from the appointment (20:00 on the end date).
  */
 
 const DAY = 86400000
@@ -72,7 +70,6 @@ export default function ContractDetail() {
   const { user } = useAuth()
   const search = useLocation().search
   const wantRenew = search.includes('renew')
-  const wantEarly = search.includes('return=early')
   const [c, setC] = useState<Detail | null>(null)
   const [renewals, setRenewals] = useState<Renewal[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
@@ -82,7 +79,6 @@ export default function ContractDetail() {
   const [people, setPeople] = useState<Person[]>([])
   const [lastVisit, setLastVisit] = useState<AccessRecord | null>(null)
   const [showRenew, setShowRenew] = useState(wantRenew)
-  const [showEarly, setShowEarly] = useState(wantEarly)
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
@@ -127,7 +123,6 @@ export default function ContractDetail() {
   const next = schedule.find((r) => r.state !== 'paid' && r.state !== 'cancelled')
   const area = type ? Math.round(type.lengthMeters * type.widthMeters * 100) / 100 : null
   // Until the day before the end date the customer can ask to hand the unit back early; on the end date it is a normal return.
-  const canReturnEarly = c.status === 'Active' && left > 0
 
   return (
     <>
@@ -189,14 +184,11 @@ export default function ContractDetail() {
             <div className="action-tiles">
               {!ended && <Link to={`/my-units/${c.contractId}/move-in`} className="action-tile"><span className="tile-icon"><Icon name="package" size={18} /></span><b>Đưa đồ vào kho</b><small>Khai báo đồ và lịch chuyển</small></Link>}
               {!ended && <Link to={`/support?contract=${c.contractId}`} className="action-tile"><span className="tile-icon"><Icon name="alert" size={18} /></span><b>Báo sự cố</b><small>Gửi yêu cầu hỗ trợ</small></Link>}
-              {canReturnEarly
-                ? <button type="button" className={`action-tile ${showEarly ? 'active' : ''}`} aria-expanded={showEarly} onClick={() => setShowEarly(!showEarly)}><span className="tile-icon"><Icon name="logout" size={18} /></span><b>Trả kho sớm</b><small>Trước ngày {fmtDate(c.endDate)}</small></button>
-                : !ended && <Link to={`/support?contract=${c.contractId}&topic=return`} className="action-tile"><span className="tile-icon"><Icon name="logout" size={18} /></span><b>Yêu cầu trả kho</b><small>Hẹn ngày trả với cơ sở</small></Link>}
+              {!ended && <Link to={`/support?contract=${c.contractId}&topic=return`} className="action-tile"><span className="tile-icon"><Icon name="logout" size={18} /></span><b>Trả kho sớm</b><small>Gửi yêu cầu, cơ sở hẹn ngày trả</small></Link>}
               {!ended && <Link to={`/my-units/${c.contractId}/suspend`} className="action-tile"><span className="tile-icon"><Icon name="clock" size={18} /></span><b>Tạm ngưng hợp đồng</b><small>30–90 ngày</small></Link>}
               <Link to={`/my-units/${c.contractId}/policy`} className="action-tile"><span className="tile-icon"><Icon name="clipboard" size={18} /></span><b>Xem policy hợp đồng</b><small>Điều khoản đang áp dụng</small></Link>
               <Link to="/account/security" className="action-tile"><span className="tile-icon"><Icon name="shield" size={18} /></span><b>Bảo mật & nhật ký</b><small>Lịch sử vào kho, đăng nhập</small></Link>
             </div>
-            {showEarly && canReturnEarly && <EarlyReturnPanel contract={c} facility={facility} />}
           </section>
           {/* row 2 left: payments */}
           <section className="panel">
@@ -353,146 +345,6 @@ function RenewalPanel({ contract: c, renewals, onChanged }: { contract: Detail; 
             <div key={r.renewalId} className="info-row">
               <span className="muted">{fmtTime(r.requestedAt)} · {r.extensionMonths} tháng · {fmtMoney(r.renewalFee)}</span>
               <StatusBadge status={r.status} />
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-const EARLY_STATUS: Record<string, { label: string; tone: 'ok' | 'warn' | 'muted' }> = {
-  Pending: { label: 'Chờ trả kho', tone: 'warn' },
-  Completed: { label: 'Đã trả kho', tone: 'ok' },
-  Cancelled: { label: 'Đã hủy', tone: 'muted' },
-}
-const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-
-/**
- * Ask to hand the unit back before the end date: pick the day, give a reason and see the fee and the deposit
- * left before sending. While the request is pending it can be cancelled; staff finish it at the facility.
- */
-function EarlyReturnPanel({ contract: c, facility }: { contract: Detail; facility: Facility | null }) {
-  const navigate = useNavigate()
-  const today = isoDay(new Date())
-  const lastDay = isoDay(new Date(asLocal(c.endDate).getTime() - DAY))
-  const [requests, setRequests] = useState<EarlyReturnRequest[] | null>(null)
-  const [date, setDate] = useState(today)
-  const [reason, setReason] = useState('')
-  const [agreed, setAgreed] = useState(false)
-  const [quote, setQuote] = useState<EarlyReturnQuote | null>(null)
-  const [quoteFailed, setQuoteFailed] = useState(false)
-  const [tried, setTried] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-
-  const loadRequests = useCallback(() => api<EarlyReturnRequest[]>(`/api/contracts/${c.contractId}/early-return-requests`)
-    .then(setRequests).catch(() => setRequests([])), [c.contractId])
-  useEffect(() => { void loadRequests() }, [loadRequests])
-  useEffect(() => {
-    if (!date) return
-    api<EarlyReturnQuote>(`/api/contracts/${c.contractId}/early-return-quote?returnDate=${date}`)
-      .then((q) => { setQuote(q); setQuoteFailed(false) }).catch(() => { setQuote(null); setQuoteFailed(true) })
-  }, [c.contractId, date])
-
-  const pending = requests?.find((r) => r.status === 'Pending')
-  const errors = {
-    date: !date ? 'Vui lòng chọn ngày trả kho' : date < today || date > lastDay ? `Chọn ngày từ hôm nay đến ${fmtDate(lastDay)} (trước ngày hết hạn)` : null,
-    reason: textError(reason, 'Lý do trả sớm', 5, 500),
-    agreed: agreed ? null : 'Vui lòng xác nhận đã đọc điều kiện trả kho sớm',
-  }
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
-    setTried(true)
-    setError('')
-    if (Object.values(errors).some(Boolean)) return
-    setBusy(true)
-    try {
-      await api(`/api/contracts/${c.contractId}/early-return-requests`, { body: { returnDate: date, reason: reason.trim() } })
-      // Open the request page: the contract, the early-return policy and the expected refund.
-      navigate(`/my-units/${c.contractId}/early-return`)
-      return
-    } catch (err) {
-      // 404/405: the server does not offer early-return requests yet.
-      setError(err instanceof ApiError && (err.status === 404 || err.status === 405)
-        ? `Chưa gửi được yêu cầu trả kho sớm trực tuyến. Vui lòng liên hệ ${c.facilityName}${facility ? ` (${facility.hotline})` : ''} để hẹn trả kho.`
-        : (err as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const cancel = async (r: EarlyReturnRequest) => {
-    if (!window.confirm('Hủy yêu cầu trả kho sớm? Hợp đồng sẽ tiếp tục đến ngày hết hạn.')) return
-    setError('')
-    setNotice('')
-    try {
-      await api(`/api/contracts/${c.contractId}/early-return-requests/${r.requestId}`, { method: 'DELETE' })
-      setNotice('Đã hủy yêu cầu trả kho sớm.')
-      await loadRequests()
-    } catch (err) {
-      setError((err as Error).message)
-    }
-  }
-
-  return (
-    <div className="renew-box">
-      {!requests ? <p className="muted">Đang tải…</p> : pending ? (
-        <div className="notice">
-          <span className="notice-icon warn"><Icon name="logout" size={16} /></span>
-          <div className="grow">
-            <b>Yêu cầu trả kho sớm ngày {fmtDate(pending.returnDate)} đang chờ</b>
-            <p>Mang CCCD đến {c.facilityName}{facility ? ` (${facility.operatingHours})` : ''} đúng ngày hẹn. Nhân viên kiểm tra kho cùng bạn rồi hoàn cọc sau khi trừ phí trả sớm {fmtMoney(pending.earlyReturnFee)}.</p>
-            <p className="muted">Lý do: {pending.reason}</p>
-            <div className="row wrap">
-              <Link to={`/my-units/${c.contractId}/early-return`} className="btn primary sm"><Icon name="file" size={14} /> Xem chi tiết yêu cầu</Link>
-              <button type="button" className="btn outline sm" onClick={() => void cancel(pending)}>Hủy yêu cầu</button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <form className="stack" onSubmit={submit} noValidate>
-          <b>Trả kho trước ngày hết hạn {fmtDate(c.endDate)}</b>
-          <ul className="policy-list early-policy">
-            <li>Tiền thuê đã trả không được hoàn; hóa đơn tiền thuê chưa thanh toán của các kỳ sau ngày trả kho được hủy.</li>
-            <li>Phí trả kho sớm trừ vào tiền cọc {fmtMoney(c.depositPaid)}, phần cọc còn lại hoàn sau khi nhân viên kiểm tra kho đạt.</li>
-            <li>Đến trả kho đúng ngày đã hẹn, trước 20:00, mang CCCD của chủ hợp đồng; dọn hết đồ ra khỏi kho.</li>
-            <li>Có thể hủy yêu cầu khi nhân viên chưa nhận trả kho.</li>
-            <li><Link to={`/my-units/${c.contractId}/policy`} className="link">Xem toàn bộ điều khoản & chính sách hợp đồng</Link></li>
-          </ul>
-          <FormField label="Ngày bạn đến trả kho" error={tried ? errors.date : null}>
-            <input type="date" value={date} min={today} max={lastDay} onChange={(e) => setDate(e.target.value)} aria-invalid={tried && errors.date ? true : undefined} />
-          </FormField>
-          {quote && !errors.date ? (
-            <dl className="summary-lines">
-              <div><dt>Trả sớm</dt><dd>{quote.daysEarly} ngày</dd></div>
-              <div><dt>Phí trả kho sớm</dt><dd>{fmtMoney(quote.earlyReturnFee)}</dd></div>
-              {quote.lateFees > 0 && <div><dt>Phí quá hạn</dt><dd>{fmtMoney(quote.lateFees)}</dd></div>}
-              <div><dt>Tiền cọc</dt><dd>{fmtMoney(quote.depositPaid)}</dd></div>
-              <div><dt>Dự kiến hoàn cọc</dt><dd className="cyan">{fmtMoney(quote.depositRefundDue)}</dd></div>
-            </dl>
-          ) : quoteFailed && <p className="hint"><Icon name="wallet" size={15} /> Phí trả sớm theo chính sách của cơ sở, nhân viên báo cụ thể khi bạn đến trả kho.</p>}
-          <FormField label="Lý do trả sớm" error={tried ? errors.reason : null} hint={`${reason.trim().length}/500 ký tự`}>
-            <textarea rows={2} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} aria-invalid={tried && errors.reason ? true : undefined}
-              placeholder="vd: Tôi chuyển nhà sớm, không cần lưu kho nữa" />
-          </FormField>
-          <label className="check-row"><input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
-            Tôi hiểu tiền thuê đã trả không được hoàn và phí trả sớm được trừ vào tiền cọc.</label>
-          {tried && errors.agreed && <small className="field-error"><Icon name="alert" size={12} /> {errors.agreed}</small>}
-          <button className="btn primary block" type="submit" disabled={busy}>{busy ? 'Đang gửi…' : 'Gửi yêu cầu trả kho sớm'}</button>
-        </form>
-      )}
-      {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
-      {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
-      {requests && requests.some((r) => r.status !== 'Pending') && (
-        <div className="stack-sm">
-          <small className="muted"><b>Yêu cầu trước đây</b></small>
-          {requests.filter((r) => r.status !== 'Pending').map((r) => (
-            <div key={r.requestId} className="info-row">
-              <span className="muted">{fmtTime(r.requestedAt)} · trả ngày {fmtDate(r.returnDate)}</span>
-              <Badge tone={EARLY_STATUS[r.status]?.tone ?? 'muted'}>{EARLY_STATUS[r.status]?.label ?? r.status}</Badge>
             </div>
           ))}
         </div>

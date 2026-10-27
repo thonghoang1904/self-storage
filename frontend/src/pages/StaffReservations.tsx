@@ -5,6 +5,7 @@ import { useStaffFacility } from '../components/layout'
 import { appointmentReached, depositDueAt, depositMissed, pickupMissed } from '../components/appointment'
 import { Badge, Empty, Icon, splitTypeName, StatusBadge } from '../components/ui'
 import type { Reservation, StorageUnit } from '../types'
+import { Select } from '../components/Select'
 
 const FILTERS = [
   { key: 'open', label: 'Cần xử lý' },
@@ -158,9 +159,9 @@ function CheckIn({ units, onCheckIn, busy }: { units: StorageUnit[]; onCheckIn: 
   if (!units.length) return <span className="muted">Hết kho trống cùng loại</span>
   return (
     <span className="row end">
-      <select value={unitId} onChange={(e) => setUnitId(Number(e.target.value))}>
+      <Select value={unitId} onChange={(e) => setUnitId(Number(e.target.value))}>
         {units.map((u) => <option key={u.unitId} value={u.unitId}>{u.unitCode} · {u.zoneArea}</option>)}
-      </select>
+      </Select>
       <button className="btn primary sm" disabled={busy} onClick={() => { const u = units.find((x) => x.unitId === unitId); if (u) onCheckIn(u) }}>Bàn giao</button>
     </span>
   )

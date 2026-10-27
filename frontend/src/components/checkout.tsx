@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { IS_DEMO, api } from '../api'
+import { api } from '../api'
 import { Icon } from './ui'
-import type { CheckoutResponse, Invoice } from '../types'
+import type { CheckoutResponse } from '../types'
 
 /** Online payment of an invoice (POST /api/invoices/{id}/checkout/vnpay): redirects to the VNPay gateway. */
 export function useCheckout(onError: (message: string) => void) {
@@ -65,37 +65,4 @@ export function moneyInWords(amount: number): string {
   }
   const s = `${parts.join(' ')} đồng`.replace(/\s+/g, ' ').trim()
   return s.charAt(0).toUpperCase() + s.slice(1)
-}
-
-/** The development sandbox payment exists in dev builds (real backend, Development) and in the in-browser demo. */
-export const SANDBOX_PAY = import.meta.env.DEV === true || IS_DEMO
-
-/**
- * Test-only "paid successfully" button (POST /api/invoices/{id}/checkout/{provider}/sandbox-complete): the backend completes the
- * payment exactly as a VNPay confirmation would, so a deposit moves the reservation to "Chờ bàn giao kho" by itself.
- */
-export function SandboxPayButton({ invoiceId, provider = 'vnpay', onPaid, onError }: {
-  invoiceId: number
-  provider?: 'vnpay' | 'momo'
-  onPaid: (invoice: Invoice) => void
-  onError: (message: string) => void
-}) {
-  const [busy, setBusy] = useState(false)
-  if (!SANDBOX_PAY) return null
-  const pay = async () => {
-    onError('')
-    setBusy(true)
-    try {
-      onPaid(await api<Invoice>(`/api/invoices/${invoiceId}/checkout/${provider}/sandbox-complete`, { method: 'POST' }))
-    } catch (e) {
-      onError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <button type="button" className="btn success" disabled={busy} onClick={() => void pay()} title="Chỉ có khi chạy thử: giả lập cổng thanh toán báo thành công">
-      <Icon name="check" size={16} /> {busy ? 'Đang xác nhận…' : 'Đã thanh toán thành công'} <span className="sandbox-tag">thử</span>
-    </button>
-  )
 }

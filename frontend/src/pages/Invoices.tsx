@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { AppointmentPicker } from '../components/appointment'
-import { PayButtons, SandboxPayButton, TYPE_ICON, useCheckout } from '../components/checkout'
+import { PayButtons, TYPE_ICON, useCheckout } from '../components/checkout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { Facility, Invoice, Reservation } from '../types'
+import { Select } from '../components/Select'
 
 export default function Invoices() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
@@ -24,7 +25,6 @@ export default function Invoices() {
 
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [facilities, setFacilities] = useState<Facility[]>([])
-  const [paidNotice, setPaidNotice] = useState('')
 
   /** Invoices plus the customer's reservations (deposit status and pick-up time). Quiet reloads keep the list in place. */
   const load = useCallback(async (quiet = false) => {
@@ -56,12 +56,6 @@ export default function Invoices() {
     return () => window.clearInterval(t)
   }, [hasPayable, load])
 
-  const onSandboxPaid = (paid: Invoice) => {
-    setInvoices((all) => all.map((i) => (i.invoiceId === paid.invoiceId ? paid : i)))
-    setPaidNotice(`Đã thanh toán ${paid.invoiceNumber} · ${fmtMoney(paid.totalAmount)}.`)
-    setJustPaid((ids) => [...ids, paid.invoiceId])
-    void load(true)
-  }
   const reservationOf = (i: Invoice) => (i.invoiceType === 'DEPOSIT' ? reservations.find((r) => r.reservationId === i.reservationId) : undefined)
   const hoursOf = (r: Reservation) => facilities.find((f) => f.facilityName === r.facilityName)?.operatingHours
   const updateReservation = (u: Reservation) => setReservations((rs) => rs.map((x) => (x.reservationId === u.reservationId ? u : x)))
@@ -78,8 +72,7 @@ export default function Invoices() {
   const [type, setType] = useState('')
   useEffect(() => { if (!loading && due.length) setTab('due') }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
   // Just paid here (or the deposit of the reservation just made): keep it on screen so the next step (pick-up time) stays visible.
-  const [justPaid, setJustPaid] = useState<number[]>([])
-  const pinned = (i: Invoice) => isNew(i) || justPaid.includes(i.invoiceId)
+  const pinned = (i: Invoice) => isNew(i)
   const shown = ordered.filter((i) => pinned(i) || ((tab === 'due' ? isPayable(i) : tab === 'paid' ? i.status === 'Paid' : true) && (!type || i.invoiceType === type)))
   const types = [...new Set(invoices.map((i) => i.invoiceType))]
 
@@ -103,7 +96,6 @@ export default function Invoices() {
           </div>
         </div>
       )}
-      {paidNotice && <p className="alert ok"><Icon name="check" size={16} />{paidNotice}</p>}
       {returnedFromGateway && (
         <p className="alert ok">Đã quay lại từ cổng thanh toán. Trạng thái được cập nhật khi cổng thanh toán xác nhận; bấm Làm mới nếu hóa đơn vẫn đang chờ.</p>
       )}
@@ -133,10 +125,10 @@ export default function Invoices() {
           <button className={tab === 'all' ? 'active' : ''} onClick={() => setTab('all')}>Tất cả</button>
         </div>
         <div className="row">
-          <select id="invoice-type" value={type} onChange={(e) => setType(e.target.value)} aria-label="Loại hóa đơn">
+          <Select id="invoice-type" value={type} onChange={(e) => setType(e.target.value)} aria-label="Loại hóa đơn">
             <option value="">Mọi loại hóa đơn</option>
             {types.map((t) => <option key={t} value={t}>{invoiceTypeName(t)}</option>)}
-          </select>
+          </Select>
           <button className="btn outline sm" onClick={() => { setLoading(true); void load() }} disabled={loading}><Icon name="refresh" size={14} /> Làm mới</button>
         </div>
       </div>
@@ -170,7 +162,6 @@ export default function Invoices() {
                 <div className="invoice-body">
                   <div className="row wrap pay-row">
                     <PayButtons invoiceId={invoice.invoiceId} startingInvoiceId={startingInvoiceId} startCheckout={(i) => void startCheckout(i)} />
-                    <SandboxPayButton invoiceId={invoice.invoiceId} onPaid={onSandboxPaid} onError={setError} />
                   </div>
                 </div>
               )}

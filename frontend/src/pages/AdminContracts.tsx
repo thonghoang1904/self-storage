@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { AdminContract, Facility, ReturnUnitResult, StorageUnit } from '../types'
+import { Select } from '../components/Select'
 
 /**
  * System administrator: contracts across all facilities (AdminContractsController).
@@ -78,13 +79,13 @@ export default function AdminContracts() {
             <Icon name="search" size={16} className="input-lead" />
             <input id="contract-search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Số hợp đồng, tên hoặc email khách, mã kho…" />
           </span>
-          <select id="contract-facility" value={facilityId} onChange={(e) => { setFacilityId(e.target.value); setPage(1) }}>
+          <Select id="contract-facility" value={facilityId} onChange={(e) => { setFacilityId(e.target.value); setPage(1) }}>
             <option value="">Tất cả cơ sở</option>
             {facilities.map((f) => <option key={f.facilityId} value={f.facilityId}>{f.facilityName}</option>)}
-          </select>
-          <select id="contract-status" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }}>
+          </Select>
+          <Select id="contract-status" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }}>
             {STATUSES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
-          </select>
+          </Select>
         </div>
         <button className="btn outline" type="submit">Tìm</button>
       </form>
@@ -302,16 +303,16 @@ function CreateFromReservation({ facilities, onCancel, onDone }: { facilities: F
       <div className="form-grid four">
         <label className="field"><span>Mã đơn đặt kho (ID)</span><input id="ci-reservation" inputMode="numeric" value={reservationId} onChange={(e) => setReservationId(e.target.value.replace(/\D/g, ''))} required /></label>
         <label className="field"><span>Cơ sở</span>
-          <select id="ci-facility" value={facilityId} onChange={(e) => setFacilityId(e.target.value)} required>
+          <Select id="ci-facility" value={facilityId} onChange={(e) => setFacilityId(e.target.value)} required>
             <option value="">Chọn cơ sở</option>
             {facilities.map((f) => <option key={f.facilityId} value={f.facilityId}>{f.facilityName}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="field"><span>Kho trống</span>
-          <select id="ci-unit" value={unitId} onChange={(e) => setUnitId(e.target.value)} required disabled={!units.length}>
+          <Select id="ci-unit" value={unitId} onChange={(e) => setUnitId(e.target.value)} required disabled={!units.length}>
             <option value="">{facilityId ? (units.length ? 'Chọn kho' : 'Không có kho trống') : 'Chọn cơ sở trước'}</option>
             {units.map((u) => <option key={u.unitId} value={u.unitId}>{u.unitCode} · {u.unitTypeName}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="field"><span>Tình trạng khi bàn giao</span><input id="ci-notes" maxLength={1000} value={notes} onChange={(e) => setNotes(e.target.value)} required /></label>
       </div>

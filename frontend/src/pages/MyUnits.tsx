@@ -117,7 +117,7 @@ export default function MyUnits() {
                       </div>
                     )}
                     {c.status === 'Active' && left > 0 && (
-                      <Link to={`/my-units/${c.contractId}?return=early`} className="btn ghost sm block"><Icon name="logout" size={14} /> Trả Kho Sớm</Link>
+                      <Link to={`/support?contract=${c.contractId}&topic=return`} className="btn ghost sm block"><Icon name="logout" size={14} /> Trả Kho Sớm</Link>
                     )}
                   </div>
                 </article>

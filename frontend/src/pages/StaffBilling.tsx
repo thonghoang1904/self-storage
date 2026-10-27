@@ -5,6 +5,7 @@ import { depositDueAt, depositMissed } from '../components/appointment'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { Invoice, Reservation, StaffContract } from '../types'
+import { Select } from '../components/Select'
 
 /**
  * Staff billing: invoices of the facility (GET /api/invoices/facilities/{id}) and recording a cash or
@@ -100,18 +101,18 @@ export default function StaffBilling() {
             <Icon name="search" size={16} className="input-lead" />
             <input value={q} onChange={(e) => { setQ(e.target.value); setPage(1) }} placeholder="Tìm số hóa đơn, khách hàng, mã HĐ / đơn…" />
           </span>
-          <select value={status} onChange={(e) => { setStatus(e.target.value as typeof status); setPage(1) }}>
+          <Select value={status} onChange={(e) => { setStatus(e.target.value as typeof status); setPage(1) }}>
             <option value="due">Chờ thanh toán</option>
             <option value="Unpaid">Chưa thanh toán</option>
             <option value="Overdue">Quá hạn</option>
             <option value="Paid">Đã thanh toán</option>
             <option value="Cancelled">Đã hủy</option>
             <option value="all">Tất cả trạng thái</option>
-          </select>
-          <select value={type} onChange={(e) => { setType(e.target.value); setPage(1) }}>
+          </Select>
+          <Select value={type} onChange={(e) => { setType(e.target.value); setPage(1) }}>
             <option value="all">Mọi loại hóa đơn</option>
             {Object.entries(TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
         </div>
         <button className="btn ghost" onClick={() => { setQ(''); setStatus('due'); setType('all'); setPage(1) }}><Icon name="x" size={15} /> Xóa bộ lọc</button>
       </div>
@@ -230,10 +231,10 @@ function PaymentForm({ invoice: inv, customer, onCancel, onDone }: { invoice: In
       <p className="muted">Khách {customer} · {inv.details[0]?.description} · Số tiền phải thu đúng <b>{fmtMoney(inv.totalAmount)}</b>.</p>
       <div className="form-grid">
         <label className="field"><span>Hình thức</span>
-          <select value={method} onChange={(e) => setMethod(e.target.value as typeof method)}>
+          <Select value={method} onChange={(e) => setMethod(e.target.value as typeof method)}>
             <option value="Cash">Tiền mặt tại quầy</option>
             <option value="BankTransfer">Chuyển khoản</option>
-          </select>
+          </Select>
         </label>
         <label className="field"><span>Mã giao dịch {method === 'BankTransfer' ? '' : '(không bắt buộc)'}</span>
           <input value={code} onChange={(e) => setCode(e.target.value.replace(/[^A-Za-z0-9-]/g, '').slice(0, 50))} required={method === 'BankTransfer'} placeholder={method === 'BankTransfer' ? 'Mã chuyển khoản ngân hàng' : ''} />

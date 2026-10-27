@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { api, fmtTime } from '../api'
 import type { Reservation } from '../types'
 import { Icon } from './ui'
+import { Select } from './Select'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const localDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
@@ -113,9 +114,9 @@ export function AppointmentPicker({ reservation: r, operatingHours, onSaved, def
     <span className="appt editing">
       <small className="muted">Giờ đến nhận kho ngày {r.expectedStartDate.split('-').reverse().join('/')}</small>
       <span className="row">
-        <select value={time} onChange={(e) => setTime(e.target.value)} aria-label="Giờ nhận kho">
+        <Select value={time} onChange={(e) => setTime(e.target.value)} aria-label="Giờ nhận kho">
           {slots.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
+        </Select>
         <button type="button" className="btn primary sm" disabled={busy} onClick={save}>{busy ? 'Đang lưu…' : 'Chốt giờ nhận kho'}</button>
         <button type="button" className="btn ghost sm" onClick={() => { setOpen(false); setError('') }}>Hủy</button>
       </span>

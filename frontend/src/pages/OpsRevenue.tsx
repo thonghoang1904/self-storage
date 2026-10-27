@@ -3,6 +3,7 @@ import { api, downloadFile, fmtDate, fmtMoney } from '../api'
 import { Empty, Icon } from '../components/ui'
 import type { OperationsReport, OperationsReportRow, UnitType } from '../types'
 import { Metric } from './FacilityOverview'
+import { Select } from '../components/Select'
 
 /**
  * Operations manager: revenue across facilities (Figma "revenue-analytics") from
@@ -191,17 +192,17 @@ function ReportDetails({ from, to, facilities }: { from: string; to: string; fac
         <button className="btn outline sm" onClick={() => void exportCsv()} disabled={busy}><Icon name="file" size={14} /> {busy ? 'Đang xuất…' : 'Xuất CSV chi tiết'}</button>
       </div>
       <div className="filter-controls">
-        <select id="rd-facility" value={facilityId} onChange={(e) => setFacilityId(e.target.value)}>
+        <Select id="rd-facility" value={facilityId} onChange={(e) => setFacilityId(e.target.value)}>
           <option value="">Tất cả cơ sở</option>
           {facilities.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-        </select>
-        <select id="rd-type" value={unitTypeId} onChange={(e) => setUnitTypeId(e.target.value)}>
+        </Select>
+        <Select id="rd-type" value={unitTypeId} onChange={(e) => setUnitTypeId(e.target.value)}>
           <option value="">Tất cả loại kho</option>
           {types.map((t) => <option key={t.unitTypeId} value={t.unitTypeId}>{t.typeName}</option>)}
-        </select>
-        <select id="rd-status" value={contractStatus} onChange={(e) => setContractStatus(e.target.value)}>
+        </Select>
+        <Select id="rd-status" value={contractStatus} onChange={(e) => setContractStatus(e.target.value)}>
           {CONTRACT_STATUSES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
-        </select>
+        </Select>
       </div>
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
       <div className="table-scroll">

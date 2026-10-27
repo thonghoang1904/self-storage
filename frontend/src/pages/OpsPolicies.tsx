@@ -5,6 +5,7 @@ import { Badge, Empty, Icon, splitTypeName } from '../components/ui'
 import { FeeMethods, type Facility, type FeeConfiguration, type Promotion, type RentalPolicy, type UnitType } from '../types'
 import { CODE_FILTER } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
+import { Select } from '../components/Select'
 
 /**
  * #44 Operations manager, Figma "policy-fee-discount-management" (75:29417): rental policies, the fee table,
@@ -110,11 +111,11 @@ export default function OpsPolicies() {
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tab === 'fees' ? 'Tìm mã hoặc tên phí…' : tab === 'promotions' ? 'Tìm mã khuyến mãi…' : tab === 'pricing' ? 'Tìm loại kho…' : 'Tìm chính sách…'} />
           </span>
           {(tab === 'policies' || tab === 'promotions') && (
-            <select value={status} onChange={(e) => setStatus(e.target.value as typeof status)} aria-label="Trạng thái">
+            <Select value={status} onChange={(e) => setStatus(e.target.value as typeof status)} aria-label="Trạng thái">
               <option value="all">Trạng thái: Tất cả</option>
               <option value="on">{tab === 'promotions' ? 'Trạng thái: Đang chạy' : 'Trạng thái: Đang bật'}</option>
               <option value="off">{tab === 'promotions' ? 'Trạng thái: Không chạy' : 'Trạng thái: Đã tắt'}</option>
-            </select>
+            </Select>
           )}
         </div>
       </div>
@@ -296,10 +297,10 @@ function PolicyForm({ policy, facilities, onCancel, onSaved }: { policy?: Rental
       <div className="form-grid">
         <label className="field"><span>Tên chính sách *</span><input value={f.policyName} maxLength={100} onChange={(e) => set('policyName', e.target.value)} required /></label>
         <label className="field"><span>Áp dụng cho</span>
-          <select value={f.facilityId ?? ''} onChange={(e) => set('facilityId', e.target.value ? Number(e.target.value) : null)}>
+          <Select value={f.facilityId ?? ''} onChange={(e) => set('facilityId', e.target.value ? Number(e.target.value) : null)}>
             <option value="">Toàn hệ thống</option>
             {facilities.map((x) => <option key={x.facilityId} value={x.facilityId}>{x.facilityName}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="field"><span>Tiền cọc (% giá tháng) *</span><input type="number" min={0.01} max={100} step="0.01" value={f.depositPercent} onChange={(e) => set('depositPercent', e.target.value)} required /></label>
         <label className="field"><span>Hủy miễn phí trong (giờ)</span><input type="number" min={0} max={8760} value={f.cancellationGraceHours} onChange={(e) => set('cancellationGraceHours', e.target.value)} /></label>
@@ -335,9 +336,9 @@ function FeeForm({ fee, onCancel, onSaved }: { fee?: FeeConfiguration; onCancel:
         <label className="field"><span>Mã phí *</span><input value={f.feeCode} maxLength={50} placeholder="VD: CLEANING_FEE" onChange={(e) => set('feeCode', e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))} required /></label>
         <label className="field"><span>Tên phí *</span><input value={f.feeName} maxLength={100} onChange={(e) => set('feeName', e.target.value)} required /></label>
         <label className="field"><span>Cách tính *</span>
-          <select value={f.calculationMethod} onChange={(e) => set('calculationMethod', e.target.value)}>
+          <Select value={f.calculationMethod} onChange={(e) => set('calculationMethod', e.target.value)}>
             {Object.entries(FeeMethods).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="field"><span>{f.calculationMethod === 'Percentage' ? 'Tỷ lệ (%)' : 'Số tiền (đ)'} *</span><input type="number" min={0} step="any" value={f.defaultAmount} onChange={(e) => set('defaultAmount', e.target.value)} required /></label>
       </div>

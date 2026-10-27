@@ -4,6 +4,7 @@ import { useAuth } from '../auth'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import { SupportCategories, SupportPriorities, type SupportChecklistItem, type SupportRequest, type SupportUpdate } from '../types'
+import { Select } from '../components/Select'
 
 /**
  * Figma "support-incident-management": metrics, filters, ticket list on the left and the selected
@@ -75,22 +76,22 @@ export default function StaffSupport() {
             <Icon name="search" size={16} className="input-lead" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm mã ticket, tiêu đề, kho…" />
           </span>
-          <select value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
+          <Select value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
             <option value="active">Cần xử lý</option>
             <option value="Open">Mới gửi</option>
             <option value="InProgress">Đang xử lý</option>
             <option value="Resolved">Đã xử lý</option>
             <option value="Closed">Đã đóng</option>
             <option value="all">Tất cả trạng thái</option>
-          </select>
-          <select value={priority} onChange={(e) => setPriority(e.target.value)}>
+          </Select>
+          <Select value={priority} onChange={(e) => setPriority(e.target.value)}>
             <option value="all">Mọi mức độ</option>
             {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{SupportPriorities[p].label}</option>)}
-          </select>
-          <select value={category} onChange={(e) => setCategory(e.target.value)}>
+          </Select>
+          <Select value={category} onChange={(e) => setCategory(e.target.value)}>
             <option value="all">Mọi loại sự cố</option>
             {Object.entries(SupportCategories).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
         </div>
         <button className="btn ghost" onClick={() => { setQ(''); setStatus('active'); setPriority('all'); setCategory('all') }}><Icon name="x" size={15} /> Xóa bộ lọc</button>
       </div>

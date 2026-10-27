@@ -4,6 +4,7 @@ import { api, fmtDate, fmtMoney } from '../api'
 import { daysUntil, fetchContracts, monthRange } from '../consoleData'
 import { Badge, Empty, Icon, splitTypeName } from '../components/ui'
 import type { AdminContract, Facility, OperationsReport, StorageUnit } from '../types'
+import { Select } from '../components/Select'
 
 /**
  * System administrator "Kho Lưu Trữ" (Figma "storage-management"): units of every facility as cards or a table.
@@ -88,14 +89,14 @@ export default function AdminStorage() {
             <Icon name="search" size={16} className="input-lead" />
             <input value={search} onChange={filter(setSearch)} placeholder="Tìm mã kho, khách hàng, số hợp đồng…" />
           </span>
-          <select value={facilityId} onChange={filter(setFacilityId)} aria-label="Cơ sở">
+          <Select value={facilityId} onChange={filter(setFacilityId)} aria-label="Cơ sở">
             <option value="">Cơ sở: Tất cả</option>
             {facilities.map((f) => <option key={f.facilityId} value={f.facilityId}>{f.facilityName}</option>)}
-          </select>
-          <select value={status} onChange={filter(setStatus)} aria-label="Trạng thái">
+          </Select>
+          <Select value={status} onChange={filter(setStatus)} aria-label="Trạng thái">
             <option value="">Trạng thái: Tất cả</option>
             {Object.entries(STATUS).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
-          </select>
+          </Select>
         </div>
         <div className="segmented view-toggle" role="group" aria-label="Kiểu hiển thị">
           <button className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')} aria-label="Dạng thẻ"><Icon name="grid" size={16} /></button>

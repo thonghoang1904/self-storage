@@ -6,6 +6,7 @@ import { Badge, Empty, Icon } from '../components/ui'
 import { roleLabel, Roles, type ActivityLog, type AdminUser, type Facility, type RoleInfo } from '../types'
 import { staffCode } from '../validation'
 import { FormField, PasswordChecklist, useValidatedForm } from '../components/form'
+import { Select } from '../components/Select'
 
 /**
  * #45 System Admin, Figma "staff-management": the system's staff accounts (GET /api/admin/users), adding
@@ -106,15 +107,15 @@ export default function AdminUsers() {
             <Icon name="search" size={16} className="input-lead" />
             <input value={q} onChange={(e) => { setQ(e.target.value); setPage(1) }} placeholder="Tìm theo tên, email..." />
           </span>
-          <select value={roleFilter} onChange={(e) => { setRoleFilter(e.target.value); setPage(1) }} aria-label="Vai trò">
+          <Select value={roleFilter} onChange={(e) => { setRoleFilter(e.target.value); setPage(1) }} aria-label="Vai trò">
             <option value="staff">Vai Trò: Tất Cả Nhân Sự</option>
             {roles.map((r) => <option key={r.roleId} value={r.roleId}>Vai Trò: {roleLabel(r.roleName)}</option>)}
             <option value="all">Mọi tài khoản (kể cả khách)</option>
-          </select>
-          <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }} aria-label="Trạng thái">
+          </Select>
+          <Select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }} aria-label="Trạng thái">
             <option value="all">Trạng Thái: Tất Cả</option>
             {STAFF_STATUSES.map((k) => <option key={k} value={k}>Trạng Thái: {STATUS[k].label}</option>)}
-          </select>
+          </Select>
         </div>
         <button className="btn ghost" onClick={() => { setQ(''); setRoleFilter('staff'); setStatus('all'); setPage(1) }}>Đặt lại bộ lọc</button>
       </div>
@@ -233,9 +234,9 @@ function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleIn
         <FormField label="Số điện thoại" error={form.error('phoneNumber')}><input {...form.field('phoneNumber')} inputMode="tel" placeholder="0901234567" /></FormField>
         <FormField label="CCCD (không bắt buộc)" error={form.error('citizenId')}><input {...form.field('citizenId')} inputMode="numeric" placeholder="12 chữ số" /></FormField>
         <label className="field"><span>Vai trò</span>
-          <select value={roleId} onChange={(e) => setRoleId(Number(e.target.value))}>
+          <Select value={roleId} onChange={(e) => setRoleId(Number(e.target.value))}>
             {staffRoles.map((r) => <option key={r.roleId} value={r.roleId}>{roleLabel(r.roleName)}</option>)}
-          </select>
+          </Select>
         </label>
       </div>
       {needsFacility && (
@@ -313,14 +314,14 @@ function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser
         {isMe && <p className="muted">Bạn không thể tự đổi vai trò hay trạng thái của chính mình.</p>}
         <div className="form-grid">
           <label className="field"><span>Vai trò</span>
-            <select value={roleId} disabled={isMe} onChange={(e) => setRoleId(Number(e.target.value))}>
+            <Select value={roleId} disabled={isMe} onChange={(e) => setRoleId(Number(e.target.value))}>
               {roles.map((r) => <option key={r.roleId} value={r.roleId}>{roleLabel(r.roleName)}</option>)}
-            </select>
+            </Select>
           </label>
           <label className="field"><span>Trạng thái</span>
-            <select value={status} disabled={isMe} onChange={(e) => setStatus(e.target.value)}>
+            <Select value={status} disabled={isMe} onChange={(e) => setStatus(e.target.value)}>
               {[...STAFF_STATUSES, ...(STAFF_STATUSES.includes(status as never) ? [] : [status])].map((k) => <option key={k} value={k}>{statusOfAccount(k).label}</option>)}
-            </select>
+            </Select>
           </label>
         </div>
         {losesFacilities && <p className="alert bad"><Icon name="alert" size={16} />Đổi sang vai trò này sẽ kết thúc mọi phân công cơ sở hiện tại của tài khoản.</p>}

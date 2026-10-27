@@ -9,7 +9,7 @@ import { TERMS_VERSION, termsHref } from './Terms'
 /**
  * Figma "Xem trước policy của hợp đồng" (96:11044): the customer reads the policy that applies to their contract
  * (rules the backend enforces, the fee table and the contract's own amounts) and any pending appendix (a renewal not
- * yet paid) as "not in force yet". Nothing to confirm: it is opened from a step (?from=renew|suspend|early-return)
+ * yet paid) as "not in force yet". Nothing to confirm: it is opened from a step (?from=renew|suspend)
  * and a button takes the customer straight back to that step.
  */
 
@@ -121,7 +121,6 @@ export function ContractStrip({ c, unitType }: { c: ContractDetail; unitType: st
 const BACK: Record<string, { label: string; hint: string; path: (id: number) => string }> = {
   renew: { label: 'Quay lại gia hạn', hint: 'Quay lại trang gia hạn để tiếp tục chọn thời gian và gửi yêu cầu.', path: (id) => `/my-units/${id}/renew` },
   suspend: { label: 'Quay lại tạm ngưng', hint: 'Quay lại trang tạm ngưng hợp đồng để tiếp tục.', path: (id) => `/my-units/${id}/suspend` },
-  'early-return': { label: 'Quay lại trả kho sớm', hint: 'Quay lại yêu cầu trả kho sớm của bạn.', path: (id) => `/my-units/${id}/early-return` },
   contract: { label: 'Quay lại hợp đồng', hint: 'Quay lại trang chi tiết kho & hợp đồng.', path: (id) => `/my-units/${id}` },
 }
 

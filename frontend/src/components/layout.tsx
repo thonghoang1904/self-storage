@@ -4,6 +4,7 @@ import { api, IS_DEMO } from '../api'
 import { useAuth } from '../auth'
 import { GATE_ROLES, roleLabel, Roles, type Facility } from '../types'
 import { Icon, Logo } from './ui'
+import { Select } from './Select'
 
 // ------------------------------------------------------------------ demo bar
 
@@ -243,9 +244,9 @@ export function StaffLayout() {
             {facilities.length > 0 && (
               <label className="facility-select">
                 <Icon name="building" size={16} />
-                <select value={facilityId ?? ''} onChange={(e) => setFacilityId(Number(e.target.value))}>
+                <Select value={facilityId ?? ''} onChange={(e) => setFacilityId(Number(e.target.value))}>
                   {facilities.map((f) => <option key={f.facilityId} value={f.facilityId}>{f.facilityName}</option>)}
-                </select>
+                </Select>
               </label>
             )}
           </header>

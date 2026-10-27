@@ -5,6 +5,7 @@ import { Empty, Icon, StatusBadge } from '../components/ui'
 import { DenyReasons, type AccessRecord, type Person, type VisitCandidate, type VisitRegistration } from '../types'
 import { CITIZEN_ID_FILTER } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
+import { Select } from '../components/Select'
 
 const REFRESH_MS = 5000
 const hhmm = (iso: string) => iso.slice(11, 16)
@@ -486,9 +487,9 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
           </button>
           {alreadyInside && <small className="muted">Người này đang ở trong kho, hãy xác nhận ra trước.</small>}
           <div className="deny-row">
-            <select value={denyReason} onChange={(e) => setDenyReason(e.target.value)}>
+            <Select value={denyReason} onChange={(e) => setDenyReason(e.target.value)}>
               {Object.entries(DenyReasons).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-            </select>
+            </Select>
             <button className="btn danger" disabled={busy} onClick={deny}>Ghi nhận từ chối</button>
           </div>
         </div>

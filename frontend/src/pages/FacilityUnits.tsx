@@ -6,6 +6,7 @@ import type { StorageUnit, UnitType } from '../types'
 import { Metric } from './FacilityOverview'
 import { CODE_FILTER, textError, unitCodeError } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
+import { Select } from '../components/Select'
 
 /**
  * Facility manager: the units of the facility (#43, Figma "storage-management").
@@ -119,9 +120,9 @@ export default function FacilityUnits() {
               <FieldNote text={code.hint} />
             </label>
             <label className="field"><span>Loại kho</span>
-              <select value={form.unitTypeId} onChange={(e) => setForm({ ...form, unitTypeId: Number(e.target.value) })} required>
+              <Select value={form.unitTypeId} onChange={(e) => setForm({ ...form, unitTypeId: Number(e.target.value) })} required>
                 {types.map((t) => <option key={t.unitTypeId} value={t.unitTypeId}>{splitTypeName(t.typeName).name}</option>)}
-              </select>
+              </Select>
             </label>
             <label className="field"><span>Tầng</span>
               <input type="number" min={1} max={100} value={form.floorNumber} onChange={(e) => setForm({ ...form, floorNumber: Number(e.target.value) || 1 })} required />
@@ -149,17 +150,17 @@ export default function FacilityUnits() {
             <Icon name="search" size={16} className="input-lead" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm mã kho, khu vực…" />
           </span>
-          <select value={typeId} onChange={(e) => setTypeId(Number(e.target.value))}>
+          <Select value={typeId} onChange={(e) => setTypeId(Number(e.target.value))}>
             <option value={0}>Tất cả loại kho</option>
             {types.map((t) => <option key={t.unitTypeId} value={t.unitTypeId}>{splitTypeName(t.typeName).name}</option>)}
-          </select>
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+          </Select>
+          <Select value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="all">Tất cả trạng thái</option>
             <option value="Available">Còn trống</option>
             <option value="Rented">Đang cho thuê</option>
             <option value="UnderMaintenance">Đang bảo trì</option>
             <option value="OverdueLocked">Khóa do quá hạn</option>
-          </select>
+          </Select>
         </div>
         <button className="btn ghost" onClick={() => { setQ(''); setStatus('all'); setTypeId(0) }}>Xóa bộ lọc</button>
       </div>

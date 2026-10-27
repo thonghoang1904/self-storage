@@ -4,6 +4,7 @@ import { api, fmtMoney, fmtTime } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon } from '../components/ui'
 import { CancellationStatuses, type CancellationRefund, type CancellationRequest, type Invoice } from '../types'
+import { Select } from '../components/Select'
 
 /**
  * Reservation cancellations at the facility (#43): customers ask to cancel a reservation not yet handed over,
@@ -184,10 +185,10 @@ function RefundForm({ reservationId, max, onDone, onError }: { reservationId: nu
           <input type="number" min={1} max={max} step={1000} value={amount || ''} onChange={(e) => setAmount(Math.round(Number(e.target.value) || 0))} />
         </label>
         <label className="field"><span>Hình thức</span>
-          <select value={method} onChange={(e) => setMethod(e.target.value as 'Cash' | 'BankTransfer')}>
+          <Select value={method} onChange={(e) => setMethod(e.target.value as 'Cash' | 'BankTransfer')}>
             <option value="Cash">Tiền mặt</option>
             <option value="BankTransfer">Chuyển khoản</option>
-          </select>
+          </Select>
         </label>
         <label className="field"><span>Mã giao dịch{method === 'BankTransfer' ? ' *' : ''}</span>
           <input value={code} maxLength={50} onChange={(e) => setCode(e.target.value.replace(/[^A-Za-z0-9-]/g, '').slice(0, 50))} placeholder={method === 'BankTransfer' ? 'Bắt buộc khi chuyển khoản' : 'Không bắt buộc'} />
