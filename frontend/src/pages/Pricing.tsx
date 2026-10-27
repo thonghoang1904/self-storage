@@ -16,15 +16,15 @@ import { homeFor, type Availability, type Facility, type UnitType } from '../typ
 const FAQS = [
   {
     q: 'Thời hạn thuê kho tối thiểu là bao lâu?',
-    a: 'Bạn thuê theo tháng, từ 1 tháng trở lên tùy chính sách của từng cơ sở. Khi sắp hết hạn, bạn gửi yêu cầu gia hạn ngay trên tài khoản trong 7 ngày trước ngày hết hạn.',
+    a: 'Bạn thuê theo tháng, từ 1 tháng trở lên tùy chính sách của từng cơ sở. Bạn có thể gia hạn sớm ngay trên tài khoản bất cứ lúc nào khi hợp đồng còn hiệu lực; thời hạn mới cộng tiếp từ ngày hết hạn hiện tại.',
   },
   {
     q: 'Giờ mở cửa và cách vào kho như thế nào?',
     a: 'Mỗi cơ sở có giờ hoạt động riêng (xem ở trang Liên hệ). Khi đến kho, bạn xuất trình CCCD tại cổng; nhân viên đối chiếu với hồ sơ hợp đồng rồi mới cho vào. Hệ thống không dùng mã PIN hay thẻ từ.',
   },
   {
-    q: 'Người nhà có vào kho thay tôi được không?',
-    a: 'Được. Bạn thêm người được ủy quyền trong mục "Kho của tôi". Người đó vào kho bằng CCCD của chính họ, và bạn xem được lịch sử ra vào của từng người.',
+    q: 'Người khác có vào kho thay tôi được không?',
+    a: 'Được, bạn ủy quyền cho bất kỳ ai: người nhà, bạn bè, nhân viên hay bên vận chuyển. Thêm họ trong mục "Kho của tôi"; người đó vào kho bằng CCCD của chính họ, và bạn xem được lịch sử ra vào của từng người.',
   },
   {
     q: 'Thủ tục đặt và nhận kho diễn ra thế nào?',

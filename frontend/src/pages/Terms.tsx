@@ -15,7 +15,7 @@ export const TERMS: { title: string; icon: string; items: string[] }[] = [
     icon: 'card',
     items: [
       'Đơn đặt kho được giữ trong thời gian giữ chỗ (mặc định 24 giờ). Quá hạn mà chưa đặt cọc, đơn tự hết hiệu lực.',
-      'Tiền cọc tính theo chính sách thuê của cơ sở (mặc định bằng 1 tháng tiền thuê), thanh toán online qua VNPay/MoMo hoặc tại quầy.',
+      'Tiền cọc tính theo chính sách thuê của cơ sở (mặc định bằng 1 tháng tiền thuê), thanh toán online qua VNPay hoặc tại quầy.',
       'Mã khuyến mãi chỉ áp dụng cho lần thuê đầu tiên, đúng thời gian và số tháng tối thiểu của chương trình; mức giảm trừ vào tiền thuê tháng đầu.',
     ],
   },
@@ -23,7 +23,7 @@ export const TERMS: { title: string; icon: string; items: string[] }[] = [
     title: 'Nhận kho & thanh toán hằng tháng',
     icon: 'key',
     items: [
-      'Sau khi cọc được xác nhận, khách đặt lịch nhận kho trước 20:00 ngày bắt đầu. Nhân viên chỉ bàn giao kho từ giờ hẹn.',
+      'Sau khi cọc được xác nhận, khách đặt lịch nhận kho trước 20:00 ngày bắt đầu. Khách đến sớm hơn giờ hẹn vẫn được bàn giao nếu kho đã sẵn sàng; hợp đồng tính từ ngày bàn giao.',
       'Hợp đồng được lập khi bàn giao kho. Tiền thuê phát hành hóa đơn theo từng kỳ một tháng kể từ ngày bắt đầu.',
     ],
   },
@@ -39,7 +39,7 @@ export const TERMS: { title: string; icon: string; items: string[] }[] = [
     title: 'Gia hạn, trả kho & quá hạn',
     icon: 'calendar',
     items: [
-      'Gửi yêu cầu gia hạn trong 7 ngày trước ngày hết hạn; hợp đồng được gia hạn sau khi thanh toán phí gia hạn.',
+      'Có thể gia hạn sớm bất cứ lúc nào khi hợp đồng còn hiệu lực (chậm nhất 20:00 ngày hết hạn); thời hạn mới cộng tiếp từ ngày hết hạn hiện tại và có hiệu lực sau khi thanh toán phí gia hạn.',
       'Trả kho trước 20:00 ngày hết hạn. Nhân viên kiểm tra kho, đối soát phí và hoàn lại phần cọc còn lại.',
       'Quá 24 giờ kể từ 20:00 ngày hết hạn, kho bị khóa và tính phí mỗi ngày bằng phí tháng / 30, cấn trừ vào tiền cọc. Phần vượt cọc lập thành hóa đơn.',
     ],
@@ -49,7 +49,7 @@ export const TERMS: { title: string; icon: string; items: string[] }[] = [
     icon: 'door',
     items: [
       'Mỗi lượt vào kho phải đăng ký lịch trước và được nhân viên duyệt; tại cổng, nhân viên đối chiếu CCCD.',
-      'Chỉ chủ hợp đồng hoặc người được ủy quyền (dùng CCCD của chính họ) được vào kho. Không dùng mã PIN.',
+      'Chỉ chủ hợp đồng hoặc người được ủy quyền (dùng CCCD của chính họ) được vào kho. Chủ hợp đồng có thể ủy quyền cho bất kỳ ai, không bắt buộc là người nhà. Không dùng mã PIN.',
       'Kho bị khóa do quá hạn hoặc đang bảo trì thì không được vào cho đến khi xử lý xong.',
     ],
   },

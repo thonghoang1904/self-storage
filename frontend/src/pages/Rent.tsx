@@ -3,11 +3,11 @@ import { Link, useNavigate } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
-import { AppointmentPicker } from '../components/appointment'
+import { AppointmentPicker, depositDueAt, depositMissed, pickupMissed } from '../components/appointment'
 import { Empty, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
 import { TermsList, TERMS_VERSION } from './Terms'
 import { CancellationStatuses, type Availability, type CancellationRequest, type Facility, type Reservation, type UnitType } from '../types'
-import { CODE_FILTER, promoCodeError, textError } from '../validation'
+import { CODE_FILTER, localToday, promoCodeError, textError } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
 
 const DURATIONS = [1, 3, 6, 12]
@@ -34,7 +34,8 @@ export default function Rent() {
   const [availability, setAvailability] = useState<Availability[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [startDate, setStartDate] = useState(todayIso)
+  // After 19:00 there is no time left to pay and pick up today: default to tomorrow.
+  const [startDate, setStartDate] = useState(() => { if (new Date().getHours() < 19) return todayIso(); const d = new Date(); d.setDate(d.getDate() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` })
   const [months, setMonths] = useState(6)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -97,6 +98,10 @@ export default function Rent() {
 
   const reserve = async () => {
     if (!facilityId || !selected) return
+    const dateProblem = checkStartDate(startDate)
+    if (dateProblem) { setError(dateProblem); return }
+    const promoProblem = promoCodeError(promoCode)
+    if (promoProblem) { setError(promoProblem); return }
     if (signError) { setError(signError); return }
     setError('')
     setBusy(true)
@@ -106,7 +111,7 @@ export default function Rent() {
       })
       saveSigned(r.reservationCode, { at: new Date().toISOString(), version: TERMS_VERSION })
       // Agreed and reserved: go straight to paying the deposit.
-      navigate(`/invoices?reservation=${r.reservationId}&code=${encodeURIComponent(r.reservationCode)}&deadline=${encodeURIComponent(r.depositDeadline)}`)
+      navigate(`/invoices?reservation=${r.reservationId}&code=${encodeURIComponent(r.reservationCode)}&deadline=${encodeURIComponent(depositDueAt(r))}`)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -117,7 +122,7 @@ export default function Rent() {
   return (
     <>
       <PageHero center eyebrow="Đặt kho nhanh chóng · chỉ trong 4 bước" title="Đặt Kho Lưu Trữ SafeKeep">
-        Chọn cơ sở và kích thước kho, đồng ý điều khoản hợp đồng rồi thanh toán cọc. Đơn được giữ 24 giờ để bạn đặt cọc.
+        Chọn cơ sở và kích thước kho, đồng ý điều khoản hợp đồng rồi thanh toán cọc. Đơn được giữ 24 giờ (không quá 20:00 ngày bắt đầu) để bạn đặt cọc.
       </PageHero>
 
       <div className="container page-body">
@@ -236,7 +241,7 @@ export default function Rent() {
             <button className="btn primary block lg" disabled={!selected || busy || signing} onClick={openSigning}>
               {signing ? 'Xem điều khoản bên dưới ↓' : 'Tiếp Tục: Điều Khoản Hợp Đồng'}
             </button>
-            <p className="fine-print">Đơn được giữ 24 giờ. Muốn đổi ý, bạn gửi yêu cầu hủy ở bảng đơn đặt kho; cọc được hoàn sau khi trừ phí hủy theo chính sách.</p>
+            <p className="fine-print">Đơn được giữ 24 giờ, không quá 20:00 ngày bắt đầu thuê. Muốn đổi ý, bạn gửi yêu cầu hủy ở bảng đơn đặt kho; cọc được hoàn sau khi trừ phí hủy theo chính sách.</p>
           </aside>
         </div>
 
@@ -293,7 +298,9 @@ export default function Rent() {
               <tbody>
                 {reservations.map((r) => {
                   const cr = cancellations[r.reservationId]
-                  const canCancel = (r.status === 'PendingDeposit' || r.status === 'Confirmed') && cr?.status !== 'Pending'
+                  // Past the deposit time or 20:00 on the start date the API refuses a cancellation; the system expires it.
+                  const late = depositMissed(r) || pickupMissed(r)
+                  const canCancel = (r.status === 'PendingDeposit' || r.status === 'Confirmed') && cr?.status !== 'Pending' && !late
                   return (
                   <Fragment key={r.reservationId}>
                   <tr>
@@ -301,11 +308,11 @@ export default function Rent() {
                     <td>{r.facilityName}<br /><small className="muted">{splitTypeName(r.unitTypeName).name}{r.assignedUnitCode && ` · kho ${r.assignedUnitCode}`}</small></td>
                     <td>{fmtDate(r.expectedStartDate)}<br /><small className="muted">{r.durationMonths} tháng</small></td>
                     <td className="money">{fmtMoney(r.depositAmount)}{r.promoCode && <><br /><small className="ok-text">Mã {r.promoCode} · −{fmtMoney(r.promotionDiscountAmount ?? 0)}</small></>}</td>
-                    <td>{r.status === 'PendingDeposit' ? fmtTime(r.depositDeadline) : '—'}</td>
+                    <td>{r.status === 'PendingDeposit' ? fmtTime(depositDueAt(r)) : '—'}</td>
                     <td><AppointmentPicker reservation={r} operatingHours={facilities.find((f) => f.facilityName === r.facilityName)?.operatingHours}
                       onSaved={(u) => setReservations((rs) => rs.map((x) => (x.reservationId === u.reservationId ? u : x)))} /></td>
                     <td>
-                      <StatusBadge status={r.status} />
+                      {late ? <span className="badge bad">{depositMissed(r) ? 'Quá hạn đặt cọc' : 'Quá hạn nhận kho'}</span> : <StatusBadge status={r.status} />}
                       {cr && <><br /><span className={`badge ${CancellationStatuses[cr.status]?.tone ?? 'muted'}`}>{CancellationStatuses[cr.status]?.label ?? cr.status}</span></>}
                     </td>
                     <td>
@@ -337,6 +344,16 @@ export default function Rent() {
 }
 
 /** Reason form for POST /api/reservations/{id}/cancellation-requests. */
+/** Start date: today or later (and before 19:00 when it is today, so there is still time to pay and pick up), within a year. */
+function checkStartDate(iso: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return 'Vui lòng chọn ngày bắt đầu thuê'
+  const today = todayIso()
+  if (iso < today) return 'Ngày bắt đầu không được ở quá khứ'
+  if (iso === today && new Date().getHours() >= 19) return 'Đã quá giờ nhận kho hôm nay, vui lòng chọn từ ngày mai'
+  if (iso > localToday(365)) return 'Chỉ đặt trước tối đa 1 năm'
+  return ''
+}
+
 function CancelForm({ reservation: r, onDone }: { reservation: Reservation; onDone: (c: CancellationRequest | null) => void }) {
   const [reason, setReason] = useState('')
   const [error, setError] = useState('')

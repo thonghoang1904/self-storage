@@ -122,7 +122,7 @@ export default function AdminContracts() {
         </div>
       </section>
 
-      {openId && <ContractPanel key={openId} contractId={openId} onClose={() => setOpenId(null)} onDone={done} />}
+      {openId && <div id="contract-panel" className="scroll-target"><ContractPanel key={openId} contractId={openId} onClose={() => setOpenId(null)} onDone={done} /></div>}
     </div>
   )
 }
@@ -142,16 +142,26 @@ function ContractPanel({ contractId, onClose, onDone }: { contractId: number; on
       setTerms(x.termsConditions ?? '')
     }).catch((e) => setError((e as Error).message))
   }, [contractId])
+  // The contract opens under the table: bring it into view (again once loaded) so "Chi tiết" visibly opens it.
+  const loaded = c !== null
+  useEffect(() => {
+    document.getElementById('contract-panel')?.scrollIntoView({ block: 'start' })
+  }, [contractId, loaded])
 
   if (!c) return <section className="panel">{error ? <p className="alert bad"><Icon name="alert" size={16} />{error}</p> : <p className="muted">Đang tải hợp đồng…</p>}</section>
 
   const editable = c.status === 'Active'
+  // The API wants the new end date after the start date and not in the past.
+  const todayIso = new Date().toLocaleDateString('sv-SE')
+  const minEnd = c.startDate >= todayIso ? new Date(new Date(`${c.startDate}T00:00:00`).getTime() + 86400000).toLocaleDateString('sv-SE') : todayIso
   const changed = endDate !== c.endDate || terms.trim() !== (c.termsConditions ?? '')
 
   const save = async (e: FormEvent) => {
     e.preventDefault()
-    setBusy(true)
+    if (terms.trim().length > 4000) return setError('Điều khoản tối đa 4000 ký tự')
     setError('')
+    if (!endDate || endDate < minEnd) { setError(`Ngày kết thúc mới phải từ ${fmtDate(minEnd)} trở đi (sau ngày bắt đầu, không ở quá khứ).`); return }
+    setBusy(true)
     try {
       const x = await api<AdminContract>(`/api/admin/contracts/${c.contractId}`, { method: 'PUT', body: { endDate, termsConditions: terms.trim() || null } })
       setC(x)
@@ -186,7 +196,7 @@ function ContractPanel({ contractId, onClose, onDone }: { contractId: number; on
         {!editable && <p className="muted">Chỉ sửa được hợp đồng đang hiệu lực; hợp đồng quá hạn xử lý theo luồng quá hạn.</p>}
         <div className="form-grid">
           <label className="field"><span>Ngày kết thúc</span>
-            <input id="admin-end-date" type="date" value={endDate} min={c.startDate} disabled={!editable} onChange={(e) => setEndDate(e.target.value)} required />
+            <input id="admin-end-date" type="date" value={endDate} min={minEnd} disabled={!editable} onChange={(e) => setEndDate(e.target.value)} required />
           </label>
           <div className="field"><span>Không sửa trực tiếp</span><p className="muted">Ngày bắt đầu, giá thuê và thanh toán chỉ thay đổi qua gia hạn, hóa đơn.</p></div>
         </div>
@@ -264,6 +274,9 @@ function CreateFromReservation({ facilities, onCancel, onDone }: { facilities: F
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    if (!Number(reservationId)) return setError('Vui lòng nhập mã đơn đặt kho')
+    if (!unitId) return setError('Vui lòng chọn kho trống để bàn giao')
+    if (notes.trim().length < 5) return setError('Vui lòng ghi tình trạng kho khi bàn giao (ít nhất 5 ký tự)')
     setBusy(true)
     setError('')
     try {

@@ -33,6 +33,26 @@ export default function AdminCustomers() {
   const [facilityId, setFacilityId] = useState('')
   const [page, setPage] = useState(1)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState<number | null>(null)
+  const [reload, setReload] = useState(0)
+
+  /** Lock / unlock a customer account (PUT /api/admin/users/{id}/status). */
+  const setAccount = async (u: AdminUser, next: 'Active' | 'Inactive') => {
+    if (next === 'Inactive' && !window.confirm(`Khóa tài khoản ${u.fullName}? Khách sẽ không đăng nhập được cho đến khi mở lại.`)) return
+    setBusy(u.userId)
+    setError('')
+    setNotice('')
+    try {
+      await api(`/api/admin/users/${u.userId}/status`, { method: 'PUT', body: { status: next } })
+      setNotice(`${next === 'Active' ? 'Đã mở khóa' : 'Đã khóa'} tài khoản ${u.username}.`)
+      setReload((n) => n + 1)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
 
   useEffect(() => {
     const fail = (e: unknown) => setError((e as Error).message)
@@ -48,7 +68,7 @@ export default function AdminCustomers() {
     }).catch(fail)
     Promise.all([fetchContracts('Active'), fetchContracts('Overdue')]).then(([a, o]) => setContracts([...a, ...o])).catch(fail)
     api<Facility[]>('/api/facilities').then(setFacilities).catch(() => {})
-  }, [])
+  }, [reload])
 
   const rows = useMemo<Row[]>(() => (users ?? []).map((user) => {
     const own = (contracts ?? []).filter((c) => c.customerId === user.userId).sort((a, b) => a.endDate.localeCompare(b.endDate))
@@ -81,6 +101,7 @@ export default function AdminCustomers() {
       </div>
 
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+      {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
 
       <div className="stat-grid">
         <Metric icon="users" tone="info" label="Khách hàng đang hoạt động" value={String(active)} note={`${rows.length} tài khoản khách hàng`} />
@@ -124,9 +145,12 @@ export default function AdminCustomers() {
                   <td>{next ? <>{next.unitCode} <small className="muted">· {next.facilityName}</small></> : '—'}</td>
                   <td>{next ? fmtDate(next.endDate) : '—'}</td>
                   <td><Badge tone={STANDING[st].tone}>{st === 'soon' && next ? `Còn ${Math.max(0, daysUntil(next.endDate))} ngày` : STANDING[st].label}</Badge></td>
-                  <td>{own.length > 0
-                    ? <Link className="link nowrap" to={`/admin/contracts?search=${encodeURIComponent(own.length > 1 ? u.email : next!.contractNumber)}`}>Xem hợp đồng</Link>
-                    : <span className="muted">—</span>}</td>
+                  <td><div className="row nowrap">
+                    {own.length > 0 && <Link className="link nowrap" to={`/admin/contracts?search=${encodeURIComponent(own.length > 1 ? u.email : next!.contractNumber)}`}>Xem hợp đồng</Link>}
+                    {u.status === 'Active'
+                      ? <button type="button" className="btn ghost sm danger-text" disabled={busy !== null} onClick={() => void setAccount(u, 'Inactive')}>Khóa</button>
+                      : <button type="button" className="btn outline sm" disabled={busy !== null} onClick={() => void setAccount(u, 'Active')}>Mở khóa</button>}
+                  </div></td>
                 </tr>
               ))}
             </tbody>

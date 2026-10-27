@@ -3,7 +3,7 @@ import { api, fmtDate } from '../api'
 import { Badge, Empty, Icon } from '../components/ui'
 import type { Facility, FacilityReport, OperationsReport } from '../types'
 import { FormField, useValidatedForm } from '../components/form'
-import { hotlineError, normalizePhone, PHONE_FILTER, operatingHoursError, textError } from '../validation'
+import { hotlineError, localToday, normalizePhone, PHONE_FILTER, operatingHoursError, textError } from '../validation'
 
 /**
  * #44 Operations manager, Figma "facility-branch-management": every facility (GET /api/operations/facilities)
@@ -91,7 +91,7 @@ export default function OpsFacilities() {
     const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }))
     const a = document.createElement('a')
     a.href = url
-    a.download = `co-so-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `co-so-${localToday()}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -241,7 +241,7 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
     setBusy(true)
     const body = {
       facilityName: f.facilityName.trim(), address: f.address.trim(), district: f.district.trim(),
-      city: f.city.trim(), hotline: normalizePhone(f.hotline), operatingHours: f.operatingHours.trim(),
+      city: f.city.trim(), hotline: normalizePhone(f.hotline), operatingHours: f.operatingHours.trim().replace(/\s*-\s*/, ' - '),
     }
     try {
       if (facility) {

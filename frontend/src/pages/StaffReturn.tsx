@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { amountError, checkMoney, checkText, firstError, textError, transactionCodeError } from '../validation'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useStaffFacility } from '../components/layout'
+import { FormField } from '../components/form'
 import { Empty, Icon, StatusBadge } from '../components/ui'
-import type { OverdueSummary, ReturnUnitResult, StaffContract } from '../types'
-import { amountError, transactionCodeError } from '../validation'
+import type { EarlyReturnQuote, EarlyReturnRequest, OverdueSummary, ReturnUnitResult, StaffContract } from '../types'
 
 /**
  * Figma "storage-return-inspection": find a contract, check its return schedule and deposit,
  * walk the inspection checklist, complete the return (POST /api/contracts/{id}/return) and
  * refund the deposit (POST /api/contracts/{id}/deposit-refunds).
+ * Before the end date the return is an early return: GET /api/contracts/{id}/early-return-quote shows the fee
+ * and the deposit left, and the return is sent with earlyReturn and the customer's reason. Customers who asked to
+ * return early from their contract page are listed from GET /api/contracts/facilities/{id}/early-return-requests.
  */
 
 const CHECKLIST = [
@@ -40,6 +44,7 @@ export default function StaffReturn() {
 
   const [contracts, setContracts] = useState<StaffContract[]>([])
   const [overdue, setOverdue] = useState<OverdueSummary[]>([])
+  const [requests, setRequests] = useState<EarlyReturnRequest[]>([])
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<number | null>(wanted || null)
   const [error, setError] = useState('')
@@ -53,6 +58,8 @@ export default function StaffReturn() {
       ])
       setContracts(c)
       setOverdue(o)
+      // Customers' early-return requests: optional, the page works without them.
+      api<EarlyReturnRequest[]>(`/api/contracts/facilities/${facilityId}/early-return-requests`).then(setRequests).catch(() => setRequests([]))
     } catch (e) {
       setError((e as Error).message)
     }
@@ -63,6 +70,7 @@ export default function StaffReturn() {
   const now = new Date()
   const due = contracts.filter((c) => (c.status === 'Active' || c.status === 'Overdue') && new Date(c.returnAppointment) <= now)
   const selected = contracts.find((c) => c.contractId === selectedId) ?? null
+  const pick = (id: number) => { setSelectedId(id); navigate(`/staff-return?contract=${id}`, { replace: true }) }
 
   const find = (e?: FormEvent) => {
     e?.preventDefault()
@@ -89,7 +97,7 @@ export default function StaffReturn() {
       <section className="panel">
         <div>
           <h2 className="panel-title">Tìm hợp đồng cần trả kho</h2>
-          <p className="muted">Nhập mã hợp đồng, mã kho hoặc số điện thoại của khách. Kho chỉ được trả từ 20:00 ngày hết hạn.</p>
+          <p className="muted">Nhập mã hợp đồng, mã kho hoặc số điện thoại của khách. Trả trước 20:00 ngày hết hạn được tính là trả kho sớm.</p>
         </div>
         <form className="lookup-row" onSubmit={find}>
           <label className="field grow"><span>Mã hợp đồng / mã kho / SĐT</span>
@@ -103,8 +111,18 @@ export default function StaffReturn() {
             <span className="muted">Đến lịch trả kho:</span>
             {due.map((c) => (
               <button key={c.contractId} type="button" className={`chip ${c.contractId === selectedId ? 'active' : ''}`}
-                onClick={() => { setSelectedId(c.contractId); navigate(`/staff-return?contract=${c.contractId}`, { replace: true }) }}>
+                onClick={() => pick(c.contractId)}>
                 {c.contractNumber} · {c.unitCode}
+              </button>
+            ))}
+          </div>
+        )}
+        {requests.length > 0 && (
+          <div className="quick-tries">
+            <span className="muted">Khách hẹn trả sớm:</span>
+            {requests.map((r) => (
+              <button key={r.requestId} type="button" className={`chip ${r.contractId === selectedId ? 'active' : ''}`} onClick={() => pick(r.contractId)}>
+                {r.unitCode} · {r.customerName} · {fmtDate(r.returnDate)}
               </button>
             ))}
           </div>
@@ -113,7 +131,8 @@ export default function StaffReturn() {
       </section>
 
       {selected
-        ? <Inspection key={selected.contractId} contract={selected} overdue={overdue.find((o) => o.contractId === selected.contractId)} onChanged={load} />
+        ? <Inspection key={selected.contractId} contract={selected} overdue={overdue.find((o) => o.contractId === selected.contractId)}
+            request={requests.find((r) => r.contractId === selected.contractId)} onChanged={load} />
         : <div className="panel"><Empty icon="door">Chọn một hợp đồng để bắt đầu kiểm tra trả kho.</Empty></div>}
     </div>
   )
@@ -123,7 +142,9 @@ function Info({ label, children }: { label: string; children: ReactNode }) {
   return <div className="info-row"><span className="muted">{label}</span><b>{children}</b></div>
 }
 
-function Inspection({ contract: c, overdue, onChanged }: { contract: StaffContract; overdue?: OverdueSummary; onChanged: () => Promise<void> }) {
+function Inspection({ contract: c, overdue, request, onChanged }: {
+  contract: StaffContract; overdue?: OverdueSummary; request?: EarlyReturnRequest; onChanged: () => Promise<void>
+}) {
   const [checked, setChecked] = useState<boolean[]>(() => CHECKLIST.map(() => false))
   const [damage, setDamage] = useState('')
   const [staffNotes, setStaffNotes] = useState('')
@@ -131,26 +152,58 @@ function Inspection({ contract: c, overdue, onChanged }: { contract: StaffContra
   const [result, setResult] = useState<ReturnUnitResult | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // Early return: the customer's reason, the quote from the API and the "customer was told" confirmation.
+  const [reason, setReason] = useState(request?.reason ?? '')
+  const [informed, setInformed] = useState(false)
+  const [quote, setQuote] = useState<EarlyReturnQuote | null>(null)
+  const [quoteError, setQuoteError] = useState('')
+  const [showErrors, setShowErrors] = useState(false)
 
   const appointment = new Date(c.returnAppointment)
-  const lateFee = result ? result.lateFeesDeducted + result.lateFeesStillOwed : overdue?.accumulatedLateFee ?? 0
-  const deducted = result ? result.lateFeesDeducted : Math.min(c.depositPaid, lateFee)
-  const refundDue = result ? result.depositRefundDue : Math.max(0, c.depositPaid - lateFee)
-  const stillOwed = result ? result.lateFeesStillOwed : Math.max(0, lateFee - c.depositPaid)
+  const live = c.status === 'Active' || c.status === 'Overdue'
   const returned = c.status === 'Terminated' || !!result
-  const canReturn = !returned && (c.status === 'Active' || c.status === 'Overdue') && appointment <= new Date()
+  const early = !returned && live && appointment > new Date()
+  useEffect(() => {
+    if (!early) return
+    api<EarlyReturnQuote>(`/api/contracts/${c.contractId}/early-return-quote`)
+      .then((q) => { setQuote(q); setQuoteError('') })
+      .catch(() => setQuoteError('Chưa tính được phí trả sớm; hệ thống áp dụng theo chính sách khi hoàn tất.'))
+  }, [early, c.contractId])
+
+  const earlyFee = result?.earlyReturnFee ?? (early ? quote?.earlyReturnFee ?? 0 : 0)
+  const lateFee = result ? result.lateFeesDeducted + result.lateFeesStillOwed - (result.earlyReturnFee ?? 0) : overdue?.accumulatedLateFee ?? 0
+  const charges = lateFee + earlyFee
+  const deducted = result ? result.lateFeesDeducted : Math.min(c.depositPaid, charges)
+  const refundDue = result ? result.depositRefundDue : Math.max(0, c.depositPaid - charges)
+  const stillOwed = result ? result.lateFeesStillOwed : Math.max(0, charges - c.depositPaid)
   const allChecked = checked.every(Boolean)
 
+  // Checked on submit and, once the staff member tried, live under each field.
+  const errors = {
+    reason: early ? textError(reason, 'Lý do trả sớm', 5, 500) : null,
+    damage: textError(damage, 'Mô tả hư hỏng', 5, 1000, true),
+    staffNotes: textError(staffNotes, 'Ghi chú', 0, 500, true),
+  }
+  const shown = (k: keyof typeof errors) => (showErrors ? errors[k] : null)
+  const ready = allChecked && confirmed && (!early || informed)
+
   const complete = async () => {
+    if (!allChecked) return setError(`Vui lòng kiểm tra đủ ${CHECKLIST.length} mục trước khi hoàn tất trả kho`)
     setError('')
+    setShowErrors(true)
+    if (Object.values(errors).some(Boolean)) return
     setBusy(true)
     try {
       const notes = [
         `Kiểm tra ${CHECKLIST.length}/${CHECKLIST.length} mục đạt.`,
         damage.trim() ? `Hư hỏng / ghi chú: ${damage.trim()}` : 'Không ghi nhận hư hỏng.',
-      ].join(' ')
+        early ? `Trả kho sớm trước hạn ${fmtDate(c.endDate)}. Lý do: ${reason.trim()}` : '',
+      ].filter(Boolean).join(' ')
       const res = await api<ReturnUnitResult>(`/api/contracts/${c.contractId}/return`, {
-        body: { unitConditionNotes: notes, allItemsRemoved: true, staffNotes: staffNotes.trim() || null },
+        body: {
+          unitConditionNotes: notes, allItemsRemoved: true, staffNotes: staffNotes.trim() || null,
+          ...(early ? { earlyReturn: true, earlyReturnReason: reason.trim() } : {}),
+        },
       })
       setResult(res)
       await onChanged()
@@ -180,13 +233,14 @@ function Inspection({ contract: c, overdue, onChanged }: { contract: StaffContra
           <Info label="Phí thuê tháng">{fmtMoney(c.monthlyRentFee)}</Info>
           <div className={`inspection-timer ${appointment <= new Date() ? (overdue ? 'bad' : 'ok') : 'muted'}`}>
             <Icon name="clock" size={16} />
-            {returned ? `Đã trả kho${result ? ' lúc ' + fmtTime(result.returnedAt) : ''}` : sinceText(appointment)}
+            {returned ? `Đã trả kho${result ? ' lúc ' + fmtTime(result.returnedAt) : ''}` : early ? `${sinceText(appointment)} · trả lúc này là trả kho sớm` : sinceText(appointment)}
           </div>
         </section>
         <section className="panel">
           <h3 className="panel-title">Tiền cọc</h3>
           <Info label="Tiền cọc đã đóng">{fmtMoney(c.depositPaid)}</Info>
           <Info label="Phí quá hạn">{overdue ? `${fmtMoney(lateFee)} (${overdue.daysOverdue} ngày)` : fmtMoney(lateFee)}</Info>
+          {(early || earlyFee > 0) && <Info label="Phí trả kho sớm">{quote || result ? fmtMoney(earlyFee) : 'Theo chính sách'}</Info>}
           <Info label="Cấn trừ vào cọc">{fmtMoney(deducted)}</Info>
           <Info label="Còn hoàn cho khách">{fmtMoney(refundDue)}</Info>
           <span className={`badge ${stillOwed > 0 ? 'bad' : refundDue > 0 ? 'info' : 'ok'} self-start`}>
@@ -209,11 +263,10 @@ function Inspection({ contract: c, overdue, onChanged }: { contract: StaffContra
               <span className={`badge ${checked[i] || returned ? 'ok' : 'muted'}`}>{checked[i] || returned ? 'Đạt' : 'Chưa kiểm tra'}</span>
             </label>
           ))}
-          <div className="damage-record">
-            <b>Ghi nhận hư hỏng (nếu có)</b>
+          <FormField label={<b>Ghi nhận hư hỏng (nếu có)</b>} error={shown('damage')} className="damage-record">
             <textarea rows={3} maxLength={1000} value={damage} disabled={returned} onChange={(e) => setDamage(e.target.value)}
-              placeholder="Mô tả vị trí, mức độ hư hỏng… Để trống nếu kho bình thường." />
-          </div>
+              aria-invalid={shown('damage') ? true : undefined} placeholder="Mô tả vị trí, mức độ hư hỏng… Để trống nếu kho bình thường." />
+          </FormField>
         </section>
 
         <div className="stack-lg">
@@ -225,21 +278,37 @@ function Inspection({ contract: c, overdue, onChanged }: { contract: StaffContra
             <Info label="Kết quả kiểm tra">{returned ? 'Đạt' : allChecked ? 'Đạt đủ mục' : 'Đang kiểm tra'}</Info>
             <Info label="Hư hỏng">{damage.trim() ? 'Có ghi nhận' : 'Không'}</Info>
             <Info label="Phí quá hạn còn phải thu">{fmtMoney(stillOwed)}</Info>
-            <label className="field"><span>Ghi chú nhân viên</span>
+            <FormField label="Ghi chú nhân viên" error={shown('staffNotes')}>
               <textarea rows={2} maxLength={500} value={staffNotes} disabled={returned} onChange={(e) => setStaffNotes(e.target.value)} placeholder="Không bắt buộc" />
-            </label>
-            {!returned && (
+            </FormField>
+            {early && (
+              <div className="early-return">
+                <p className="alert warn"><Icon name="alert" size={16} />
+                  Khách trả kho trước ngày hết hạn {fmtDate(c.endDate)}{quote ? ` (${quote.daysEarly} ngày)` : ''}. Tiền thuê đã trả không được hoàn
+                  {quote?.invoicesCancelled ? `, ${quote.invoicesCancelled} hóa đơn tiền thuê chưa thanh toán sẽ được hủy` : ''}; phí trả sớm trừ vào cọc.
+                </p>
+                {request && <p className="hint"><Icon name="calendar" size={15} /> Khách đã gửi yêu cầu lúc {fmtTime(request.requestedAt)}, hẹn trả ngày {fmtDate(request.returnDate)}.</p>}
+                {quoteError && <p className="hint"><Icon name="clock" size={15} /> {quoteError}</p>}
+                <FormField label="Lý do trả sớm *" error={shown('reason')} hint={`${reason.trim().length}/500 ký tự`}>
+                  <textarea rows={2} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)}
+                    aria-invalid={shown('reason') ? true : undefined} placeholder="vd: Khách chuyển nhà sớm, không cần lưu kho nữa" />
+                </FormField>
+                <label className="check-row"><input type="checkbox" checked={informed} onChange={(e) => setInformed(e.target.checked)} />
+                  Đã báo khách: không hoàn tiền thuê còn lại, phí trả sớm {quote ? fmtMoney(quote.earlyReturnFee) + ' ' : ''}trừ vào cọc</label>
+              </div>
+            )}
+            {!returned && live && (
               <>
                 <label className="check-row"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> Tôi xác nhận đã kiểm tra kho cùng khách</label>
-                {!canReturn && <p className="hint"><Icon name="clock" size={15} /> Chỉ hoàn tất được từ {fmtTime(c.returnAppointment)}.</p>}
-                <button className="btn primary block" disabled={busy || !allChecked || !confirmed || !canReturn} onClick={complete}>
-                  {busy ? 'Đang lưu…' : 'Hoàn tất trả kho'}
+                {!allChecked && <p className="hint"><Icon name="clipboard" size={15} /> Đánh dấu đủ {CHECKLIST.length} mục kiểm tra để hoàn tất.</p>}
+                <button className={`btn block ${early ? 'warn' : 'primary'}`} disabled={busy || !ready} onClick={complete}>
+                  {busy ? 'Đang lưu…' : early ? 'Hoàn tất trả kho sớm' : 'Hoàn tất trả kho'}
                 </button>
               </>
             )}
             {result && (
               <p className="alert ok"><Icon name="check" size={16} />
-                Đã trả kho. Cấn trừ {fmtMoney(result.lateFeesDeducted)}, cần hoàn {fmtMoney(result.depositRefundDue)}{result.lateFeesStillOwed > 0 ? `, đã lập hóa đơn phí còn nợ ${fmtMoney(result.lateFeesStillOwed)}` : ''}.
+                Đã trả kho{result.earlyReturnFee ? ` sớm (phí ${fmtMoney(result.earlyReturnFee)})` : ''}. Cấn trừ {fmtMoney(result.lateFeesDeducted)}, cần hoàn {fmtMoney(result.depositRefundDue)}{result.lateFeesStillOwed > 0 ? `, đã lập hóa đơn phí còn nợ ${fmtMoney(result.lateFeesStillOwed)}` : ''}.
               </p>
             )}
             {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
@@ -267,6 +336,13 @@ function RefundCard({ contract: c, returned, refundDue }: { contract: StaffContr
   const left = remaining ?? refundDue
   const refund = async (e: FormEvent) => {
     e.preventDefault()
+    const problem = firstError(
+      checkMoney(amount, 'Số tiền hoàn', 1, left),
+      method === 'BankTransfer' ? checkText(code, 'Mã giao dịch chuyển khoản', 100, false, 4) : '',
+      checkText(notes, 'Ghi chú', 255, true),
+      confirmed ? '' : 'Vui lòng xác nhận khách đã nhận đủ tiền hoàn cọc',
+    )
+    if (problem) return setError(problem.replace('quá lớn', `không được vượt số còn phải hoàn ${fmtMoney(left)}`))
     setError('')
     const value = Number(amount)
     const invalid = (!Number.isInteger(value) && 'Số tiền hoàn phải là số nguyên (đồng)')

@@ -7,7 +7,7 @@ import { homeFor, type Availability, type Facility, type UnitType } from '../typ
 
 const FEATURES = [
   { icon: 'idCard', title: 'Xác Thực CCCD', text: 'Mỗi lượt vào kho đều được nhân viên trực cổng đối chiếu CCCD với hồ sơ hợp đồng.' },
-  { icon: 'users', title: 'Ủy Quyền Người Nhà', text: 'Thêm người được ủy quyền ngay trên tài khoản. Họ vào kho bằng CCCD của chính mình.' },
+  { icon: 'users', title: 'Ủy Quyền Cho Bất Kỳ Ai', text: 'Người nhà, bạn bè, nhân viên hay đơn vị vận chuyển: thêm ngay trên tài khoản, họ vào kho bằng CCCD của chính mình.' },
   { icon: 'history', title: 'Lịch Sử Minh Bạch', text: 'Xem lại ai đã vào kho, lúc nào và do nhân viên nào xác nhận.' },
   { icon: 'snow', title: 'Kho Điều Hòa', text: 'Kho cỡ lớn có kiểm soát nhiệt độ và độ ẩm cho đồ điện tử, mỹ phẩm.' },
 ]
@@ -62,7 +62,7 @@ export default function Home() {
           <div className="section-head">
             <span className="kicker">Dịch vụ vượt trội</span>
             <h2>An Tâm Tuyệt Đối Với Hệ Thống Đẳng Cấp</h2>
-            <p>Quy trình ra vào chặt chẽ do con người kiểm soát, kết hợp hồ sơ số minh bạch cho cả bạn và người thân.</p>
+            <p>Quy trình ra vào chặt chẽ do con người kiểm soát, kết hợp hồ sơ số minh bạch cho cả bạn và những người bạn ủy quyền.</p>
           </div>
           <div className="feature-grid">
             {FEATURES.map((f) => (

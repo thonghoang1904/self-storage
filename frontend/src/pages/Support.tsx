@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { textError } from '../validation'
 import { api, fmtTime } from '../api'
 import { FormField, leavingToSubmit } from '../components/form'
 import { Badge, Empty, Eyebrow, Icon, StatusBadge } from '../components/ui'
-import { textError } from '../validation'
 import { SupportCategories, SupportPriorities, type Contract, type SupportChecklistItem, type SupportRequest, type SupportUpdate } from '../types'
 
 const EMPTY_FORM = { contractId: 0, category: 'LockIssue', priority: 'Medium', title: '', description: '' }
@@ -45,10 +45,11 @@ export default function Support() {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    setError('')
     setNotice('')
     setShown({ title: true, description: true })
+    if (!form.contractId) { setError('Vui lòng chọn hợp đồng / kho cần hỗ trợ'); return }
     if (textError(form.title, 'Tiêu đề', 5, 200) || textError(form.description, 'Mô tả', 10, 4000)) return
+    setError('')
     setBusy(true)
     try {
       const r = await api<SupportRequest>('/api/support-requests', { body: { ...form, title: form.title.trim(), description: form.description.trim() } })

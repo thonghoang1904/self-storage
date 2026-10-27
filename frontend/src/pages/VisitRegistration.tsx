@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { CITIZEN_ID_FILTER, citizenIdError, digitsOnly, textError } from '../validation'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { Empty, Icon, UnitArt } from '../components/ui'
-import { VisitPurposes, type ContractDetail, type Facility, type Person, type VisitRegistration } from '../types'
-import { CITIZEN_ID_FILTER, citizenIdError, textError } from '../validation'
+import { VisitPurposes, type Contract, type ContractDetail, type Facility, type Person, type VisitRegistration } from '../types'
 import { FieldNote, useInputFilter } from '../components/form'
 
 /**
@@ -33,8 +33,48 @@ const VISIT_STATE: Record<string, { label: string; tone: string; icon: string }>
   Cancelled: { label: 'Đã hủy', tone: 'muted', icon: 'x' },
 }
 
-export default function VisitRegistrationPage() {
-  const id = Number(useParams().id)
+/**
+ * "Đăng Ký Vào Kho" in the customer menu (/visit): pick one of your contracts that can be visited, then the same
+ * registration form as /my-units/:id/visit. With one usable contract it opens straight away.
+ */
+export function VisitHub() {
+  const [contracts, setContracts] = useState<Contract[] | null>(null)
+  const [error, setError] = useState('')
+  const [params] = useSearchParams()
+  const [chosen, setChosen] = useState<number | null>(() => Number(params.get('contract')) || null)
+  useEffect(() => {
+    api<Contract[]>('/api/contracts/my').then(setContracts).catch((e) => setError((e as Error).message))
+  }, [])
+  if (!contracts) {
+    return <div className="container page-body">{error ? <p className="alert bad"><Icon name="alert" size={16} />{error}</p> : <p className="muted">Đang tải hợp đồng…</p>}</div>
+  }
+  const usable = contracts.filter((c) => c.status === 'Active' || c.status === 'Renewed')
+  if (usable.length === 0) {
+    return (
+      <div className="container page-body stack">
+        <h1>Đăng ký vào kho</h1>
+        <Empty icon="package">Bạn chưa có hợp đồng đang hoạt động để đăng ký vào kho.</Empty>
+        <Link to="/rent" className="btn primary self-start"><Icon name="plus" size={15} /> Thuê kho</Link>
+      </div>
+    )
+  }
+  const current = usable.find((c) => c.contractId === chosen) ?? usable[0]
+  const picker = usable.length > 1 && (
+    <div className="contract-picker" role="radiogroup" aria-label="Chọn kho muốn vào">
+      {usable.map((c) => (
+        <button key={c.contractId} type="button" role="radio" aria-checked={c.contractId === current.contractId}
+          className={c.contractId === current.contractId ? 'active' : ''} onClick={() => setChosen(c.contractId)}>
+          <b>Kho {c.unitCode}</b><small>{c.facilityName} · {c.contractNumber}</small>
+        </button>
+      ))}
+    </div>
+  )
+  return <VisitRegistrationPage key={current.contractId} contractId={current.contractId} picker={picker || null} />
+}
+
+export default function VisitRegistrationPage({ contractId, picker }: { contractId?: number; picker?: ReactNode } = {}) {
+  const routeId = Number(useParams().id)
+  const id = contractId ?? routeId
   const { user } = useAuth()
   const [c, setC] = useState<ContractDetail | null>(null)
   const [facility, setFacility] = useState<Facility | null>(null)
@@ -71,7 +111,11 @@ export default function VisitRegistrationPage() {
   const [open, close] = hours(facility?.operatingHours)
   const slots: string[] = []
   for (let t = Math.ceil(open / 30) * 30; t <= close; t += 30) slots.push(toHHMM(t))
+  // Today only future times; on the last day of the contract the visit must end before 20:00.
+  const nowHHMM = toHHMM(new Date().getHours() * 60 + new Date().getMinutes())
+  const entrySlots = slots.slice(0, -1).filter((s) => (date !== today || s > nowHHMM) && (date !== c?.endDate || s < '19:30'))
   const exitSlots = slots.filter((s) => s > entry && (date !== c?.endDate || s < '20:00'))
+  useEffect(() => { if (entrySlots.length && !entrySlots.includes(entry)) setEntry(entrySlots[0]) }, [date, entrySlots.join()]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!exitSlots.includes(exit)) setExit(exitSlots[1] ?? exitSlots[0] ?? '') }, [entry, date, exitSlots.join()]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!c) {
@@ -95,6 +139,8 @@ export default function VisitRegistrationPage() {
     e.preventDefault()
     setError('')
     setNotice('')
+    if (!entrySlots.includes(entry) || !exit) return setError('Ngày này không còn khung giờ trống, vui lòng chọn ngày khác')
+    if (finalPurpose.length > 255) return setError('Mục đích tối đa 255 ký tự')
     if (!agree) return setError('Vui lòng xác nhận cam kết trước khi gửi đăng ký')
     const invalid = textError(finalPurpose ?? '', 'Mục đích vào kho', 3, 255) || citizenIdError(citizenId)
     if (invalid) return setError(invalid)
@@ -102,7 +148,7 @@ export default function VisitRegistrationPage() {
     try {
       const r = await api<VisitRegistration>(`/api/contracts/${id}/visit-registrations`, {
         body: {
-          citizenId: citizenId.trim(),
+          citizenId: digitsOnly(citizenId),
           authorizedPersonId: who,
           scheduledEntryAt: `${date}T${entry}:00+07:00`,
           scheduledExitAt: `${date}T${exit}:00+07:00`,
@@ -152,6 +198,7 @@ export default function VisitRegistrationPage() {
           </div>
         </div>
       </section>
+      {picker && <div className="container picker-row"><span className="muted">Chọn kho muốn vào:</span>{picker}</div>}
 
       <div className="container page-body">
         <div className="row between wrap">
@@ -162,7 +209,7 @@ export default function VisitRegistrationPage() {
         <ol className="journey">
           <li className="done"><span><Icon name="check" size={14} /></span>Hợp đồng đã ký</li>
           <li className="active"><span>1</span>Đăng ký vào kho</li>
-          <li className="later"><span>2</span>Khai báo đồ mang vào <small>(sắp có)</small></li>
+          <li className="later"><span>2</span><Link to={`/my-units/${c.contractId}/move-in`} className="link">Khai báo đồ mang vào</Link></li>
         </ol>
 
         {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
@@ -194,7 +241,8 @@ export default function VisitRegistrationPage() {
                     </label>
                     <label className="field"><span>Giờ đến dự kiến *</span>
                       <select value={entry} onChange={(e) => setEntry(e.target.value)}>
-                        {slots.slice(0, -1).map((s) => <option key={s} value={s}>{s}</option>)}
+                        {entrySlots.map((s) => <option key={s} value={s}>{s}</option>)}
+                        {entrySlots.length === 0 && <option value="">Hết giờ trong ngày, chọn ngày khác</option>}
                       </select>
                     </label>
                     <label className="field"><span>Giờ rời kho dự kiến *</span>
@@ -209,9 +257,12 @@ export default function VisitRegistrationPage() {
                       {VisitPurposes.map((p) => <option key={p}>{p}</option>)}
                     </select>
                   </label>
+                  {purpose === 'Gửi đồ vào kho' && (
+                    <p className="hint"><Icon name="package" size={15} /> Mang đồ vào kho? <Link to={`/my-units/${c.contractId}/move-in`} className="link">Dùng mẫu Đăng ký đưa đồ vào kho</Link> để khai báo danh sách đồ, phương tiện và người phụ.</p>
+                  )}
                   {purpose === 'Khác' && (
                     <label className="field"><span>Ghi rõ mục đích *</span>
-                      <input value={otherPurpose} maxLength={255} onChange={(e) => setOtherPurpose(e.target.value)} placeholder="vd: Bàn giao chìa khóa cho người nhà" required />
+                      <input value={otherPurpose} maxLength={255} onChange={(e) => setOtherPurpose(e.target.value)} placeholder="vd: Bàn giao chìa khóa cho người được ủy quyền" required />
                     </label>
                   )}
                 </section>
@@ -228,7 +279,7 @@ export default function VisitRegistrationPage() {
                       </button>
                     ))}
                   </div>
-                  {people.length === 0 && <p className="hint"><Icon name="users" size={15} /> Muốn người nhà vào thay bạn? <Link to={`/my-units?contract=${c.contractId}&tab=people`} className="link">Thêm người được ủy quyền</Link></p>}
+                  {people.length === 0 && <p className="hint"><Icon name="users" size={15} /> Muốn người khác vào thay bạn? <Link to={`/my-units?contract=${c.contractId}&tab=people`} className="link">Thêm người được ủy quyền</Link></p>}
                   <label className="field"><span>Số CCCD của người đến kho *</span>
                     <input value={citizenId} inputMode="numeric" maxLength={12} onChange={(e) => setCitizenId(cid.keep(e.target.value))} placeholder="Nhập đủ số trên thẻ CCCD" required />
                     <FieldNote text={cid.hint} />
@@ -248,7 +299,7 @@ export default function VisitRegistrationPage() {
                     <span>Tôi cam kết đến đúng khung giờ, xuất trình CCCD của người đã đăng ký và tuân thủ nội quy kho.</span>
                   </label>
                   <div className="row wrap">
-                    <button className="btn primary" type="submit" disabled={busy}><Icon name="calendar" size={15} /> {busy ? 'Đang gửi…' : 'Gửi đăng ký vào kho'}</button>
+                    <button className="btn primary" type="submit" disabled={busy || !entrySlots.length || !exit}><Icon name="calendar" size={15} /> {busy ? 'Đang gửi…' : 'Gửi đăng ký vào kho'}</button>
                     <Link to={`/my-units/${c.contractId}`} className="btn outline">Để sau</Link>
                   </div>
                 </section>

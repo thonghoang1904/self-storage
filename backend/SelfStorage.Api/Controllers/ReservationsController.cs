@@ -360,20 +360,16 @@ public class ReservationsController(
             || !depositInvoice.Payments.Any(p => p.Status == "Success"
                 && p.AmountPaid == depositInvoice.TotalAmount))
             throw AppException.Conflict("Chỉ được bàn giao kho sau khi đã xác nhận thanh toán đủ tiền cọc");
-        if (r.CheckInAppointmentAt is null)
-            throw AppException.Conflict("Khách hàng chưa đặt lịch nhận kho");
-        if (clock.GetUtcNow() < r.CheckInAppointmentAt.Value.ToUniversalTime())
-            throw AppException.Conflict("Chưa đến thời gian hẹn nhận kho");
+        // Early hand-over: once the deposit is paid the unit may be handed over at any time,
+        // before the booked pick-up time or the planned start date; the contract then starts today.
         if (r.PromotionId is not null && await db.Contracts.AnyAsync(c => c.CustomerId == r.CustomerId, ct))
             throw AppException.Conflict("Khách hàng đã có hợp đồng thuê; không thể áp dụng ưu đãi lần đầu");
-        if (DateOnly.FromDateTime(Now) < r.ExpectedStartDate)
-            throw AppException.Conflict($"Chỉ được nhận kho từ ngày {r.ExpectedStartDate:dd/MM/yyyy}");
 
         var unit = await db.StorageUnits.FindAsync([req.UnitId], ct) ?? throw AppException.NotFound("Không tìm thấy kho");
         if (unit.FacilityId != r.FacilityId || unit.UnitTypeId != r.UnitTypeId || unit.Status != UnitStatus.Available)
             throw AppException.BadRequest("Kho không phù hợp hoặc không còn trống");
 
-        var start = r.ExpectedStartDate < DateOnly.FromDateTime(Now) ? DateOnly.FromDateTime(Now) : r.ExpectedStartDate;
+        var start = DateOnly.FromDateTime(Now);
         var contract = new Contract
         {
             ContractNumber = $"HD-{Now:yyyyMMdd}-{Random.Shared.Next(100000, 999999)}",

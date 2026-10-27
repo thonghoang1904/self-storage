@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { CITIZEN_ID_FILTER, citizenIdError, digitsOnly, emailError, fullNameError, NAME_FILTER, normalizePhone, passwordError, PHONE_FILTER, phoneError, USERNAME_FILTER, usernameError } from '../validation'
 import { api, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { Badge, Empty, Icon } from '../components/ui'
 import { roleLabel, Roles, type ActivityLog, type AdminUser, type Facility, type RoleInfo } from '../types'
 import { FormField, PasswordChecklist, useValidatedForm } from '../components/form'
-import { CITIZEN_ID_FILTER, citizenIdError, digitsOnly, emailError, fullNameError, NAME_FILTER, normalizePhone, passwordError, PHONE_FILTER, phoneError, USERNAME_FILTER, usernameError } from '../validation'
 
 /**
  * #45 System Admin, Figma "staff-management": the system's staff accounts (GET /api/admin/users), adding
@@ -14,12 +14,14 @@ import { CITIZEN_ID_FILTER, citizenIdError, digitsOnly, emailError, fullNameErro
  * The API refuses changing your own role/status and leaving no active administrator; its message is shown.
  */
 
-// Figma: "Đang Làm" green, "Nghỉ Phép" amber, "Đã Nghỉ" red.
+// Figma: "Đang Làm" green, "Đã Nghỉ" red.
 const STATUS: Record<string, { label: string; tone: 'ok' | 'warn' | 'bad' }> = {
   Active: { label: 'Đang Làm', tone: 'ok' },
   Suspended: { label: 'Tạm Khóa', tone: 'warn' },
   Inactive: { label: 'Đã Nghỉ', tone: 'bad' },
 }
+/** Staff accounts have two states: still working or left. Suspended only shows up on old data. */
+const STAFF_STATUSES = ['Active', 'Inactive'] as const
 const statusOfAccount = (s: string) => STATUS[s] ?? { label: s, tone: 'warn' as const }
 
 /** Only facility staff and facility managers are assigned to facilities. */
@@ -110,7 +112,7 @@ export default function AdminUsers() {
           </select>
           <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }} aria-label="Trạng thái">
             <option value="all">Trạng Thái: Tất Cả</option>
-            {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>Trạng Thái: {v.label}</option>)}
+            {STAFF_STATUSES.map((k) => <option key={k} value={k}>Trạng Thái: {STATUS[k].label}</option>)}
           </select>
         </div>
         <button className="btn ghost" onClick={() => { setQ(''); setRoleFilter('staff'); setStatus('all'); setPage(1) }}>Đặt lại bộ lọc</button>
@@ -315,7 +317,7 @@ function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser
           </label>
           <label className="field"><span>Trạng thái</span>
             <select value={status} disabled={isMe} onChange={(e) => setStatus(e.target.value)}>
-              {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              {[...STAFF_STATUSES, ...(STAFF_STATUSES.includes(status as never) ? [] : [status])].map((k) => <option key={k} value={k}>{statusOfAccount(k).label}</option>)}
             </select>
           </label>
         </div>

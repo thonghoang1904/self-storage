@@ -50,7 +50,8 @@ public class ContractsController(
             contract.Unit.Facility.FacilityName, contract.UnitId, contract.Unit.UnitCode, contract.Unit.Status,
             contract.StartDate, contract.EndDate, contract.Status, contract.MonthlyRentFee, contract.DepositPaid,
             accrued, Math.Max(0m, contract.DepositPaid - accrued), Math.Max(0m, accrued - contract.DepositPaid),
-            contract.EndDate.AddDays(-policy.RenewalNoticeDays).ToDateTime(TimeOnly.MinValue));
+            // Renewal is open for the whole term (early renewal); the policy's notice days only drive reminders.
+            contract.StartDate.ToDateTime(TimeOnly.MinValue));
     }
 
     [HttpPost("{id:int}/renewals")]
@@ -59,13 +60,11 @@ public class ContractsController(
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var now = clock.GetLocalNow().DateTime;
-        var today = DateOnly.FromDateTime(now);
         var contract = await db.Contracts.Include(c => c.Unit).FirstOrDefaultAsync(c => c.ContractId == id
             && c.CustomerId == User.GetUserId(), ct) ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
-        var policy = await rentalPolicies.ForFacilityAsync(contract.Unit.FacilityId, ct);
-        if (contract.Status != ContractStatus.Active || today < contract.EndDate.AddDays(-policy.RenewalNoticeDays)
-            || now >= contract.EndDate.ToDateTime(new TimeOnly(20, 0)))
-            throw AppException.Conflict($"Chỉ có thể yêu cầu gia hạn trong {policy.RenewalNoticeDays} ngày trước ngày hết hạn, khi hợp đồng còn hiệu lực");
+        // Early renewal: allowed any time while the contract is active, until 20:00 on the end date.
+        if (contract.Status != ContractStatus.Active || now >= contract.EndDate.ToDateTime(new TimeOnly(20, 0)))
+            throw AppException.Conflict("Chỉ có thể yêu cầu gia hạn khi hợp đồng còn hiệu lực, trước 20:00 ngày hết hạn");
         if (await db.ContractRenewals.AnyAsync(r => r.ContractId == id && r.Status == "Pending", ct))
             throw AppException.Conflict("Hợp đồng đã có yêu cầu gia hạn đang chờ xử lý");
 
@@ -184,9 +183,15 @@ public class ContractsController(
         if (!User.IsInRole(AppRoles.Admin))
             await access.EnsureAssignedAsync(staffId, contract.Unit.FacilityId, ct);
         var now = clock.GetLocalNow().DateTime;
+        var today = DateOnly.FromDateTime(now);
         var returnAppointment = contract.EndDate.ToDateTime(new TimeOnly(20, 0));
-        if (now < returnAppointment)
+        // Before the appointment only an explicit early return is allowed (fee, no refund of rent already paid).
+        var early = now < returnAppointment;
+        if (early && !req.EarlyReturn)
             throw AppException.Conflict($"Lịch trả kho là 20:00 ngày {contract.EndDate:dd/MM/yyyy}");
+        var earlyReason = req.EarlyReturnReason?.Trim() ?? "";
+        if (early && earlyReason.Length is < 5 or > 500)
+            throw AppException.BadRequest("Cần ghi lý do khách trả kho sớm (5–500 ký tự)");
         if (!req.AllItemsRemoved)
             throw AppException.BadRequest("Nhân viên cần xác nhận kho đã được dọn sạch trước khi hoàn tất trả kho");
         if (contract.Status is not (ContractStatus.Active or ContractStatus.Overdue))
@@ -197,7 +202,9 @@ public class ContractsController(
 
         var overdue = await db.OverdueRecords.Where(r => r.ContractId == id && r.ResolvedDate == null)
             .OrderByDescending(r => r.OverdueId).FirstOrDefaultAsync(ct);
-        var accumulated = overdue?.AccumulatedLateFee ?? 0m;
+        var lateFees = overdue?.AccumulatedLateFee ?? 0m;
+        var earlyFee = early ? await EarlyReturnFeeAsync(ct) : 0m;
+        var accumulated = lateFees + earlyFee;
         var deducted = Math.Min(contract.DepositPaid, accumulated);
         var refund = contract.DepositPaid - deducted;
         var stillOwed = accumulated - deducted;
@@ -209,7 +216,9 @@ public class ContractsController(
             HandoverDateTime = now,
             UnitConditionNotes = $"Đã xác nhận dọn sạch kho. {req.UnitConditionNotes}",
             CustomerSignatureConfirmed = true,
-            StaffNotes = req.StaffNotes,
+            StaffNotes = early
+                ? $"Trả kho sớm (hết hạn {contract.EndDate:dd/MM/yyyy}): {earlyReason}" + (string.IsNullOrWhiteSpace(req.StaffNotes) ? "" : $" | {req.StaffNotes}")
+                : req.StaffNotes,
         });
         contract.Status = ContractStatus.Terminated;
         contract.Unit.Status = UnitStatus.Available;
@@ -218,15 +227,45 @@ public class ContractsController(
             overdue.ActionTaken = stillOwed == 0 ? "Resolved" : "NoticeSent";
             overdue.HandledByStaffId = staffId;
             overdue.ResolvedDate = stillOwed == 0 ? now : null;
-            overdue.Notes = $"Trả kho: phí quá hạn {accumulated:N0}đ; cấn trừ cọc {deducted:N0}đ; còn phải thu {stillOwed:N0}đ."
+            overdue.Notes = $"Trả kho: phí quá hạn {lateFees:N0}đ; cấn trừ cọc {deducted:N0}đ; còn phải thu {stillOwed:N0}đ."
                 + (string.IsNullOrWhiteSpace(req.StaffNotes) ? "" : $" {req.StaffNotes}");
+        }
+        if (early)
+        {
+            // The contract ends on the day the unit is handed back (the schema needs EndDate after StartDate).
+            var originalEnd = contract.EndDate;
+            contract.EndDate = today > contract.StartDate ? today : contract.StartDate.AddDays(1);
+            await CancelBillsAfterAsync(contract, today, "trả kho sớm", ct);
+            var request = await db.EarlyReturnRequests
+                .FirstOrDefaultAsync(r => r.ContractId == id && r.Status == EarlyReturnStatus.Pending, ct);
+            if (request is null)
+            {
+                request = new EarlyReturnRequest { ContractId = id, CustomerId = contract.CustomerId, RequestedAt = now };
+                db.EarlyReturnRequests.Add(request);
+            }
+            request.ReturnDate = today;
+            request.Reason = earlyReason;
+            request.EarlyReturnFee = earlyFee;
+            request.Status = EarlyReturnStatus.Completed;
+            request.CompletedByStaffId = staffId;
+            request.CompletedAt = now;
+            db.ActivityLogs.Add(new ActivityLog
+            {
+                UserId = staffId,
+                Action = "ContractReturnedEarly",
+                IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+                Details = $"Contract {contract.ContractNumber}; end date {originalEnd:yyyy-MM-dd} -> {contract.EndDate:yyyy-MM-dd}; early return fee {earlyFee:N0}",
+                CreatedAt = now,
+            });
         }
         if (stillOwed > 0)
         {
-            var overdueInvoice = billing.CreateInvoice(contract.CustomerId, "OVERDUE_FINE",
-                DateOnly.FromDateTime(now),
-                $"Phí lưu kho quá hạn {overdue?.DaysOverdue ?? 0} ngày cho hợp đồng {contract.ContractNumber}",
-                stillOwed, contractId: id);
+            var description = earlyFee > 0 && lateFees == 0
+                ? $"Phí trả kho sớm còn thiếu sau khi trừ cọc, hợp đồng {contract.ContractNumber}"
+                : $"Phí lưu kho quá hạn {overdue?.DaysOverdue ?? 0} ngày" + (earlyFee > 0 ? " và phí trả kho sớm" : "")
+                  + $" cho hợp đồng {contract.ContractNumber}";
+            var overdueInvoice = billing.CreateInvoice(contract.CustomerId, early && lateFees == 0 ? "EXTRA_CHARGE" : "OVERDUE_FINE",
+                today, description, stillOwed, contractId: id);
             db.Invoices.Add(overdueInvoice);
             await db.SaveChangesAsync(ct);
             await emailOutbox.QueueInvoiceIssuedAsync(overdueInvoice.InvoiceId, ct);
@@ -238,14 +277,109 @@ public class ContractsController(
                 UserId = staffId,
                 Action = "AdminContractReturned",
                 IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
-                Details = $"Contract {contract.ContractNumber}; deposit refund due {refund:N0}; outstanding overdue fee {stillOwed:N0}",
+                Details = $"Contract {contract.ContractNumber}; deposit refund due {refund:N0}; outstanding fee {stillOwed:N0}",
                 CreatedAt = now,
             });
         }
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return new ReturnUnitDto(id, contract.Status, contract.Unit.Status, contract.DepositPaid,
-            deducted, refund, stillOwed, now);
+            deducted, refund, stillOwed, now, early ? earlyFee : null);
+    }
+
+    /// <summary>What returning before the end date costs (GET .../early-return-quote?returnDate=yyyy-MM-dd).</summary>
+    [HttpGet("{id:int}/early-return-quote")]
+    [Authorize(Roles = AppRoles.Customer + "," + AppRoles.GateRoles + "," + AppRoles.Admin)]
+    public async Task<EarlyReturnQuoteDto> EarlyReturnQuote(int id, [FromQuery] DateOnly? returnDate, CancellationToken ct)
+    {
+        var contract = await LoadForEarlyReturnAsync(id, ct);
+        var now = clock.GetLocalNow().DateTime;
+        var today = DateOnly.FromDateTime(now);
+        if (now >= contract.EndDate.ToDateTime(new TimeOnly(20, 0)))
+            throw AppException.Conflict($"Hợp đồng đã đến lịch trả kho 20:00 ngày {contract.EndDate:dd/MM/yyyy}, không còn là trả sớm");
+        if (contract.Status is not (ContractStatus.Active or ContractStatus.Overdue))
+            throw AppException.Conflict("Hợp đồng không ở trạng thái có thể trả kho");
+        var date = returnDate ?? today;
+        if (date < today || date > contract.EndDate)
+            throw AppException.BadRequest($"Ngày trả kho phải từ hôm nay đến {contract.EndDate:dd/MM/yyyy}");
+
+        var lateFees = await db.OverdueRecords.Where(r => r.ContractId == id && r.ResolvedDate == null)
+            .OrderByDescending(r => r.OverdueId).Select(r => (decimal?)r.AccumulatedLateFee).FirstOrDefaultAsync(ct) ?? 0m;
+        var fee = await EarlyReturnFeeAsync(ct);
+        var total = lateFees + fee;
+        var deducted = Math.Min(contract.DepositPaid, total);
+        var cancelled = await BillsAfter(contract.ContractId, date).CountAsync(ct);
+        return new EarlyReturnQuoteDto(contract.ContractId, contract.EndDate, contract.EndDate.DayNumber - date.DayNumber,
+            fee, lateFees, contract.DepositPaid, deducted, contract.DepositPaid - deducted, total - deducted, cancelled);
+    }
+
+    /// <summary>The customer asks to hand the unit back early on a chosen day; staff complete it at the facility.</summary>
+    [HttpPost("{id:int}/early-return-requests")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public async Task<EarlyReturnRequestDto> RequestEarlyReturn(int id, CreateEarlyReturnRequest req, CancellationToken ct)
+    {
+        var reason = req.Reason.Trim();
+        if (reason.Length is < 5 or > 500)
+            throw AppException.BadRequest("Lý do trả sớm từ 5 đến 500 ký tự");
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var contract = await LoadOwnAsync(id, ct);
+        var now = clock.GetLocalNow().DateTime;
+        var today = DateOnly.FromDateTime(now);
+        if (contract.Status != ContractStatus.Active || today >= contract.EndDate)
+            throw AppException.Conflict("Chỉ gửi yêu cầu trả sớm khi hợp đồng còn hiệu lực và chưa đến ngày hết hạn");
+        if (req.ReturnDate < today || req.ReturnDate >= contract.EndDate)
+            throw AppException.BadRequest($"Ngày trả kho phải từ hôm nay đến trước ngày {contract.EndDate:dd/MM/yyyy}");
+        if (await db.EarlyReturnRequests.AnyAsync(r => r.ContractId == id && r.Status == EarlyReturnStatus.Pending, ct))
+            throw AppException.Conflict("Hợp đồng đã có yêu cầu trả kho sớm đang chờ; hủy yêu cầu cũ trước khi gửi lại");
+
+        var request = new EarlyReturnRequest
+        {
+            ContractId = id,
+            CustomerId = contract.CustomerId,
+            ReturnDate = req.ReturnDate,
+            Reason = reason,
+            EarlyReturnFee = await EarlyReturnFeeAsync(ct),
+            Status = EarlyReturnStatus.Pending,
+            RequestedAt = now,
+        };
+        db.EarlyReturnRequests.Add(request);
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return await EarlyReturnRows(db.EarlyReturnRequests.Where(r => r.RequestId == request.RequestId)).SingleAsync(ct);
+    }
+
+    [HttpGet("{id:int}/early-return-requests")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public async Task<List<EarlyReturnRequestDto>> MyEarlyReturnRequests(int id, CancellationToken ct)
+    {
+        await LoadOwnAsync(id, ct);
+        return await EarlyReturnRows(db.EarlyReturnRequests.Where(r => r.ContractId == id)
+            .OrderByDescending(r => r.RequestedAt)).ToListAsync(ct);
+    }
+
+    [HttpDelete("{id:int}/early-return-requests/{requestId:int}")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public async Task<EarlyReturnRequestDto> CancelEarlyReturnRequest(int id, int requestId, CancellationToken ct)
+    {
+        await LoadOwnAsync(id, ct);
+        var request = await db.EarlyReturnRequests.FirstOrDefaultAsync(r => r.RequestId == requestId && r.ContractId == id, ct)
+            ?? throw AppException.NotFound("Không tìm thấy yêu cầu trả kho sớm");
+        if (request.Status != EarlyReturnStatus.Pending)
+            throw AppException.Conflict("Yêu cầu trả kho sớm đã được xử lý hoặc đã hủy");
+        request.Status = EarlyReturnStatus.Cancelled;
+        await db.SaveChangesAsync(ct);
+        return await EarlyReturnRows(db.EarlyReturnRequests.Where(r => r.RequestId == requestId)).SingleAsync(ct);
+    }
+
+    /// <summary>Pending early-return requests of a facility, soonest return date first (staff return page).</summary>
+    [HttpGet("facilities/{facilityId:int}/early-return-requests")]
+    [Authorize(Roles = AppRoles.GateRoles)]
+    public async Task<List<EarlyReturnRequestDto>> FacilityEarlyReturnRequests(int facilityId, CancellationToken ct)
+    {
+        await access.EnsureAssignedAsync(User.GetUserId(), facilityId, ct);
+        return await EarlyReturnRows(db.EarlyReturnRequests
+            .Where(r => r.Status == EarlyReturnStatus.Pending && r.Contract.Unit.FacilityId == facilityId)
+            .OrderBy(r => r.ReturnDate).ThenBy(r => r.RequestedAt)).ToListAsync(ct);
     }
 
     [HttpPost("{id:int}/deposit-refunds")]
@@ -282,7 +416,10 @@ public class ContractsController(
 
         var latestOverdue = await db.OverdueRecords.Where(o => o.ContractId == id)
             .OrderByDescending(o => o.OverdueId).FirstOrDefaultAsync(ct);
-        var refundable = Math.Max(0m, contract.DepositPaid - (latestOverdue?.AccumulatedLateFee ?? 0m));
+        var earlyReturnFees = await db.EarlyReturnRequests
+            .Where(r => r.ContractId == id && r.Status == EarlyReturnStatus.Completed)
+            .SumAsync(r => (decimal?)r.EarlyReturnFee, ct) ?? 0m;
+        var refundable = Math.Max(0m, contract.DepositPaid - (latestOverdue?.AccumulatedLateFee ?? 0m) - earlyReturnFees);
         var alreadyRefunded = depositInvoice.Payments.Where(p => p.Status == "Refunded").Sum(p => p.AmountPaid);
         var remaining = refundable - alreadyRefunded;
         if (req.Amount <= 0 || req.Amount > remaining)
@@ -457,6 +594,56 @@ public class ContractsController(
         return await db.Contracts.FirstOrDefaultAsync(c => c.ContractId == id && c.CustomerId == me, ct)
                ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
     }
+
+    private async Task<decimal> EarlyReturnFeeAsync(CancellationToken ct) =>
+        await db.FeeConfigurations.Where(f => f.FeeCode == "EARLY_RETURN_FEE")
+            .Select(f => (decimal?)f.DefaultAmount).FirstOrDefaultAsync(ct) ?? 0m;
+
+    /// <summary>Unpaid rent invoices for periods starting on or after the return date: no longer owed.</summary>
+    private IQueryable<Invoice> BillsAfter(int contractId, DateOnly returnDate) =>
+        db.Invoices.Where(i => i.ContractId == contractId && i.InvoiceType == "MONTHLY_RENT"
+            && (i.Status == "Unpaid" || i.Status == "Overdue")
+            && i.BillingPeriodStart != null && i.BillingPeriodStart >= returnDate);
+
+    private async Task CancelBillsAfterAsync(Contract contract, DateOnly returnDate, string why, CancellationToken ct)
+    {
+        var invoiceIds = await BillsAfter(contract.ContractId, returnDate).Select(i => i.InvoiceId).ToListAsync(ct);
+        // A renewal still waiting for payment no longer makes sense once the unit is handed back.
+        var renewals = await db.ContractRenewals.Where(r => r.ContractId == contract.ContractId && r.Status == "Pending")
+            .ToListAsync(ct);
+        foreach (var renewal in renewals)
+        {
+            renewal.Status = "Rejected";
+            renewal.ProcessedAt = clock.GetLocalNow().DateTime;
+            if (renewal.InvoiceId is int renewalInvoiceId) invoiceIds.Add(renewalInvoiceId);
+        }
+        if (invoiceIds.Count == 0) return;
+        var invoices = await db.Invoices.Where(i => invoiceIds.Contains(i.InvoiceId)
+            && (i.Status == "Unpaid" || i.Status == "Overdue")).ToListAsync(ct);
+        foreach (var invoice in invoices) invoice.Status = "Cancelled";
+        var pendingPayments = await db.Payments.Where(p => invoiceIds.Contains(p.InvoiceId) && p.Status == "Pending")
+            .ToListAsync(ct);
+        foreach (var payment in pendingPayments)
+        {
+            payment.Status = "Failed";
+            payment.PaymentNotes = $"Giao dịch bị hủy do {why}.";
+        }
+    }
+
+    /// <summary>Customer: own contract. Staff/manager: assigned facility. Admin: any.</summary>
+    private async Task<Contract> LoadForEarlyReturnAsync(int id, CancellationToken ct)
+    {
+        if (User.IsInRole(AppRoles.Customer)) return await LoadOwnAsync(id, ct);
+        var contract = await db.Contracts.Include(c => c.Unit).FirstOrDefaultAsync(c => c.ContractId == id, ct)
+            ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
+        if (!User.IsInRole(AppRoles.Admin))
+            await access.EnsureAssignedAsync(User.GetUserId(), contract.Unit.FacilityId, ct);
+        return contract;
+    }
+
+    private static IQueryable<EarlyReturnRequestDto> EarlyReturnRows(IQueryable<EarlyReturnRequest> q) =>
+        q.Select(r => new EarlyReturnRequestDto(r.RequestId, r.ContractId, r.Contract.ContractNumber, r.Contract.Unit.UnitCode,
+            r.Customer.FullName, r.ReturnDate, r.Reason, r.EarlyReturnFee, r.Status, r.RequestedAt));
 
     private static RenewalDto ToRenewalDto(ContractRenewal r) =>
         new(r.RenewalId, r.ContractId, r.OldEndDate, r.NewEndDate, r.ExtensionMonths,

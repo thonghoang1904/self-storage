@@ -1,12 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { CITIZEN_ID_FILTER, citizenIdError, fullNameError, NAME_FILTER, normalizePhone, PHONE_FILTER, phoneError, relationshipError } from '../validation'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
-import { AppointmentPicker } from '../components/appointment'
+import { AppointmentPicker, depositDueAt, depositMissed, pickupMissed } from '../components/appointment'
 import { Empty, Eyebrow, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
 import { DenyReasons, type AccessRecord, type Contract, type Facility, type Invoice, type Person, type Reservation } from '../types'
 import { FormField, useValidatedForm } from '../components/form'
-import { CITIZEN_ID_FILTER, citizenIdError, fullNameError, NAME_FILTER, normalizePhone, PHONE_FILTER, phoneError, relationshipError } from '../validation'
 
 const daysUntil = (iso: string) => Math.ceil((new Date(`${iso}T00:00:00`).getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000)
 
@@ -87,6 +87,7 @@ export default function MyUnits() {
         <section className="stack">
           <div className="row between wrap">
             <h2 className="section-title with-icon"><Icon name="package" size={20} className="cyan" /> Kho Lưu Trữ Của Tôi {active > 0 && <span className="pill">{active} Đang Hoạt Động</span>}</h2>
+            <Link to="/visit" className="btn primary sm"><Icon name="calendar" size={15} /> Đăng ký vào kho</Link>
           </div>
           <div className="my-unit-grid">
             {contracts?.map((c, i) => {
@@ -106,11 +107,17 @@ export default function MyUnits() {
                       <li><Icon name="card" size={14} /> Chi phí: <b className="cyan">{fmtMoney(c.monthlyRentFee)}/tháng</b></li>
                     </ul>
                     <div className="row">
-                      <Link to={`/my-units/${c.contractId}?renew=1`} className="btn primary sm grow">Gia Hạn</Link>
+                      {c.status === 'Active' && <Link to={`/my-units/${c.contractId}/renew`} className="btn primary sm grow">Gia Hạn</Link>}
                       <Link to={`/my-units/${c.contractId}`} className="btn outline sm grow">Chi Tiết</Link>
                     </div>
                     {(c.status === 'Active' || c.status === 'Renewed') && (
-                      <Link to={`/my-units/${c.contractId}/visit`} className="btn ghost sm block"><Icon name="calendar" size={14} /> Đăng Ký Ra Vào Kho</Link>
+                      <div className="row">
+                        <Link to={`/my-units/${c.contractId}/visit`} className="btn ghost sm grow"><Icon name="calendar" size={14} /> Đăng Ký Vào Kho</Link>
+                        <Link to={`/my-units/${c.contractId}/move-in`} className="btn ghost sm grow"><Icon name="package" size={14} /> Đưa Đồ Vào Kho</Link>
+                      </div>
+                    )}
+                    {c.status === 'Active' && left > 0 && (
+                      <Link to={`/my-units/${c.contractId}?return=early`} className="btn ghost sm block"><Icon name="logout" size={14} /> Trả Kho Sớm</Link>
                     )}
                   </div>
                 </article>
@@ -202,14 +209,16 @@ export default function MyUnits() {
                 <div key={`r${r.reservationId}`} className="notice">
                   <span className="notice-icon warn"><Icon name="calendar" size={16} /></span>
                   <div className="grow">
-                    <div className="notice-head"><b>{r.status === 'PendingDeposit' ? 'Chờ đặt cọc' : r.checkInAppointmentAt ? 'Đã hẹn nhận kho' : 'Đặt lịch nhận kho'}</b><small>Nhận kho {fmtDate(r.expectedStartDate)}</small></div>
+                    <div className="notice-head"><b>{depositMissed(r) ? 'Quá hạn đặt cọc' : pickupMissed(r) ? 'Quá hạn nhận kho' : r.status === 'PendingDeposit' ? 'Chờ đặt cọc' : r.checkInAppointmentAt ? 'Đã hẹn nhận kho' : 'Đặt lịch nhận kho'}</b><small>Nhận kho {fmtDate(r.expectedStartDate)}</small></div>
                     <p>
                       Đơn {r.reservationCode} ({splitTypeName(r.unitTypeName).name}, {r.facilityName})
-                      {r.status === 'PendingDeposit' ? ` cần đặt cọc ${fmtMoney(r.depositAmount)} trước ${fmtTime(r.depositDeadline)}.`
+                      {depositMissed(r) ? ' không được đặt cọc kịp nên sẽ tự hủy. Bạn có thể đặt kho lại.'
+                        : pickupMissed(r) ? ` đã quá 20:00 ngày ${fmtDate(r.expectedStartDate)} mà chưa nhận kho nên sẽ tự hủy; tiền cọc được hoàn sau khi trừ phí hủy.`
+                        : r.status === 'PendingDeposit' ? ` cần đặt cọc ${fmtMoney(r.depositAmount)} trước ${fmtTime(depositDueAt(r))}.`
                         : r.checkInAppointmentAt ? ` — đến cơ sở đúng giờ hẹn để nhân viên bàn giao kho.`
                         : ` đã nhận cọc. Chọn giờ đến nhận kho trong ngày ${fmtDate(r.expectedStartDate)}, nhân viên chỉ bàn giao từ giờ hẹn.`}
                     </p>
-                    {r.status === 'Confirmed' && (
+                    {r.status === 'Confirmed' && !pickupMissed(r) && (
                       <AppointmentPicker reservation={r} operatingHours={facilities.find((f) => f.facilityName === r.facilityName)?.operatingHours}
                         onSaved={(u) => setReservations((rs) => rs.map((x) => (x.reservationId === u.reservationId ? u : x)))} />
                     )}
@@ -221,7 +230,7 @@ export default function MyUnits() {
                   <span className="notice-icon bad"><Icon name="alert" size={16} /></span>
                   <div className="grow">
                     <div className="notice-head"><b>Cảnh báo hết hạn hợp đồng</b><small>Còn {daysUntil(c.endDate)} ngày</small></div>
-                    <p>Kho {c.unitCode} của bạn sắp kết thúc thời hạn thuê vào ngày {fmtDate(c.endDate)}. <Link to={`/my-units/${c.contractId}?renew=1`} className="link">Gửi yêu cầu gia hạn</Link></p>
+                    <p>Kho {c.unitCode} của bạn sắp kết thúc thời hạn thuê vào ngày {fmtDate(c.endDate)}. <Link to={`/my-units/${c.contractId}/renew`} className="link">Gửi yêu cầu gia hạn</Link></p>
                   </div>
                 </div>
               ))}
@@ -258,11 +267,14 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
     void load()
   }, [contractId])
 
+  const [busy, setBusy] = useState(false)
   const add = async (e: FormEvent) => {
     e.preventDefault()
+    if (busy) return
     setError('')
     if (!form.validateAll()) return
     const f = form.values
+    setBusy(true)
     try {
       await api(base, {
         body: { fullName: f.fullName.trim(), citizenId: f.citizenId, phoneNumber: normalizePhone(f.phoneNumber), relationship: f.relationship.trim() || null },
@@ -272,6 +284,8 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
       void load()
     } catch (err) {
       setError((err as Error).message)
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -287,7 +301,7 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
 
   return (
     <div className="stack">
-      <p className="muted">Những người này được vào kho thay bạn khi xuất trình CCCD của chính họ cho nhân viên.</p>
+      <p className="muted">Bạn có thể ủy quyền cho bất kỳ ai (người nhà, bạn bè, nhân viên, bên vận chuyển). Họ vào kho thay bạn khi xuất trình CCCD của chính họ cho nhân viên.</p>
       <div className="person-list">
         {people.map((p) => (
           <div key={p.authorizedPersonId} className="person-row">
@@ -314,10 +328,10 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
             <FormField label="Họ tên" error={form.error('fullName')}><input {...form.field('fullName')} maxLength={100} placeholder="Nguyễn Thị Bình" autoFocus /></FormField>
             <FormField label="Số CCCD" error={form.error('citizenId')}><input {...form.field('citizenId')} inputMode="numeric" placeholder="12 chữ số" /></FormField>
             <FormField label="Số điện thoại" error={form.error('phoneNumber')}><input {...form.field('phoneNumber')} inputMode="tel" placeholder="0912345678" /></FormField>
-            <FormField label="Quan hệ (không bắt buộc)" error={form.error('relationship')}><input {...form.field('relationship')} maxLength={50} placeholder="Vợ, con, nhân viên…" /></FormField>
+            <FormField label="Quan hệ (không bắt buộc)" error={form.error('relationship')}><input {...form.field('relationship')} maxLength={50} placeholder="vd: Người nhà, bạn bè, nhân viên, bên vận chuyển" /></FormField>
           </div>
           <div className="row">
-            <button className="btn primary sm" type="submit">Lưu người được ủy quyền</button>
+            <button className="btn primary sm" type="submit" disabled={busy}>{busy ? 'Đang lưu…' : 'Lưu người được ủy quyền'}</button>
             <button className="btn ghost sm" type="button" onClick={() => { setAdding(false); form.reset() }}>Hủy</button>
           </div>
         </form>

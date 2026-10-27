@@ -6,6 +6,7 @@ import { daysUntil, fetchContracts, monthRange, timeAgo } from '../consoleData'
 import { Badge, Empty, Icon, splitTypeName, StatusBadge } from '../components/ui'
 import type { AdminContract, OperationsReport, OperationsReportRow } from '../types'
 import { Metric } from './FacilityOverview'
+import { AdminSystemPanels } from './AdminOverview'
 
 /**
  * "Tổng Quan" of the system administrator (/admin) and the operations manager (/ops), Figma "admin-dashboard".
@@ -93,6 +94,7 @@ export default function ConsoleOverview({ admin }: { admin: boolean }) {
       </div>
 
       {admin && <ExpiringContracts contracts={contracts} />}
+      {admin && <AdminSystemPanels />}
     </div>
   )
 }
