@@ -21,8 +21,6 @@ public sealed class PaymentGatewayOptions
 
     public string PublicBaseUrl { get; set; } = "";
     public string FrontendReturnUrl { get; set; } = "";
-    /// <summary>Development only: lets a customer complete a checkout without a real gateway, for testing.</summary>
-    public bool SandboxEnabled { get; set; }
     public VnPayOptions VnPay { get; set; } = new();
     public MomoOptions Momo { get; set; } = new();
 }
@@ -167,64 +165,6 @@ public sealed class PaymentGatewayService(
             await MarkCheckoutFailedAsync(payment.PaymentId, ct);
             throw new AppException(StatusCodes.Status502BadGateway, "Cổng thanh toán phản hồi quá thời gian.");
         }
-    }
-
-    /// <summary>
-    /// Development sandbox: completes an invoice as if VNPay/MoMo had confirmed it through the IPN,
-    /// so the deposit confirms the reservation (or the renewal extends the contract) exactly as in production.
-    /// </summary>
-    public async Task<bool> CompleteSandboxPaymentAsync(int invoiceId, int customerId, string provider, CancellationToken ct)
-    {
-        if (!settings.SandboxEnabled)
-            throw AppException.Conflict("Thanh toán thử nghiệm chưa được bật");
-        var paymentMethod = provider.ToLowerInvariant() switch
-        {
-            "vnpay" => "VNPay",
-            "momo" => "MoMo",
-            _ => throw AppException.BadRequest("Cổng thanh toán chỉ hỗ trợ VNPay hoặc MoMo"),
-        };
-
-        Payment payment;
-        await using (var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct))
-        {
-            var invoice = await db.Invoices.FirstOrDefaultAsync(i =>
-                i.InvoiceId == invoiceId && i.CustomerId == customerId, ct)
-                ?? throw AppException.NotFound("Không tìm thấy hóa đơn");
-            if (invoice.Status is not ("Unpaid" or "Overdue") || invoice.TotalAmount <= 0)
-                throw AppException.Conflict("Hóa đơn không còn chờ thanh toán");
-            await ValidateInvoiceCanBePaidAsync(invoice, ct);
-
-            var pending = await db.Payments.FirstOrDefaultAsync(
-                p => p.InvoiceId == invoiceId && p.Status == "Pending", ct);
-            if (pending is not null && pending.AmountPaid == invoice.TotalAmount)
-            {
-                payment = pending;
-            }
-            else
-            {
-                if (pending is not null)
-                {
-                    pending.Status = "Failed";
-                    pending.PaymentNotes = "Giao dịch cũ bị thay bằng thanh toán thử nghiệm.";
-                }
-                payment = new Payment
-                {
-                    InvoiceId = invoiceId,
-                    PaymentMethod = paymentMethod,
-                    TransactionCode = $"SANDBOX-{Guid.NewGuid():N}",
-                    AmountPaid = invoice.TotalAmount,
-                    PaymentDate = clock.GetLocalNow().DateTime,
-                    Status = "Pending",
-                    PaymentNotes = $"Thanh toán thử nghiệm {paymentMethod}.",
-                };
-                db.Payments.Add(payment);
-            }
-            await db.SaveChangesAsync(ct);
-            await transaction.CommitAsync(ct);
-        }
-
-        return await billing.CompleteOnlinePaymentAsync(payment.PaymentMethod, payment.TransactionCode!,
-            payment.AmountPaid, true, "SANDBOX", ct);
     }
 
     public async Task<string> ProcessVnPayIpnAsync(IQueryCollection query, CancellationToken ct)

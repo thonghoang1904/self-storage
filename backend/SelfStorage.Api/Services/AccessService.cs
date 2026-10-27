@@ -157,28 +157,19 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
     public async Task<IReadOnlyList<VisitCandidateDto>> LookupAsync(int staffId, int facilityId, string query, CancellationToken ct)
     {
         await EnsureAssignedAsync(staffId, facilityId, ct);
-        // Partial, case-insensitive match (SQL Server's default collation ignores case): "a" finds A-01, A-02…;
-        // "0912" finds every phone or CCCD containing it.
-        var q = (query ?? "").Trim();
-        if (q.Length == 0) throw AppException.BadRequest("Nhập mã kho, số hợp đồng, CCCD hoặc số điện thoại để tìm");
-        if (q.Length > 50) q = q[..50];
+        var q = query.Trim();
+        if (q.Length < 2) throw AppException.BadRequest("Nhập ít nhất 2 ký tự để tìm");
 
         var contracts = await db.Contracts
             .Include(c => c.Unit)
             .Include(c => c.Customer)
             .Include(c => c.AuthorizedPersons)
             .Where(c => c.Unit.FacilityId == facilityId)
-            .Where(c => c.Unit.UnitCode.Contains(q) || c.ContractNumber.Contains(q)
-                        || c.Customer.FullName.Contains(q)
-                        || (c.Customer.CitizenId != null && c.Customer.CitizenId.Contains(q))
-                        || c.Customer.PhoneNumber.Contains(q)
-                        || c.AuthorizedPersons.Any(p => p.Status == "Active"
-                            && (p.CitizenId.Contains(q) || (p.PhoneNumber != null && p.PhoneNumber.Contains(q)) || p.FullName.Contains(q))))
-            // Exact code/number first, then units in code order; the newest term first within a unit.
-            .OrderByDescending(c => c.Unit.UnitCode == q || c.ContractNumber == q)
-            .ThenBy(c => c.Unit.UnitCode)
-            .ThenByDescending(c => c.EndDate)
-            .Take(20)
+            .Where(c => c.Unit.UnitCode == q || c.ContractNumber == q
+                        || c.Customer.CitizenId == q || c.Customer.PhoneNumber == q
+                        || c.AuthorizedPersons.Any(p => p.Status == "Active" && (p.CitizenId == q || p.PhoneNumber == q)))
+            .OrderByDescending(c => c.EndDate)
+            .Take(10)
             .ToListAsync(ct);
 
         var ids = contracts.Select(c => c.ContractId).ToList();

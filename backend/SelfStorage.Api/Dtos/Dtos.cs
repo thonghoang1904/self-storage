@@ -238,20 +238,9 @@ public record RenewalDto(int RenewalId, int ContractId, DateOnly OldEndDate, Dat
     int ExtensionMonths, decimal RenewalFee, string Status, DateTime RequestedAt, int? InvoiceId);
 public record ReturnUnitRequest([Required, StringLength(1000)] string UnitConditionNotes,
     bool AllItemsRemoved,
-    [StringLength(500)] string? StaffNotes,
-    bool EarlyReturn = false,
-    [StringLength(500)] string? EarlyReturnReason = null);
-/// <summary>EarlyReturnFee is set for early returns; it is already included in LateFeesDeducted / LateFeesStillOwed.</summary>
+    [StringLength(500)] string? StaffNotes);
 public record ReturnUnitDto(int ContractId, string Status, string UnitStatus, decimal DepositPaid,
-    decimal LateFeesDeducted, decimal DepositRefundDue, decimal LateFeesStillOwed, DateTime ReturnedAt,
-    decimal? EarlyReturnFee = null);
-public record EarlyReturnQuoteDto(int ContractId, DateOnly EndDate, int DaysEarly, decimal EarlyReturnFee,
-    decimal LateFees, decimal DepositPaid, decimal DepositDeducted, decimal DepositRefundDue,
-    decimal AmountStillOwed, int InvoicesCancelled);
-public record CreateEarlyReturnRequest([Required] DateOnly ReturnDate, [Required, StringLength(500)] string Reason);
-public record EarlyReturnRequestDto(int RequestId, int ContractId, string ContractNumber, string UnitCode,
-    string CustomerName, DateOnly ReturnDate, string Reason, decimal EarlyReturnFee, string Status,
-    DateTime RequestedAt);
+    decimal LateFeesDeducted, decimal DepositRefundDue, decimal LateFeesStillOwed, DateTime ReturnedAt);
 public record OverdueSummaryDto(int OverdueId, int ContractId, string ContractNumber, string CustomerName,
     string UnitCode, DateOnly EndDate, string ContractStatus, string UnitStatus, int DaysOverdue,
     decimal AccumulatedLateFee, decimal DepositBalance, decimal OutstandingLateFee, DateTime? LockAppliedAt);
