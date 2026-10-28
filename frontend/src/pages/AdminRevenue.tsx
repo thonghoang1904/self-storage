@@ -6,8 +6,9 @@ import type { AdminContract, OperationsReportRow } from '../types'
 /**
  * Admin "Doanh Thu & Thống Kê" (Figma "revenue-analytics"), built only from data the API has:
  * - payments (GET /api/admin/payments, paged): money received (Success, not deposit offsets) and money paid back
- *   (Refunded / Reversed), per month over the last 12 months. The system records no operating costs, so the
- *   second line is refunds, not expenses;
+ *   (Refunded), per month over the last 12 months, the same figures as the reports and the admin dashboard. A Reversed
+ *   payment (online money returned because the invoice could no longer take it) was never counted as received, so it
+ *   is not a refund either. The system records no operating costs, so the second line is refunds, not expenses;
  * - revenue by unit type (GET /api/operations/reports/details, this year);
  * - top paying customers this year, with their units and rented months (GET /api/admin/contracts).
  */
@@ -22,7 +23,7 @@ const REVENUE = '#0096b7'
 const REFUND = '#e34948'
 const short = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(1)} tỷ` : n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e8 ? 0 : 1)} tr` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n)
 const isIncome = (p: Pay) => p.status === 'Success' && p.paymentMethod !== 'DepositOffset'
-const isRefund = (p: Pay) => p.status === 'Refunded' || p.status === 'Reversed'
+const isRefund = (p: Pay) => p.status === 'Refunded'
 
 async function allPayments(): Promise<Pay[]> {
   const out: Pay[] = []
@@ -75,15 +76,15 @@ export default function AdminRevenue() {
   }, [byType])
   const typeTotal = types.reduce((n, t) => n + t.value, 0)
 
-  // Top customers by money paid this year.
+  // Top customers by money paid this year, net of what was paid back to them (a refunded deposit is not money kept).
   const top = useMemo(() => {
     const m = new Map<number, { name: string; paid: number }>()
-    for (const p of thisYear.filter(isIncome)) {
+    for (const p of thisYear.filter((p) => isIncome(p) || isRefund(p))) {
       const x = m.get(p.customerId) ?? { name: p.customerName, paid: 0 }
-      x.paid += p.amountPaid
+      x.paid += isRefund(p) ? -p.amountPaid : p.amountPaid
       m.set(p.customerId, x)
     }
-    return [...m.entries()].sort((a, b) => b[1].paid - a[1].paid).slice(0, 5).map(([id, x]) => {
+    return [...m.entries()].filter(([, x]) => x.paid > 0).sort((a, b) => b[1].paid - a[1].paid).slice(0, 5).map(([id, x]) => {
       const own = contracts.filter((c) => c.customerId === id)
       const monthsRented = own.reduce((n, c) => n + Math.max(1, Math.round((new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / (30.44 * 86400000))), 0)
       return { id, ...x, units: own.map((c) => c.unitCode).join(', '), monthsRented }
