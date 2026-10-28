@@ -64,6 +64,8 @@ export default function MyUnits() {
 
   const active = contracts?.filter((c) => c.status === 'Active' || c.status === 'Renewed').length ?? 0
   const open = contracts?.find((c) => c.contractId === openId)
+  // Units the customer still holds; contracts that have ended (returned or liquidated) are not listed here.
+  const current = contracts?.filter((c) => c.status === 'Active' || c.status === 'Renewed' || c.status === 'Overdue')
   const openReservations = reservations.filter((r) => r.status === 'PendingDeposit' || r.status === 'Confirmed')
   const ending = contracts?.filter((c) => c.status === 'Active' && daysUntil(c.endDate) <= 45) ?? []
   const unpaid = invoices?.filter((i) => i.status === 'Unpaid' || i.status === 'Overdue') ?? []
@@ -100,17 +102,17 @@ export default function MyUnits() {
             <Link to="/visit" className="btn primary sm"><Icon name="calendar" size={15} /> Đăng ký vào kho</Link>
           </div>
           <div className="my-unit-grid">
-            {contracts?.map((c) => {
+            {current?.map((c) => {
               const left = daysUntil(c.endDate)
               return (
                 <article key={c.contractId} className="my-unit-card">
-                  <div className="my-unit-media">
+                  <Link to={`/my-units/${c.contractId}`} className="my-unit-media" aria-label={`Chi tiết kho ${c.unitCode}`}>
                     <ContractUnitArt facilityId={c.facilityId} unitCode={c.unitCode} />
                     <span className="tag-dark">{c.unitCode}</span>
                     <span className="tag-status"><StatusBadge status={c.status} /></span>
-                  </div>
+                  </Link>
                   <div className="my-unit-body">
-                    <h3>Kho {c.unitCode} <small>· {c.facilityName}</small></h3>
+                    <h3><Link to={`/my-units/${c.contractId}`} className="my-unit-title">Kho {c.unitCode}</Link> <small>· {c.facilityName}</small></h3>
                     <ul className="meta-list">
                       <li><Icon name="calendar" size={14} /> Bắt đầu: {fmtDate(c.startDate)}</li>
                       <li><Icon name="clock" size={14} /> Hết hạn: <b>{fmtDate(c.endDate)}</b>{c.status === 'Active' && left >= 0 && left <= 45 && <span className="warn-text"> · còn {left} ngày</span>}</li>
@@ -138,7 +140,7 @@ export default function MyUnits() {
               <small>Mở rộng không gian lưu trữ dễ dàng chỉ với vài bước đơn giản</small>
             </Link>
           </div>
-          {contracts && contracts.length === 0 && <p className="muted">Bạn chưa có hợp đồng thuê kho nào. Sau khi đặt cọc, nhân viên sẽ bàn giao kho và hợp đồng sẽ hiện ở đây.</p>}
+          {current && current.length === 0 && <p className="muted">{contracts?.length ? 'Bạn không còn kho nào đang thuê.' : 'Bạn chưa có hợp đồng thuê kho nào. Sau khi đặt cọc, nhân viên sẽ bàn giao kho và hợp đồng sẽ hiện ở đây.'}</p>}
         </section>
 
         {open && (
