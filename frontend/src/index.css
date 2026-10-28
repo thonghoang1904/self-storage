@@ -427,6 +427,9 @@ td .select-btn { height: 36px; width: auto; min-width: 120px; font-size: 13px; }
 .stat-grid.three { grid-template-columns: repeat(3, 1fr); }
 .stat-grid.two { grid-template-columns: repeat(2, 1fr); }
 .stat-card { display: flex; flex-direction: column; gap: 10px; padding: 20px; border-radius: var(--radius-lg); background: #fff; border: 1px solid var(--border); box-shadow: var(--shadow); font-size: 14px; }
+button.stat-filter { font: inherit; color: inherit; text-align: left; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+button.stat-filter:hover { border-color: var(--cyan); }
+button.stat-filter.active { border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-50), var(--shadow); }
 .stat-icon { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; }
 .stat-icon.ok { background: var(--ok-bg); color: var(--ok); }
 .stat-icon.warn { background: var(--warn-bg); color: var(--warn); }

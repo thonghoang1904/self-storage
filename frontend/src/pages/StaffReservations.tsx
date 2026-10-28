@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, fmtDate, fmtMoney, fmtTime } from '../api'
+import { api, billingLink, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { appointmentReached, depositDueAt, depositMissed, pickupMissed } from '../components/appointment'
 import { Badge, Empty, Icon, splitTypeName, StatusBadge } from '../components/ui'
@@ -11,6 +11,7 @@ const FILTERS = [
   { key: 'open', label: 'Cần xử lý' },
   { key: 'PendingDeposit', label: 'Chờ đặt cọc' },
   { key: 'Confirmed', label: 'Chờ bàn giao' },
+  { key: 'CheckedIn', label: 'Đã bàn giao' },
   { key: 'all', label: 'Tất cả' },
 ] as const
 
@@ -72,6 +73,10 @@ export default function StaffReservations() {
   }
 
   const now = new Date()
+  const showOnly = (key: (typeof FILTERS)[number]['key']) => {
+    setFilter(key)
+    document.getElementById('reservation-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
   const pending = rows.filter((r) => r.status === 'PendingDeposit' && !depositMissed(r, now)).length
   const confirmed = rows.filter((r) => r.status === 'Confirmed' && !pickupMissed(r, now)).length
   const late = rows.filter((r) => depositMissed(r, now) || pickupMissed(r, now)).length
@@ -88,13 +93,14 @@ export default function StaffReservations() {
         </div>
       </div>
 
+      {/* Each card filters the list below to its orders. */}
       <div className="stat-grid three">
-        <div className="stat-card"><div className="row between"><span className="muted">Chờ đặt cọc</span><span className="stat-icon warn"><Icon name="wallet" size={17} /></span></div><b className="stat-value">{pending}</b><small className="stat-note warn">Giữ chỗ 24 giờ, tối đa 20:00 ngày bắt đầu</small></div>
-        <div className="stat-card"><div className="row between"><span className="muted">Chờ bàn giao</span><span className="stat-icon info"><Icon name="key" size={17} /></span></div><b className="stat-value">{confirmed}</b><small className={`stat-note ${late ? 'bad' : 'info'}`}>{units.length} kho đang trống{late ? ` · ${late} đơn quá hạn` : ''}</small></div>
-        <div className="stat-card"><div className="row between"><span className="muted">Đã bàn giao</span><span className="stat-icon ok"><Icon name="check" size={17} /></span></div><b className="stat-value">{checkedIn}</b><small className="stat-note ok">Đã tạo hợp đồng</small></div>
+        <button type="button" className={`stat-card stat-filter ${filter === 'PendingDeposit' ? 'active' : ''}`} onClick={() => showOnly('PendingDeposit')}><div className="row between"><span className="muted">Chờ đặt cọc</span><span className="stat-icon warn"><Icon name="wallet" size={17} /></span></div><b className="stat-value">{pending}</b><small className="stat-note warn">Quá hạn cọc đơn tự hủy, chậm nhất 20:00 ngày bắt đầu</small></button>
+        <button type="button" className={`stat-card stat-filter ${filter === 'Confirmed' ? 'active' : ''}`} onClick={() => showOnly('Confirmed')}><div className="row between"><span className="muted">Chờ bàn giao</span><span className="stat-icon info"><Icon name="key" size={17} /></span></div><b className="stat-value">{confirmed}</b><small className={`stat-note ${late ? 'bad' : 'info'}`}>{units.length} kho đang trống{late ? ` · ${late} đơn quá hạn` : ''}</small></button>
+        <button type="button" className={`stat-card stat-filter ${filter === 'CheckedIn' ? 'active' : ''}`} onClick={() => showOnly('CheckedIn')}><div className="row between"><span className="muted">Đã bàn giao</span><span className="stat-icon ok"><Icon name="check" size={17} /></span></div><b className="stat-value">{checkedIn}</b><small className="stat-note ok">Đã tạo hợp đồng</small></button>
       </div>
 
-      <section className="panel">
+      <section className="panel" id="reservation-list">
         <div className="panel-head wrap">
           <h3 className="panel-title">Đơn đặt kho</h3>
           <div className="segmented">
@@ -109,7 +115,7 @@ export default function StaffReservations() {
             <tbody>
               {shown.map((r) => (
                 <tr key={r.reservationId}>
-                  <td className="code">{r.reservationCode}</td>
+                  <td><Link to={billingLink(r.reservationCode)} className="code link" title="Xem hóa đơn của đơn này">{r.reservationCode}</Link></td>
                   <td><b>{r.customerName}</b></td>
                   <td>{splitTypeName(r.unitTypeName).name}{r.assignedUnitCode && <><br /><small className="muted">Kho {r.assignedUnitCode}</small></>}</td>
                   <td>{fmtDate(r.expectedStartDate)}<br /><small className="muted">{r.durationMonths} tháng</small></td>
