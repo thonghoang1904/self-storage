@@ -323,6 +323,7 @@ export function AdminLayout() {
         { icon: 'building', label: 'Kho Lưu Trữ', to: '/admin/storage' },
         { icon: 'users', label: 'Khách Hàng', to: '/admin/customers' },
         { icon: 'user', label: 'Nhân Viên', to: '/admin/users' },
+        { icon: 'file', label: 'Hợp Đồng', to: '/admin/contracts' },
         { icon: 'chart', label: 'Doanh Thu', to: '/admin/revenue' },
         { icon: 'file', label: 'Báo Cáo', to: '/admin/reports' },
         { icon: 'settings', label: 'Cài Đặt', to: '/admin/settings' },

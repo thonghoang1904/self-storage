@@ -2,15 +2,13 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { Empty, Icon, StatusBadge } from '../components/ui'
-import type { AdminContract, Facility, ReturnUnitResult, StorageUnit } from '../types'
+import type { AdminContract, Facility } from '../types'
 import { Select } from '../components/Select'
 
 /**
- * System administrator: contracts across all facilities (AdminContractsController).
- * Search and filter (GET /api/admin/contracts), open one (GET .../{id}), change the end date or terms of an
- * (read-only), hand a unit back (POST /api/admin/contracts/{id}/return) and create a contract
- * from a paid reservation (POST /api/admin/contracts/from-reservations/{id}/check-in).
- * Start date, rent and payments are never edited directly; the API refuses and its message is shown.
+ * System administrator: contracts across all facilities, view only (AdminContractsController).
+ * Search and filter (GET /api/admin/contracts) and open one (GET .../{id}). Hand-overs, returns and every change go
+ * through the facility staff screens, renewals and invoices.
  */
 
 const STATUSES = [
@@ -35,9 +33,7 @@ export default function AdminContracts() {
   const [rows, setRows] = useState<AdminContract[]>([])
   const [loading, setLoading] = useState(true)
   const [openId, setOpenId] = useState<number | null>(null)
-  const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
 
   useEffect(() => { api<Facility[]>('/api/facilities').then(setFacilities).catch(() => {}) }, [])
 
@@ -58,7 +54,6 @@ export default function AdminContracts() {
   }, [facilityId, status, query, page])
   useEffect(() => { void load() }, [load])
 
-  const done = async (msg: string) => { setNotice(msg); setError(''); await load() }
   const submitSearch = (e: FormEvent) => { e.preventDefault(); setPage(1); setQuery(search.trim()) }
 
   return (
@@ -66,12 +61,9 @@ export default function AdminContracts() {
       <div className="page-title-row row between wrap">
         <div>
           <h1>Hợp Đồng Toàn Hệ Thống</h1>
-          <p className="muted">Tra cứu hợp đồng mọi cơ sở, sửa ngày kết thúc hoặc điều khoản, trả kho và lập hợp đồng từ đơn đã cọc.</p>
+          <p className="muted">Tra cứu và xem hợp đồng của mọi cơ sở (chỉ xem).</p>
         </div>
-        <button className="btn primary" onClick={() => { setCreating(!creating); setNotice('') }}><Icon name="plus" size={16} /> Lập hợp đồng từ đơn đặt kho</button>
       </div>
-
-      {creating && <CreateFromReservation facilities={facilities} onCancel={() => setCreating(false)} onDone={async (m) => { setCreating(false); await done(m) }} />}
 
       <form className="panel filter-bar" onSubmit={submitSearch}>
         <div className="filter-controls">
@@ -90,7 +82,6 @@ export default function AdminContracts() {
         <button className="btn outline" type="submit">Tìm</button>
       </form>
 
-      {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
 
       <section className="panel">
@@ -123,14 +114,13 @@ export default function AdminContracts() {
         </div>
       </section>
 
-      {openId && <div id="contract-panel" className="scroll-target"><ContractPanel key={openId} contractId={openId} onClose={() => setOpenId(null)} onDone={done} /></div>}
+      {openId && <div id="contract-panel" className="scroll-target"><ContractPanel key={openId} contractId={openId} onClose={() => setOpenId(null)} /></div>}
     </div>
   )
 }
 
-function ContractPanel({ contractId, onClose, onDone }: { contractId: number; onClose: () => void; onDone: (msg: string) => Promise<void> }) {
+function ContractPanel({ contractId, onClose }: { contractId: number; onClose: () => void }) {
   const [c, setC] = useState<AdminContract | null>(null)
-  const [returning, setReturning] = useState(false)
   const [error, setError] = useState('')
 
   // Contracts are read-only here: dates and prices only change through renewals and invoices.
@@ -171,120 +161,6 @@ function ContractPanel({ contractId, onClose, onDone }: { contractId: number; on
           <p className="support-desc">{c.termsConditions}</p>
         </div>
       )}
-
-      {(c.status === 'Active' || c.status === 'Overdue') && (
-        returning
-          ? <ReturnForm contract={c} onCancel={() => setReturning(false)} onDone={async (m) => { setReturning(false); await onDone(m) }} />
-          : <div className="row"><button className="btn outline sm" onClick={() => setReturning(true)}><Icon name="door" size={14} /> Trả kho cho hợp đồng này</button></div>
-      )}
     </section>
-  )
-}
-
-function ReturnForm({ contract: c, onCancel, onDone }: { contract: AdminContract; onCancel: () => void; onDone: (msg: string) => Promise<void> }) {
-  const [notes, setNotes] = useState('')
-  const [allRemoved, setAllRemoved] = useState(false)
-  const [staffNotes, setStaffNotes] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!notes.trim()) { setError('Vui lòng ghi tình trạng kho khi nhận lại'); return }
-    setBusy(true)
-    setError('')
-    try {
-      const r = await api<ReturnUnitResult>(`/api/admin/contracts/${c.contractId}/return`, {
-        body: { unitConditionNotes: notes.trim(), allItemsRemoved: allRemoved, staffNotes: staffNotes.trim() || null },
-      })
-      await onDone(`Đã trả kho ${c.unitCode} (${c.contractNumber}). Cọc cần hoàn ${fmtMoney(r.depositRefundDue)}${r.lateFeesStillOwed > 0 ? `, khách còn nợ ${fmtMoney(r.lateFeesStillOwed)}` : ''}.`)
-    } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <form className="charge-form" onSubmit={submit}>
-      <b>Trả kho {c.unitCode} · {c.contractNumber}</b>
-      <label className="field"><span>Tình trạng kho khi nhận lại</span>
-        <textarea id="return-notes" rows={2} maxLength={1000} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="vd: kho sạch, không hư hỏng" required />
-      </label>
-      <label className="check-row"><input id="return-all-removed" type="checkbox" checked={allRemoved} onChange={(e) => setAllRemoved(e.target.checked)} /><span>Khách đã dọn hết đồ ra khỏi kho</span></label>
-      <label className="field"><span>Ghi chú nội bộ</span><input id="return-staff-notes" maxLength={500} value={staffNotes} onChange={(e) => setStaffNotes(e.target.value)} /></label>
-      <small className="muted">Chỉ trả kho được từ 20:00 ngày hết hạn và khi đã dọn hết đồ; phí quá hạn trừ vào cọc, phần vượt lập hóa đơn.</small>
-      {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
-      <div className="row end">
-        <button type="button" className="btn ghost sm" onClick={onCancel}>Hủy</button>
-        <button className="btn primary sm" disabled={busy}>{busy ? 'Đang xử lý…' : 'Xác nhận trả kho'}</button>
-      </div>
-    </form>
-  )
-}
-
-function CreateFromReservation({ facilities, onCancel, onDone }: { facilities: Facility[]; onCancel: () => void; onDone: (msg: string) => Promise<void> }) {
-  const [reservationId, setReservationId] = useState('')
-  const [facilityId, setFacilityId] = useState('')
-  const [units, setUnits] = useState<StorageUnit[]>([])
-  const [unitId, setUnitId] = useState('')
-  const [notes, setNotes] = useState('Tình trạng kho bình thường khi bàn giao')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    setUnits([])
-    setUnitId('')
-    if (!facilityId) return
-    api<StorageUnit[]>(`/api/facilities/${facilityId}/units?status=Available`).then(setUnits).catch(() => {})
-  }, [facilityId])
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!Number(reservationId)) return setError('Vui lòng nhập mã đơn đặt kho')
-    if (!unitId) return setError('Vui lòng chọn kho trống để bàn giao')
-    if (notes.trim().length < 5) return setError('Vui lòng ghi tình trạng kho khi bàn giao (ít nhất 5 ký tự)')
-    setBusy(true)
-    setError('')
-    try {
-      const r = await api<{ contractNumber: string }>(`/api/admin/contracts/from-reservations/${Number(reservationId)}/check-in`, {
-        body: { unitId: Number(unitId), unitConditionNotes: notes.trim() },
-      })
-      await onDone(`Đã lập hợp đồng ${r.contractNumber}.`)
-    } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <form className="panel" onSubmit={submit}>
-      <div className="panel-head">
-        <div>
-          <h2 className="panel-title">Lập hợp đồng từ đơn đặt kho</h2>
-          <p className="muted">Đơn phải đã thanh toán đủ cọc, khách đã đặt lịch nhận kho và đã đến giờ hẹn. Chọn kho trống đúng loại khách đã đặt.</p>
-        </div>
-        <button type="button" className="icon-btn" aria-label="Đóng" onClick={onCancel}><Icon name="x" /></button>
-      </div>
-      <div className="form-grid four">
-        <label className="field"><span>Mã đơn đặt kho (ID)</span><input id="ci-reservation" inputMode="numeric" value={reservationId} onChange={(e) => setReservationId(e.target.value.replace(/\D/g, ''))} required /></label>
-        <label className="field"><span>Cơ sở</span>
-          <Select id="ci-facility" value={facilityId} onChange={(e) => setFacilityId(e.target.value)} required>
-            <option value="">Chọn cơ sở</option>
-            {facilities.map((f) => <option key={f.facilityId} value={f.facilityId}>{f.facilityName}</option>)}
-          </Select>
-        </label>
-        <label className="field"><span>Kho trống</span>
-          <Select id="ci-unit" value={unitId} onChange={(e) => setUnitId(e.target.value)} required disabled={!units.length}>
-            <option value="">{facilityId ? (units.length ? 'Chọn kho' : 'Không có kho trống') : 'Chọn cơ sở trước'}</option>
-            {units.map((u) => <option key={u.unitId} value={u.unitId}>{u.unitCode} · {u.unitTypeName}</option>)}
-          </Select>
-        </label>
-        <label className="field"><span>Tình trạng khi bàn giao</span><input id="ci-notes" maxLength={1000} value={notes} onChange={(e) => setNotes(e.target.value)} required /></label>
-      </div>
-      {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
-      <div className="row end">
-        <button type="button" className="btn ghost" onClick={onCancel}>Hủy</button>
-        <button className="btn primary" disabled={busy || !reservationId || !unitId}>{busy ? 'Đang lập…' : 'Bàn giao & lập hợp đồng'}</button>
-      </div>
-    </form>
   )
 }
