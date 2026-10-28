@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
@@ -30,6 +30,7 @@ export default function Rent() {
   const { user } = useAuth()
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [facilityId, setFacilityId] = useState<number | null>(null)
+  const [params] = useSearchParams()
   const [types, setTypes] = useState<UnitType[]>([])
   const [availability, setAvailability] = useState<Availability[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
@@ -80,7 +81,9 @@ export default function Rent() {
     api<UnitType[]>('/api/unit-types').then(setTypes).catch(() => {})
     api<Facility[]>('/api/facilities').then((fs) => {
       setFacilities(fs)
-      if (fs.length) setFacilityId(fs[0].facilityId)
+      // ?facility=<id> (from the home page facility cards) picks that facility; otherwise the first one.
+      const wanted = fs.find((f) => f.facilityId === Number(params.get('facility')))
+      if (fs.length) setFacilityId((wanted ?? fs[0]).facilityId)
     }).catch((e) => setError((e as Error).message))
     void loadReservations()
   }, [])

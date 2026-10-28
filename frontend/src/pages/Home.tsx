@@ -23,16 +23,22 @@ export default function Home() {
   const [types, setTypes] = useState<UnitType[]>([])
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [availability, setAvailability] = useState<Availability[]>([])
+  // Free units per facility (GET /api/facilities/{id}/availability), shown on each facility card.
+  const [freeAt, setFreeAt] = useState<Record<number, number>>({})
 
   useEffect(() => {
     api<UnitType[]>('/api/unit-types').then(setTypes).catch(() => {})
     api<Facility[]>('/api/facilities').then((fs) => {
       setFacilities(fs)
       if (fs.length) api<Availability[]>(`/api/facilities/${fs[0].facilityId}/availability`).then(setAvailability).catch(() => {})
+      fs.forEach((f) => api<Availability[]>(`/api/facilities/${f.facilityId}/availability`)
+        .then((a) => setFreeAt((m) => ({ ...m, [f.facilityId]: a.reduce((n, x) => n + x.availableUnits, 0) }))).catch(() => {}))
     }).catch(() => {})
   }, [])
 
   const rentLink = user ? (homeFor(user.role) === '/my-units' ? '/rent' : homeFor(user.role)) : '/rent'
+  // Customers (and visitors, who sign in first) open the booking page with this facility already chosen.
+  const facilityRentLink = (id: number) => (rentLink === '/rent' ? `/rent?facility=${id}` : rentLink)
   const popularId = types.length > 2 ? types[2].unitTypeId : null
 
   return (
@@ -142,11 +148,17 @@ export default function Home() {
             {facilities.map((f) => (
               <div key={f.facilityId} className="facility-card">
                 <span className="feature-icon"><Icon name="building" size={20} /></span>
-                <div className="stack-sm">
+                <div className="stack-sm grow">
                   <h3>{f.facilityName}</h3>
                   <span className="meta"><Icon name="pin" size={14} /> {f.address}, {f.district}, {f.city}</span>
                   <span className="meta"><Icon name="clock" size={14} /> Mở cửa {f.operatingHours}</span>
                   <span className="meta"><Icon name="phone" size={14} /> {f.hotline}</span>
+                  <div className="row between wrap facility-card-foot">
+                    {freeAt[f.facilityId] !== undefined && (
+                      <span className={freeAt[f.facilityId] > 0 ? 'ok-text' : 'muted'}>{freeAt[f.facilityId] > 0 ? `Còn ${freeAt[f.facilityId]} kho trống` : 'Tạm hết chỗ'}</span>
+                    )}
+                    <Link to={facilityRentLink(f.facilityId)} className="btn outline sm">Thuê kho tại đây <Icon name="arrowRight" size={14} /></Link>
+                  </div>
                 </div>
               </div>
             ))}
