@@ -5,7 +5,7 @@ import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
 import { AppointmentPicker, depositDueAt, depositMissed, pickupMissed } from '../components/appointment'
 import { Empty, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
-import { TermsList, TERMS_VERSION, termsHref } from './Terms'
+import { TermsList, TERMS_VERSION } from './Terms'
 import { CancellationStatuses, type Availability, type CancellationRequest, type Facility, type Reservation, type UnitType } from '../types'
 import { CODE_FILTER, localToday, promoCodeError, textError } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
@@ -61,6 +61,8 @@ export default function Rent() {
   }
   // Step 3: read the contract terms and agree before the reservation (and its deposit invoice) is created.
   const [signing, setSigning] = useState(false)
+  // The full terms unfold in place (no jump to another page while booking).
+  const [termsOpen, setTermsOpen] = useState(false)
   const navigate = useNavigate()
   const [agreed, setAgreed] = useState(false)
   const signedList = readSigned()
@@ -282,10 +284,12 @@ export default function Rent() {
                   <div><dt>Tiền cọc dự kiến</dt><dd>{fmtMoney(selected.baseMonthlyRate)}</dd></div>
                   {promoCode.trim() && <div><dt>Mã khuyến mãi</dt><dd>{promoCode.trim()}</dd></div>}
                 </dl>
-                <div className="terms-box" tabIndex={0} aria-label="Điều khoản hợp đồng">
+                <div id="rent-terms" className={`terms-box ${termsOpen ? 'open' : ''}`} tabIndex={0} aria-label="Điều khoản hợp đồng">
                   <TermsList compact />
                 </div>
-                <Link to={termsHref({ newTab: true, label: 'Đóng & quay lại đặt kho' })} target="_blank" className="link">Mở trang điều khoản đầy đủ <Icon name="arrowRight" size={14} /></Link>
+                <button type="button" className="link-btn terms-toggle" aria-expanded={termsOpen} aria-controls="rent-terms" onClick={() => setTermsOpen(!termsOpen)}>
+                  {termsOpen ? 'Thu gọn điều khoản' : 'Xem toàn bộ điều khoản'} <Icon name="arrowRight" size={14} />
+                </button>
               </div>
               <div className="stack sign-side">
                 <label className="check-row">
