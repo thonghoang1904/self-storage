@@ -90,9 +90,11 @@ export default function Invoices() {
   const [tab, setTab] = useState<'due' | 'paid' | 'all'>('all')
   const [type, setType] = useState('')
   useEffect(() => { if (!loading && due.length) setTab('due') }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
-  // Just paid here (or the deposit of the reservation just made): keep it on screen so the next step (pick-up time) stays visible.
+  // Just paid here (or the deposit of the reservation just made): kept on the "Cần thanh toán" tab once paid, so the next
+  // step (pick-up time) stays visible. The other tabs and the type filter still apply to it.
   const pinned = (i: Invoice) => isNew(i)
-  const shown = ordered.filter((i) => pinned(i) || ((tab === 'due' ? isPayable(i) : tab === 'paid' ? i.status === 'Paid' : true) && (!type || i.invoiceType === type)))
+  const tabMatch = (i: Invoice) => (tab === 'due' ? isPayable(i) || pinned(i) : tab === 'paid' ? i.status === 'Paid' : true)
+  const shown = ordered.filter((i) => tabMatch(i) && (!type || i.invoiceType === type))
   const types = [...new Set(invoices.map((i) => i.invoiceType))]
 
   return (
