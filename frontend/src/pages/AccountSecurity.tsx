@@ -1,21 +1,18 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, ApiError, fmtMoney, fmtTime } from '../api'
+import { api, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { Empty, Icon } from '../components/ui'
 import { PageHero } from '../components/layout'
 import type { AccessRecord, AccountActivity, AccountProfile, Contract, Invoice } from '../types'
-import { checkPassword } from '../validation'
-import { PasswordInput } from './Login'
 
 /**
  * Figma "Bảo mật tài khoản & hợp đồng" (96:10597), trimmed by the team: no alert settings, devices or OTP.
  * The security log comes first, split into five buttons (all, sign-in & account, gate entries, payments, contracts),
  * merging GET /api/auth/me/activity (empty when the backend lacks it) with each contract's access history and the payments made.
- * Beside it: account information and change password.
+ * Beside it: account information, read-only.
  */
 
-const missing = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.status === 405)
 /** Hides all but the last characters of a phone number or CCCD. */
 export const mask = (s: string | null | undefined, keep = 3) => (s ? `${'•'.repeat(Math.max(0, s.length - keep))}${s.slice(-keep)}` : '—')
 export const maskEmail = (e: string) => { const [n, d] = e.split('@'); return d ? `${n.slice(0, 2)}${'•'.repeat(Math.max(1, n.length - 2))}@${d}` : e }
@@ -39,8 +36,6 @@ export default function AccountSecurity() {
   const [profile, setProfile] = useState<AccountProfile | null>(null)
   const [log, setLog] = useState<LogRow[] | null>(null)
   const [group, setGroup] = useState<'' | LogRow['group']>('')
-  const [msg, setMsg] = useState<string>('')
-  const [changing, setChanging] = useState(false)
 
   const load = useCallback(async () => {
     api<AccountProfile>('/api/auth/profile').then(setProfile).catch(() => {})
@@ -76,14 +71,13 @@ export default function AccountSecurity() {
   return (
     <>
       <PageHero eyebrow="Tài khoản khách hàng" title="Bảo Mật Tài Khoản & Hợp Đồng">
-        Xem nhật ký đăng nhập, ra vào kho, thanh toán và hợp đồng của tài khoản; đổi mật khẩu khi cần.
+        Xem nhật ký đăng nhập, ra vào kho, thanh toán và hợp đồng của tài khoản.
       </PageHero>
       <div className="container page-body">
         <div className="notice info-notice">
           <span className="notice-icon info"><Icon name="shield" size={16} /></span>
           <div><b>Kho của bạn được bảo vệ bằng CCCD</b><p>Mỗi lượt vào kho, nhân viên cổng đối chiếu CCCD của chủ hợp đồng hoặc người được ủy quyền. Không dùng mã PIN hay OTP.</p></div>
         </div>
-        {msg && <p className="alert ok"><Icon name="check" size={16} />{msg}</p>}
 
         <div className="policy-layout">
           <section className="panel stack">
@@ -121,51 +115,10 @@ export default function AccountSecurity() {
               <div className="info-row"><span className="muted">Email</span><b>{p ? maskEmail(p.email) : '—'}</b></div>
               <div className="info-row"><span className="muted">Số điện thoại</span><b>{mask(p?.phoneNumber)}</b></div>
               <div className="info-row"><span className="muted">Số CCCD</span><b>{mask(p?.citizenId, 4)}</b></div>
-              {!changing && <button type="button" className="btn outline block" onClick={() => setChanging(true)}><Icon name="key" size={15} /> Đổi mật khẩu</button>}
-              {changing && <ChangePassword onDone={(ok) => { setChanging(false); if (ok) { setMsg('Đã đổi mật khẩu.'); void load() } }} />}
-              <Link to="/forgot-password" className="link fine">Quên mật khẩu hiện tại?</Link>
             </section>
           </aside>
         </div>
       </div>
     </>
-  )
-}
-
-function ChangePassword({ onDone }: { onDone: (ok: boolean) => void }) {
-  const [current, setCurrent] = useState('')
-  const [next, setNext] = useState('')
-  const [confirm, setConfirm] = useState('')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!current) return setError('Vui lòng nhập mật khẩu hiện tại')
-    const weak = checkPassword(next)
-    if (weak) return setError(weak.replace('Mật khẩu', 'Mật khẩu mới'))
-    if (next === current) return setError('Mật khẩu mới phải khác mật khẩu hiện tại')
-    if (next !== confirm) return setError('Mật khẩu nhập lại không khớp')
-    setBusy(true)
-    setError('')
-    try {
-      await api('/api/auth/change-password', { body: { currentPassword: current, newPassword: next } })
-      onDone(true)
-    } catch (err) {
-      setError(missing(err) ? 'Đổi mật khẩu đang được hoàn thiện. Tạm thời dùng "Quên mật khẩu" để đặt lại qua email.' : (err as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <form className="stack-sm change-pw" onSubmit={submit}>
-      <label className="field"><span>Mật khẩu hiện tại</span><PasswordInput value={current} onChange={setCurrent} placeholder="Mật khẩu đang dùng" autoComplete="current-password" /></label>
-      <label className="field"><span>Mật khẩu mới</span><PasswordInput value={next} onChange={setNext} placeholder="Ít nhất 8 ký tự, có chữ và số" autoComplete="new-password" /></label>
-      <label className="field"><span>Nhập lại mật khẩu mới</span><PasswordInput value={confirm} onChange={setConfirm} placeholder="Nhập lại" autoComplete="new-password" /></label>
-      {error && <p className="alert bad"><Icon name="alert" size={15} />{error}</p>}
-      <div className="row">
-        <button className="btn primary sm" type="submit" disabled={busy}>{busy ? 'Đang đổi…' : 'Đổi mật khẩu'}</button>
-        <button className="btn ghost sm" type="button" onClick={() => onDone(false)}>Hủy</button>
-      </div>
-    </form>
   )
 }
