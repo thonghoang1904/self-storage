@@ -233,6 +233,8 @@ function requireRole(u: User, roles: string[]) {
   if (!roles.includes(u.role)) throw forbidden()
 }
 const STAFF = [Roles.Staff, Roles.Manager] as string[]
+/** FacilityManagementController.UnitManagerRoles: the facility's manager, or a system admin for any facility. */
+const UNIT_MANAGERS = [Roles.Manager, Roles.Admin] as string[]
 /** The signed-in customer; other roles get 403. */
 function customerOnly(token: string | null): User {
   const me = currentUser(token)
@@ -640,11 +642,11 @@ function dateRange(query: URLSearchParams) {
   if (from > to) throw bad('Ngày bắt đầu phải nhỏ hơn hoặc bằng ngày kết thúc')
   return { from, to }
 }
-/** Staff or manager assigned at the facility (AccessService.EnsureAssignedAsync). */
+/** Staff or manager assigned at the facility (AccessService.EnsureAssignedAsync); a system admin, where allowed, at any facility. */
 function facilityStaff(token: string | null, facilityId: number, roles = STAFF) {
   const me = currentUser(token)
   requireRole(me, roles)
-  ensureAssigned(me.userId, facilityId)
+  if (me.role !== Roles.Admin) ensureAssigned(me.userId, facilityId)
   if (!facilityById(facilityId)) throw notFound('Không tìm thấy cơ sở')
   return me
 }
@@ -1530,7 +1532,7 @@ const routes: [string, RegExp, Handler][] = [
     return reservationDto(r)
   }],
   ['DELETE', /^\/api\/facility-management\/facilities\/(\d+)\/units\/(\d+)$/, (m, { token }) => {
-    const me = currentUser(token); requireRole(me, [Roles.Manager]); ensureAssigned(me.userId, Number(m[1]))
+    facilityStaff(token, Number(m[1]), UNIT_MANAGERS)
     const u = db.units.find((x) => x.unitId === Number(m[2]) && x.facilityId === Number(m[1]))
     if (!u) throw notFound('Không tìm thấy kho tại cơ sở')
     if (u.status !== 'Available' && u.status !== 'UnderMaintenance') throw conflict('Chỉ xóa được kho đang trống hoặc đang bảo trì')
@@ -1984,12 +1986,12 @@ const routes: [string, RegExp, Handler][] = [
   // ---- facility management (FacilityManagementController)
   ['GET', /^\/api\/facility-management\/facilities\/(\d+)\/units$/, (m, { token }) => {
     const fid = Number(m[1])
-    facilityStaff(token, fid, [Roles.Manager])
+    facilityStaff(token, fid, UNIT_MANAGERS)
     return db.units.filter((u) => u.facilityId === fid).sort((a, b) => a.floorNumber - b.floorNumber || a.unitCode.localeCompare(b.unitCode)).map(unitDto)
   }],
   ['POST', /^\/api\/facility-management\/facilities\/(\d+)\/units$/, (m, { token, body }) => {
     const fid = Number(m[1])
-    facilityStaff(token, fid, [Roles.Manager])
+    facilityStaff(token, fid, UNIT_MANAGERS)
     if (facilityById(fid)!.status !== 'Active') throw conflict('Chỉ được tạo kho tại cơ sở đang hoạt động')
     const { type, code, floor, zone } = unitFields(body)
     if (db.units.some((u) => u.facilityId === fid && u.unitCode === code)) throw conflict('Mã kho này đã tồn tại tại cơ sở')
@@ -1999,21 +2001,24 @@ const routes: [string, RegExp, Handler][] = [
   }],
   ['PUT', /^\/api\/facility-management\/facilities\/(\d+)\/units\/(\d+)$/, (m, { token, body }) => {
     const fid = Number(m[1])
-    facilityStaff(token, fid, [Roles.Manager])
+    const me = facilityStaff(token, fid, UNIT_MANAGERS)
     const u = db.units.find((x) => x.unitId === Number(m[2]) && x.facilityId === fid)
     if (!u) throw notFound('Không tìm thấy kho tại cơ sở')
-    if (['Rented', 'OverdueLocked', 'Reserved'].includes(u.status)) throw conflict('Không thể sửa thông tin loại/vị trí kho khi kho đang được thuê hoặc giữ chỗ')
-    if (db.contracts.some((c) => c.unitId === u.unitId && (c.status === 'Active' || c.status === 'Overdue'))) throw conflict('Không thể sửa kho đang có hợp đồng hiệu lực')
     const { type, code, floor, zone } = unitFields(body)
+    // Renaming only changes the label, so it is allowed whatever the unit's status.
+    const renameOnly = u.unitTypeId === type.unitTypeId && u.floorNumber === floor && (u.zoneArea || null) === (zone || null)
+    if (!renameOnly && ['Rented', 'OverdueLocked', 'Reserved'].includes(u.status)) throw conflict('Không thể sửa thông tin loại/vị trí kho khi kho đang được thuê hoặc giữ chỗ; chỉ đổi được mã kho')
+    if (!renameOnly && db.contracts.some((c) => c.unitId === u.unitId && (c.status === 'Active' || c.status === 'Overdue'))) throw conflict('Không thể sửa loại/vị trí kho đang có hợp đồng hiệu lực; chỉ đổi được mã kho')
     if (u.status === 'Available' && u.unitTypeId !== type.unitTypeId && spareUnits(fid, u.unitTypeId) - 1 < 0)
       throw conflict('Không thể đổi loại kho vì sẽ làm thiếu chỗ cho các đơn đã đặt')
     if (db.units.some((x) => x.facilityId === fid && x.unitId !== u.unitId && x.unitCode === code)) throw conflict('Mã kho này đã tồn tại tại cơ sở')
+    if (u.unitCode !== code) addLog(me.userId, 'StorageUnitRenamed', `Unit ${u.unitId} at facility ${fid}: ${u.unitCode} -> ${code}`)
     Object.assign(u, { unitTypeId: type.unitTypeId, unitCode: code, floorNumber: floor, zoneArea: zone, monthlyPrice: type.baseMonthlyRate })
     return unitDto(u)
   }],
   ['PUT', /^\/api\/facility-management\/facilities\/(\d+)\/units\/(\d+)\/status$/, (m, { token, body }) => {
     const fid = Number(m[1])
-    const me = facilityStaff(token, fid)
+    const me = facilityStaff(token, fid, [...STAFF, Roles.Admin])
     const status = String(body.status ?? '')
     if (status !== 'Available' && status !== 'UnderMaintenance') throw bad('Trạng thái kho chỉ có thể chuyển thủ công giữa Available và UnderMaintenance')
     const u = db.units.find((x) => x.unitId === Number(m[2]) && x.facilityId === fid)

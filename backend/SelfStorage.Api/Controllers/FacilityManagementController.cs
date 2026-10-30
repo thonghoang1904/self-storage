@@ -12,7 +12,7 @@ namespace SelfStorage.Api.Controllers;
 
 [ApiController]
 [Route("api/facility-management/facilities/{facilityId:int}")]
-[Authorize(Roles = AppRoles.GateRoles)]
+[Authorize]
 public sealed class FacilityManagementController(
     SelfStorageDbContext db,
     AccessService access,
@@ -20,8 +20,11 @@ public sealed class FacilityManagementController(
     EmailOutboxService emailOutbox,
     TimeProvider clock) : ControllerBase
 {
+    /// <summary>The facility's manager, or a system administrator for any facility.</summary>
+    private const string UnitManagerRoles = AppRoles.Manager + "," + AppRoles.Admin;
+
     [HttpGet("units")]
-    [Authorize(Roles = AppRoles.Manager)]
+    [Authorize(Roles = UnitManagerRoles)]
     public async Task<List<StorageUnitDto>> Units(int facilityId, CancellationToken ct)
     {
         await EnsureManagerOwnsFacilityAsync(facilityId, ct);
@@ -33,7 +36,7 @@ public sealed class FacilityManagementController(
     }
 
     [HttpPost("units")]
-    [Authorize(Roles = AppRoles.Manager)]
+    [Authorize(Roles = UnitManagerRoles)]
     public async Task<StorageUnitDto> CreateUnit(
         int facilityId, CreateStorageUnitRequest req, CancellationToken ct)
     {
@@ -65,7 +68,7 @@ public sealed class FacilityManagementController(
     }
 
     [HttpPut("units/{unitId:int}")]
-    [Authorize(Roles = AppRoles.Manager)]
+    [Authorize(Roles = UnitManagerRoles)]
     public async Task<StorageUnitDto> UpdateUnit(
         int facilityId, int unitId, UpdateStorageUnitRequest req, CancellationToken ct)
     {
@@ -74,11 +77,15 @@ public sealed class FacilityManagementController(
         var unit = await db.StorageUnits.FirstOrDefaultAsync(
             u => u.UnitId == unitId && u.FacilityId == facilityId, ct)
             ?? throw AppException.NotFound("Không tìm thấy kho tại cơ sở");
-        if (unit.Status is UnitStatus.Rented or UnitStatus.OverdueLocked or UnitStatus.Reserved)
-            throw AppException.Conflict("Không thể sửa thông tin loại/vị trí kho khi kho đang được thuê hoặc giữ chỗ");
-        if (await db.Contracts.AnyAsync(c => c.UnitId == unitId
+        // Renaming only changes the label, so it is allowed whatever the unit's status;
+        // type and location stay fixed while the unit is rented or held.
+        var renameOnly = unit.UnitTypeId == req.UnitTypeId && unit.FloorNumber == req.FloorNumber
+            && unit.ZoneArea == Normalize(req.ZoneArea);
+        if (!renameOnly && unit.Status is UnitStatus.Rented or UnitStatus.OverdueLocked or UnitStatus.Reserved)
+            throw AppException.Conflict("Không thể sửa thông tin loại/vị trí kho khi kho đang được thuê hoặc giữ chỗ; chỉ đổi được mã kho");
+        if (!renameOnly && await db.Contracts.AnyAsync(c => c.UnitId == unitId
                 && (c.Status == ContractStatus.Active || c.Status == ContractStatus.Overdue), ct))
-            throw AppException.Conflict("Không thể sửa kho đang có hợp đồng hiệu lực");
+            throw AppException.Conflict("Không thể sửa loại/vị trí kho đang có hợp đồng hiệu lực; chỉ đổi được mã kho");
         var unitType = await db.UnitTypes.FindAsync([req.UnitTypeId], ct)
             ?? throw AppException.NotFound("Không tìm thấy loại kho");
         if (req.MonthlyPrice != unitType.BaseMonthlyRate)
@@ -100,6 +107,15 @@ public sealed class FacilityManagementController(
             && u.UnitId != unitId && u.UnitCode == unitCode, ct))
             throw AppException.Conflict("Mã kho này đã tồn tại tại cơ sở");
 
+        if (unit.UnitCode != unitCode)
+            db.ActivityLogs.Add(new ActivityLog
+            {
+                UserId = User.GetUserId(),
+                Action = "StorageUnitRenamed",
+                IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+                Details = $"Unit {unitId} at facility {facilityId}: {unit.UnitCode} -> {unitCode}",
+                CreatedAt = clock.GetLocalNow().DateTime,
+            });
         unit.UnitTypeId = req.UnitTypeId;
         unit.UnitCode = unitCode;
         unit.FloorNumber = req.FloorNumber;
@@ -111,6 +127,7 @@ public sealed class FacilityManagementController(
     }
 
     [HttpPut("units/{unitId:int}/status")]
+    [Authorize(Roles = AppRoles.GateRoles + "," + AppRoles.Admin)]
     public async Task<StorageUnitDto> UpdateUnitStatus(
         int facilityId, int unitId, UpdateStorageUnitStatusRequest req, CancellationToken ct)
     {
@@ -155,7 +172,7 @@ public sealed class FacilityManagementController(
 
     /// <summary>Remove a unit that has never been used; otherwise put it under maintenance instead.</summary>
     [HttpDelete("units/{unitId:int}")]
-    [Authorize(Roles = AppRoles.Manager)]
+    [Authorize(Roles = UnitManagerRoles)]
     public async Task<IActionResult> DeleteUnit(int facilityId, int unitId, CancellationToken ct)
     {
         await EnsureManagerOwnsFacilityAsync(facilityId, ct);
@@ -289,6 +306,7 @@ public sealed class FacilityManagementController(
     }
 
     [HttpPost("contracts/{contractId:int}/extra-charges")]
+    [Authorize(Roles = AppRoles.GateRoles)]
     public async Task<ExtraChargeInvoiceDto> CreateExtraCharge(
         int facilityId, int contractId, CreateExtraChargeRequest req, CancellationToken ct)
     {
@@ -348,8 +366,17 @@ public sealed class FacilityManagementController(
             invoice.TotalAmount, invoice.DueDate, invoice.Status, contractId);
     }
 
-    private Task EnsureManagerOwnsFacilityAsync(int facilityId, CancellationToken ct) =>
-        access.EnsureAssignedAsync(User.GetUserId(), facilityId, ct);
+    /// <summary>Staff and managers must be assigned to the facility; a system administrator may manage any facility.</summary>
+    private async Task EnsureManagerOwnsFacilityAsync(int facilityId, CancellationToken ct)
+    {
+        if (!User.IsInRole(AppRoles.Admin))
+        {
+            await access.EnsureAssignedAsync(User.GetUserId(), facilityId, ct);
+            return;
+        }
+        if (!await db.Facilities.AnyAsync(f => f.FacilityId == facilityId, ct))
+            throw AppException.NotFound("Không tìm thấy cơ sở");
+    }
 
     private Task<StorageUnitDto> ProjectUnit(int unitId, CancellationToken ct) =>
         db.StorageUnits.Where(u => u.UnitId == unitId)
