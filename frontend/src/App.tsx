@@ -84,6 +84,8 @@ export default function App() {
             <Route path="/my-units/:id/renew" element={<RequireRole roles={[Roles.Customer]}><ContractRenew /></RequireRole>} />
             <Route path="/my-units/:id/suspend" element={<RequireRole roles={[Roles.Customer]}><ContractSuspend /></RequireRole>} />
             <Route path="/account/profile" element={<RequireRole roles={Object.values(Roles)}><AccountProfile /></RequireRole>} />
+            <Route path="/account/profile/edit" element={<RequireRole roles={Object.values(Roles)}><AccountProfile mode="edit" /></RequireRole>} />
+            <Route path="/account/password" element={<RequireRole roles={Object.values(Roles)}><AccountProfile mode="password" /></RequireRole>} />
             <Route path="/account/security" element={<RequireRole roles={[Roles.Customer]}><AccountSecurity /></RequireRole>} />
             <Route path="/support" element={<RequireRole roles={[Roles.Customer]}><Support /></RequireRole>} />
             <Route path="/rent" element={<RequireRole roles={[Roles.Customer]}><Rent /></RequireRole>} />

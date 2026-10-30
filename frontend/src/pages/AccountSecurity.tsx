@@ -19,8 +19,9 @@ import { PasswordInput } from './Login'
  */
 
 const missing = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.status === 405)
-const mask = (s: string | null | undefined, keep = 3) => (s ? `${'•'.repeat(Math.max(0, s.length - keep))}${s.slice(-keep)}` : '—')
-const maskEmail = (e: string) => { const [n, d] = e.split('@'); return d ? `${n.slice(0, 2)}${'•'.repeat(Math.max(1, n.length - 2))}@${d}` : e }
+/** Hides all but the last characters of a phone number or CCCD. */
+export const mask = (s: string | null | undefined, keep = 3) => (s ? `${'•'.repeat(Math.max(0, s.length - keep))}${s.slice(-keep)}` : '—')
+export const maskEmail = (e: string) => { const [n, d] = e.split('@'); return d ? `${n.slice(0, 2)}${'•'.repeat(Math.max(1, n.length - 2))}@${d}` : e }
 
 type LogRow = { key: string; at: string; group: 'account' | 'access' | 'payment' | 'contract'; title: string; detail: string; result: string }
 const GROUPS: { key: '' | LogRow['group']; label: string }[] = [
