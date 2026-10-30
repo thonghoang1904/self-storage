@@ -82,7 +82,7 @@ export default function Support() {
         <div className="dash-grid">
           <section className="stack-lg">
             <div className="row between wrap">
-              <h2 className="section-title with-icon"><Icon name="history" size={20} className="cyan" /> Yêu Cầu Của Tôi {open > 0 && <span className="pill">{open} đang mở</span>}</h2>
+              <h2 className="section-title with-icon"><Icon name="history" size={20} className="cyan" /> Lịch Sử Yêu Cầu {open > 0 && <span className="pill">{open} đang mở</span>}</h2>
             </div>
             {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
             {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
