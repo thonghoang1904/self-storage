@@ -148,7 +148,7 @@ export default function AdminStorage() {
           <span><i className="warn" />Bảo trì: <b>{report.maintenanceUnits}</b></span>
         </div>
       )}
-      <p className="muted small-note">Kho đang bảo trì hoặc đã giữ chỗ chỉ hiện số lượng ở trên; quản lý từng kho đó ở tài khoản quản lý cơ sở.</p>
+      <p className="muted small-note">Kho đang bảo trì hoặc đã giữ chỗ chỉ hiện số lượng ở trên; quản lý từng kho đó ở mục Kho từng cơ sở.</p>
     </div>
   )
 }

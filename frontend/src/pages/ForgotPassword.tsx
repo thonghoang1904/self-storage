@@ -19,7 +19,7 @@ function explain(err: unknown, sending: boolean): string {
   if (err instanceof ApiError) {
     if (err.status === 429) return 'Bạn đã thử quá nhiều lần. Vui lòng đợi khoảng 15 phút rồi thử lại.'
     if (err.status === 503 && sending)
-      return `${err.message} Nếu bạn là quản trị viên, hãy kiểm tra cấu hình Gmail SMTP (Gmail gửi và mật khẩu ứng dụng 16 ký tự) rồi khởi động lại backend.`
+      return `${err.message} Vui lòng thử lại sau ít phút hoặc liên hệ cơ sở để được hỗ trợ.`
   }
   return (err as Error).message
 }

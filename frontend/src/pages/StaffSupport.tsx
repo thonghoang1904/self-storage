@@ -84,8 +84,8 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
         <div>
           <h1>Hỗ Trợ & Sự Cố</h1>
           <p className="muted">{admin
-            ? 'Toàn bộ ticket của khách ở mọi cơ sở: theo dõi, phản hồi khách và xử lý thay khi cần.'
-            : 'Tiếp nhận ticket của khách tại cơ sở, làm theo checklist và cập nhật tiến độ cho khách.'}</p>
+            ? 'Toàn bộ yêu cầu hỗ trợ của khách ở mọi cơ sở: theo dõi, phản hồi khách và xử lý thay khi cần.'
+            : 'Tiếp nhận yêu cầu hỗ trợ của khách tại cơ sở, làm theo các bước xử lý và cập nhật tiến độ cho khách.'}</p>
         </div>
         <button className="btn outline" onClick={() => void load()}><Icon name="refresh" size={15} /> Làm mới</button>
       </div>
@@ -94,14 +94,14 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
         <Metric icon="alert" tone="warn" label="Mới gửi" value={count('Open')} note="chưa ai tiếp nhận" />
         <Metric icon="refresh" tone="info" label="Đang xử lý" value={count('InProgress')} note="đã có nhân viên phụ trách" />
         <Metric icon="lock" tone="bad" label="Khẩn cấp / Cao" value={urgent} note="nên ưu tiên trước" />
-        <Metric icon="check" tone="ok" label="Đã xử lý / đóng" value={count('Resolved') + count('Closed')} note="đã hoàn tất checklist" />
+        <Metric icon="check" tone="ok" label="Đã xử lý / đóng" value={count('Resolved') + count('Closed')} note="đã hoàn tất các bước xử lý" />
       </div>
 
       <div className="panel filter-bar">
         <div className="filter-controls">
           <span className="input-wrap grow-2">
             <Icon name="search" size={16} className="input-lead" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={admin ? 'Tìm mã ticket, tiêu đề, kho, khách…' : 'Tìm mã ticket, tiêu đề, kho…'} />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={admin ? 'Tìm mã yêu cầu, tiêu đề, kho, khách…' : 'Tìm mã yêu cầu, tiêu đề, kho…'} />
           </span>
           {admin && (
             <Select value={facilityId ?? ''} onChange={(e) => onFacility?.(e.target.value ? Number(e.target.value) : null)} aria-label="Cơ sở">
@@ -134,8 +134,8 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
       <div className="ticket-workspace">
         <section className="panel">
           <div>
-            <h2 className="panel-title">Danh sách ticket</h2>
-            <p className="muted">{shown.length} ticket · sắp theo mức độ ưu tiên rồi thời gian gửi</p>
+            <h2 className="panel-title">Danh sách yêu cầu</h2>
+            <p className="muted">{shown.length} yêu cầu · sắp theo mức độ ưu tiên rồi thời gian gửi</p>
           </div>
           <div className="ticket-list">
             {shown.map((r) => {
@@ -149,13 +149,13 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
                 </button>
               )
             })}
-            {shown.length === 0 && <Empty icon="check">Không có ticket nào khớp bộ lọc.</Empty>}
+            {shown.length === 0 && <Empty icon="check">Không có yêu cầu nào khớp bộ lọc.</Empty>}
           </div>
         </section>
 
         {selected
           ? <TicketDetail key={selected.requestId} ticket={selected} onChanged={load} base={base} admin={admin} />
-          : <section className="panel"><Empty icon="clipboard">Chọn một ticket để xem chi tiết.</Empty></section>}
+          : <section className="panel"><Empty icon="clipboard">Chọn một yêu cầu để xem chi tiết.</Empty></section>}
       </div>
     </div>
   )
@@ -214,7 +214,7 @@ function TicketDetail({ ticket: t, onChanged, base, admin }: { ticket: SupportRe
 
   const toggle = (item: SupportChecklistItem) => run(`item-${item.checklistItemId}`,
     () => api(`${base}/${t.requestId}/checklist/${item.checklistItemId}`, { method: 'PUT', body: { isCompleted: !item.isCompleted, notes: item.notes } }),
-    item.isCompleted ? 'Đã bỏ đánh dấu mục checklist.' : 'Đã hoàn tất mục checklist.')
+    item.isCompleted ? 'Đã bỏ đánh dấu bước xử lý.' : 'Đã hoàn tất bước xử lý.')
 
   const p = SupportPriorities[t.priority] ?? { label: t.priority, tone: 'muted' as const }
   const doneCount = items.filter((i) => i.isCompleted).length
@@ -233,14 +233,14 @@ function TicketDetail({ ticket: t, onChanged, base, admin }: { ticket: SupportRe
 
   return (
     <section className="panel ticket-detail">
-      <h2 className="panel-title">Chi tiết ticket</h2>
+      <h2 className="panel-title">Chi tiết yêu cầu</h2>
       <div className="row between"><StatusBadge status={t.status} /><span className={`badge ${p.tone}`}>{p.label}</span></div>
       <div>
         <h3 className="issue-title">{t.title}</h3>
         <p className="muted">{t.description}</p>
       </div>
       <div className="info-box">
-        <div className="info-row"><span className="muted">Mã ticket</span><b>{t.requestCode}</b></div>
+        <div className="info-row"><span className="muted">Mã yêu cầu</span><b>{t.requestCode}</b></div>
         {admin && t.facilityName && <div className="info-row"><span className="muted">Cơ sở</span><b>{t.facilityName}</b></div>}
         {admin && t.customerName && <div className="info-row"><span className="muted">Khách hàng</span><b>{t.customerName}</b></div>}
         <div className="info-row"><span className="muted">Kho</span>
@@ -251,7 +251,7 @@ function TicketDetail({ ticket: t, onChanged, base, admin }: { ticket: SupportRe
       </div>
 
       <div className="stack-sm">
-        <div className="row between"><b>Checklist xử lý</b><small className="muted">{doneCount}/{items.length} mục</small></div>
+        <div className="row between"><b>Các bước xử lý</b><small className="muted">{doneCount}/{items.length} mục</small></div>
         {items.map((i) => (
           <label key={i.checklistItemId} className={`check-item sm ${i.isCompleted ? 'done' : ''} ${editable ? '' : 'readonly'}`}>
             <input type="checkbox" checked={i.isCompleted} disabled={!editable || busy !== ''} onChange={() => void toggle(i)} />
@@ -260,7 +260,7 @@ function TicketDetail({ ticket: t, onChanged, base, admin }: { ticket: SupportRe
             </span>
           </label>
         ))}
-        {!editable && t.status === 'Open' && <p className="hint"><Icon name="alert" size={15} /> Tiếp nhận ticket để bắt đầu làm checklist.</p>}
+        {!editable && t.status === 'Open' && <p className="hint"><Icon name="alert" size={15} /> Tiếp nhận yêu cầu để bắt đầu làm các bước xử lý.</p>}
       </div>
 
       <div className="stack-sm">
@@ -279,7 +279,7 @@ function TicketDetail({ ticket: t, onChanged, base, admin }: { ticket: SupportRe
 
       <hr className="divider-line" />
       {othersTicket && t.status !== 'Closed' && (
-        <p className="alert info"><Icon name="user" size={16} />Ticket do {t.assignedStaffName} phụ trách, chỉ người phụ trách cập nhật được.</p>
+        <p className="alert info"><Icon name="user" size={16} />Yêu cầu do {t.assignedStaffName} phụ trách, chỉ người phụ trách cập nhật được.</p>
       )}
       {t.status !== 'Closed' && !othersTicket && (
         <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={4000}
@@ -295,7 +295,7 @@ function TicketDetail({ ticket: t, onChanged, base, admin }: { ticket: SupportRe
       )}
       {t.status === 'Open' && (
         <button className="btn primary self-start" disabled={busy !== ''} onClick={() => void setStatus('InProgress', 'Nhân viên đã tiếp nhận yêu cầu và đang xử lý.', `Đã tiếp nhận ${t.requestCode}.`)}>
-          <Icon name="user" size={15} /> Tiếp nhận ticket
+          <Icon name="user" size={15} /> Tiếp nhận yêu cầu
         </button>
       )}
       {t.status === 'InProgress' && !othersTicket && (
@@ -308,12 +308,12 @@ function TicketDetail({ ticket: t, onChanged, base, admin }: { ticket: SupportRe
           <button className="btn primary self-start" disabled={busy !== '' || !allDone} onClick={() => void setStatus('Resolved', 'Sự cố đã được xử lý xong.', `Đã đánh dấu ${t.requestCode} đã xử lý.`)}>
             <Icon name="check" size={15} /> Đánh dấu đã xử lý
           </button>
-          {!allDone && <small className="muted">Hoàn tất toàn bộ checklist để đánh dấu đã xử lý.</small>}
+          {!allDone && <small className="muted">Hoàn tất toàn bộ các bước xử lý để đánh dấu đã xử lý.</small>}
         </>
       )}
       {t.status === 'Resolved' && !othersTicket && (
-        <button className="btn primary self-start" disabled={busy !== ''} onClick={() => void setStatus('Closed', 'Ticket đã được đóng.', `Đã đóng ${t.requestCode}.`)}>
-          <Icon name="lock" size={15} /> Đóng ticket
+        <button className="btn primary self-start" disabled={busy !== ''} onClick={() => void setStatus('Closed', 'Yêu cầu đã được đóng.', `Đã đóng ${t.requestCode}.`)}>
+          <Icon name="lock" size={15} /> Đóng yêu cầu
         </button>
       )}
     </section>

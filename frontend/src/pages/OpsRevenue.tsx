@@ -46,7 +46,7 @@ export default function OpsRevenue({ title = 'Doanh Thu' }: { title?: string }) 
   const days = Math.round((new Date(`${to}T00:00:00`).getTime() - new Date(`${from}T00:00:00`).getTime()) / 86400000) + 1
 
   const exportCsv = () => {
-    const head = ['Cơ sở', 'Doanh thu thuần', 'Tỷ trọng %', 'Tổng kho', 'Đang thuê', 'Còn trống', 'Bảo trì', 'Khóa quá hạn', 'HĐ hiệu lực', 'HĐ quá hạn', 'Ticket mở']
+    const head = ['Cơ sở', 'Doanh thu thuần', 'Tỷ trọng %', 'Tổng kho', 'Đang thuê', 'Còn trống', 'Bảo trì', 'Khóa quá hạn', 'HĐ hiệu lực', 'HĐ quá hạn', 'Yêu cầu hỗ trợ đang mở']
     const lines = rows.map((r) => [r.facilityName, String(r.netRevenue), total ? ((r.netRevenue / total) * 100).toFixed(1) : '0', String(r.totalUnits), String(r.rentedUnits),
       String(r.availableUnits), String(r.maintenanceUnits), String(r.overdueLockedUnits), String(r.activeContracts), String(r.overdueContracts), String(r.openSupportRequests)])
     const csv = '﻿' + [head, ...lines].map((l) => l.map((v) => `"${v.replaceAll('"', '""')}"`).join(',')).join('\r\n')
@@ -109,7 +109,7 @@ export default function OpsRevenue({ title = 'Doanh Thu' }: { title?: string }) 
         <h2 className="panel-title">Chi tiết từng cơ sở</h2>
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Cơ sở</th><th className="right">Doanh thu thuần</th><th className="right">Tỷ trọng</th><th>Lấp đầy</th><th className="right">HĐ hiệu lực</th><th className="right">HĐ quá hạn</th><th className="right">Ticket mở</th></tr></thead>
+            <thead><tr><th>Cơ sở</th><th className="right">Doanh thu thuần</th><th className="right">Tỷ trọng</th><th>Lấp đầy</th><th className="right">HĐ hiệu lực</th><th className="right">HĐ quá hạn</th><th className="right">Yêu cầu hỗ trợ</th></tr></thead>
             <tbody>
               {rows.map((r) => {
                 const occ = r.totalUnits ? Math.round(((r.rentedUnits + r.overdueLockedUnits) / r.totalUnits) * 100) : 0

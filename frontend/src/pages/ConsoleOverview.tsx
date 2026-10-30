@@ -197,7 +197,7 @@ function FacilityHealth({ report }: { report?: OperationsReport }) {
             <li key={f.facilityId}>
               <span className="grow"><b>{f.facilityName}</b><small>{f.totalUnits} kho · lấp đầy {occ}% · {f.maintenanceUnits} bảo trì</small></span>
               {f.overdueContracts > 0 && <Badge tone="bad">{f.overdueContracts} quá hạn</Badge>}
-              <Badge tone={f.openSupportRequests ? 'warn' : 'ok'}>{f.openSupportRequests} ticket</Badge>
+              <Badge tone={f.openSupportRequests ? 'warn' : 'ok'}>{f.openSupportRequests} yêu cầu hỗ trợ</Badge>
             </li>
           )
         })}

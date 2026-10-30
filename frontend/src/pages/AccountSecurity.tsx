@@ -89,7 +89,7 @@ export default function AccountSecurity() {
       await fn()
       setMsg({ tone: 'ok', text: ok })
     } catch (e) {
-      setMsg({ tone: 'bad', text: missing(e) ? 'Chức năng này đang chờ backend bổ sung API.' : (e as Error).message })
+      setMsg({ tone: 'bad', text: missing(e) ? 'Chức năng này đang được hoàn thiện.' : (e as Error).message })
     } finally {
       setBusy('')
     }
@@ -124,7 +124,7 @@ export default function AccountSecurity() {
           <span className="notice-icon info"><Icon name="shield" size={16} /></span>
           <div><b>Kho của bạn được bảo vệ bằng CCCD</b><p>Mỗi lượt vào kho, nhân viên cổng đối chiếu CCCD của chủ hợp đồng hoặc người được ủy quyền. Không dùng mã PIN hay OTP.</p></div>
         </div>
-        {pendingApis.length > 0 && <p className="alert warn"><Icon name="clock" size={16} />Đang chờ backend bổ sung API: {pendingApis.join(', ')}. Các phần khác vẫn dùng bình thường.</p>}
+        {pendingApis.length > 0 && <p className="alert warn"><Icon name="clock" size={16} />Đang được hoàn thiện: {pendingApis.join(', ')}. Các phần khác vẫn dùng bình thường.</p>}
         {msg && <p className={`alert ${msg.tone}`}><Icon name={msg.tone === 'ok' ? 'check' : 'alert'} size={16} />{msg.text}</p>}
 
         <div className="policy-layout">
@@ -221,7 +221,7 @@ function ChangePassword({ onDone }: { onDone: (ok: boolean) => void }) {
       await api('/api/auth/change-password', { body: { currentPassword: current, newPassword: next } })
       onDone(true)
     } catch (err) {
-      setError(missing(err) ? 'Đổi mật khẩu đang chờ backend bổ sung API. Tạm thời dùng "Quên mật khẩu" để đặt lại qua email.' : (err as Error).message)
+      setError(missing(err) ? 'Đổi mật khẩu đang được hoàn thiện. Tạm thời dùng "Quên mật khẩu" để đặt lại qua email.' : (err as Error).message)
     } finally {
       setBusy(false)
     }

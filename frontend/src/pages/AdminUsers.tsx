@@ -197,7 +197,7 @@ function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleIn
     e.preventDefault()
     setError('')
     const valid = form.validateAll()
-    if (needsFacility && facilityIds.length === 0) { setError('Hãy chọn ít nhất một cơ sở cho nhân viên / quản lý cơ sở.'); return }
+    if (needsFacility && facilityIds.length === 0) { setError('Hãy chọn ít nhất một cơ sở cho nhân viên.'); return }
     if (!valid) return
     setBusy(true)
     try {
@@ -214,7 +214,7 @@ function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleIn
           facilityIds: needsFacility ? facilityIds : undefined,
         },
       })
-      await onDone(`Đã thêm nhân viên ${created.fullName} (${roleLabel(created.roleName)}), mã nhân viên ${staffCode(created.userId)}. Gửi mã này cho quản lý cơ sở để phân công.`)
+      await onDone(`Đã thêm nhân viên ${created.fullName} (${roleLabel(created.roleName)}), mã nhân viên ${staffCode(created.userId)}.`)
     } catch (err) {
       setError((err as Error).message)
     } finally {

@@ -110,7 +110,7 @@ export default function ContractRenew() {
                   </li>
                 ))}
               </ol>
-              <Link to={`/my-units/${c.contractId}/policy?from=renew`} className="link with-icon"><Icon name="clipboard" size={14} /> Xem toàn bộ policy hợp đồng</Link>
+              <Link to={`/my-units/${c.contractId}/policy?from=renew`} className="link with-icon"><Icon name="clipboard" size={14} /> Xem toàn bộ chính sách hợp đồng</Link>
               <label className="check-line">
                 <input type="checkbox" checked={agree} disabled={!!pending || !open} onChange={(e) => { setAgree(e.target.checked); setMsg(null) }} />
                 <span>Tôi đã đọc chính sách gia hạn và đồng ý thanh toán phí gia hạn theo báo giá.</span>

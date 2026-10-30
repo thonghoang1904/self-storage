@@ -25,7 +25,7 @@ const addDays = (iso: string, n: number) => { const d = new Date(`${iso}T00:00:0
 export const holdingFee = (monthly: number, n: number) => Math.round((monthly / 30) * n * SUSPEND_RULES.holdingPercent / 100 / 1000) * 1000
 
 const notReady = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.status === 405)
-const NOT_READY = 'Chức năng tạm ngưng đang chờ backend bổ sung API. Bạn có thể gửi yêu cầu qua mục Hỗ trợ trong lúc chờ.'
+const NOT_READY = 'Chức năng tạm ngưng đang được hoàn thiện. Bạn có thể gửi yêu cầu qua mục Hỗ trợ trong lúc chờ.'
 
 export default function ContractSuspend() {
   const id = Number(useParams().id)
@@ -201,7 +201,7 @@ export default function ContractSuspend() {
             <section className="panel stack-sm">
               <h3 className="panel-title">Trước khi xác nhận</h3>
               <p className="muted">Nhân viên sẽ kiểm tra công nợ và lịch hẹn của kho trước khi duyệt. Hóa đơn chưa thanh toán cần được thanh toán trước.</p>
-              <Link to={`/my-units/${c.contractId}/policy?from=suspend`} className="btn outline block"><Icon name="clipboard" size={15} /> Xem policy hợp đồng</Link>
+              <Link to={`/my-units/${c.contractId}/policy?from=suspend`} className="btn outline block"><Icon name="clipboard" size={15} /> Xem chính sách hợp đồng</Link>
             </section>
           </aside>
         </div>

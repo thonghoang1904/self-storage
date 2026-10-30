@@ -82,7 +82,7 @@ export default function FacilityOverview() {
           </div>
           <div className="unit-legend">
             {UNIT_SEGMENTS.map((s) => <span key={s.key}><i className={s.tone} />{s.label} <b>{kpi[s.key]}</b></span>)}
-            <span><Icon name="phone" size={14} /> Ticket đang mở <b>{kpi.openSupportRequests}</b></span>
+            <span><Icon name="phone" size={14} /> Yêu cầu hỗ trợ đang mở <b>{kpi.openSupportRequests}</b></span>
           </div>
         </section>
       )}
@@ -91,7 +91,7 @@ export default function FacilityOverview() {
         <div className="row between wrap">
           <div>
             <h2 className="section-title">Việc {isToday ? 'hôm nay' : `ngày ${fmtDate(day)}`}</h2>
-            <p className="muted">Lịch khách đến nhận kho, kho đến hạn trả và ticket hỗ trợ cần xử lý.</p>
+            <p className="muted">Lịch khách đến nhận kho, kho đến hạn trả và yêu cầu hỗ trợ cần xử lý.</p>
           </div>
           <label className="date-range single"><span>Ngày</span><input type="date" value={day} onChange={(e) => setDay(e.target.value)} /></label>
         </div>
@@ -116,7 +116,7 @@ export default function FacilityOverview() {
             ))}
             {work && work.returns.length === 0 && <Empty icon="door">Không có kho đến hạn trả.</Empty>}
           </WorkColumn>
-          <WorkColumn icon="phone" title="Ticket đang mở" count={work?.supportRequests.length} link="/staff-support" linkLabel="Mở hỗ trợ khách hàng">
+          <WorkColumn icon="phone" title="Yêu cầu hỗ trợ đang mở" count={work?.supportRequests.length} link="/staff-support" linkLabel="Mở hỗ trợ khách hàng">
             {work?.supportRequests.map((t) => {
               const p = SupportPriorities[t.priority] ?? { label: t.priority, tone: 'muted' as const }
               return (
@@ -127,7 +127,7 @@ export default function FacilityOverview() {
                 </li>
               )
             })}
-            {work && work.supportRequests.length === 0 && <Empty icon="check">Không có ticket đang mở.</Empty>}
+            {work && work.supportRequests.length === 0 && <Empty icon="check">Không có yêu cầu hỗ trợ đang mở.</Empty>}
           </WorkColumn>
         </div>
       </section>

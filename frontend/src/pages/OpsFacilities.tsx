@@ -250,7 +250,7 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
         await onDone(`Đã cập nhật ${body.facilityName}.`)
       } else {
         await api('/api/operations/facilities', { body })
-        await onDone(`Đã thêm cơ sở ${body.facilityName}. Quản lý cơ sở sẽ thêm kho cho cơ sở này.`)
+        await onDone(`Đã thêm cơ sở ${body.facilityName}. Thêm kho cho cơ sở này ở mục Kho từng cơ sở.`)
       }
     } catch (err) {
       setError((err as Error).message)

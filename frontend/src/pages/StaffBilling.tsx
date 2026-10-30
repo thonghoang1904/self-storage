@@ -273,7 +273,7 @@ function RefundDuePanel({ facilityId, onDone }: { facilityId: number; onDone: (m
     <section className="panel stack">
       <div>
         <h2 className="panel-title"><Icon name="alert" size={18} className="cyan" /> Tiền cần hoàn cho khách ({rows.length})</h2>
-        <p className="muted">Khách đã thanh toán online sau khi hóa đơn bị hủy. Tổng {fmtMoney(total)} cần trả lại khách; hoàn xong thì ghi nhận tại đây.</p>
+        <p className="muted">Khách đã thanh toán trực tuyến sau khi hóa đơn bị hủy. Tổng {fmtMoney(total)} cần trả lại khách; hoàn xong thì ghi nhận tại đây.</p>
       </div>
       {rows.map((r) => (
         <div key={r.paymentId} className="stack-sm">

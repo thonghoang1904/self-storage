@@ -193,7 +193,7 @@ export default function ContractDetail() {
                 ? <button type="button" className={`action-tile ${showEarly ? 'active' : ''}`} aria-expanded={showEarly} onClick={() => setShowEarly(!showEarly)}><span className="tile-icon"><Icon name="logout" size={18} /></span><b>Trả kho sớm</b><small>Trước ngày {fmtDate(c.endDate)}</small></button>
                 : !ended && <Link to={`/support?contract=${c.contractId}&topic=return`} className="action-tile"><span className="tile-icon"><Icon name="logout" size={18} /></span><b>Yêu cầu trả kho</b><small>Hẹn ngày trả với cơ sở</small></Link>}
               {!ended && <Link to={`/my-units/${c.contractId}/suspend`} className="action-tile"><span className="tile-icon"><Icon name="clock" size={18} /></span><b>Tạm ngưng hợp đồng</b><small>30–90 ngày</small></Link>}
-              <Link to={`/my-units/${c.contractId}/policy`} className="action-tile"><span className="tile-icon"><Icon name="clipboard" size={18} /></span><b>Xem policy hợp đồng</b><small>Điều khoản đang áp dụng</small></Link>
+              <Link to={`/my-units/${c.contractId}/policy`} className="action-tile"><span className="tile-icon"><Icon name="clipboard" size={18} /></span><b>Xem chính sách hợp đồng</b><small>Điều khoản đang áp dụng</small></Link>
               <Link to="/account/security" className="action-tile"><span className="tile-icon"><Icon name="shield" size={18} /></span><b>Bảo mật & nhật ký</b><small>Lịch sử vào kho, đăng nhập</small></Link>
             </div>
             {showEarly && canReturnEarly && <EarlyReturnPanel contract={c} facility={facility} />}
@@ -222,7 +222,7 @@ export default function ContractDetail() {
               {schedule.length === 0 && <Empty icon="wallet">Chưa có kỳ thanh toán nào cho hợp đồng này.</Empty>}
             </div>
             <div className="row between wrap">
-              <small className="muted">Thanh toán online qua VNPay hoặc tại quầy cơ sở.</small>
+              <small className="muted">Thanh toán trực tuyến qua VNPay hoặc tại quầy cơ sở.</small>
               <Link to="/invoices" className="btn soft sm"><Icon name="card" size={14} /> Quản lý thanh toán</Link>
             </div>
           </section>

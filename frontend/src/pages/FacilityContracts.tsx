@@ -112,7 +112,7 @@ export default function FacilityContracts() {
           </table>
           {shown.length === 0 && <Empty icon="clipboard">Không có hợp đồng nào.</Empty>}
         </div>
-        <small className="muted">Chỉ lập phụ thu cho hợp đồng đang hiệu lực hoặc quá hạn. Đơn giá theo bảng phí của quản lý vận hành.</small>
+        <small className="muted">Chỉ lập phụ thu cho hợp đồng đang hiệu lực hoặc quá hạn. Đơn giá theo bảng phí hiện hành.</small>
       </section>
     </div>
   )

@@ -20,7 +20,7 @@ function sections(c: ContractDetail, hours?: string): Section[] {
     {
       id: 'pay', code: 'CS-TT-01', title: 'Thanh toán & tiền cọc',
       body: [
-        `Tiền thuê ${fmtMoney(c.monthlyRentFee)}/tháng, hóa đơn phát hành theo từng kỳ một tháng kể từ ngày bắt đầu ${fmtDate(c.startDate)}; thanh toán online qua VNPay hoặc tại quầy.`,
+        `Tiền thuê ${fmtMoney(c.monthlyRentFee)}/tháng, hóa đơn phát hành theo từng kỳ một tháng kể từ ngày bắt đầu ${fmtDate(c.startDate)}; thanh toán trực tuyến qua VNPay hoặc tại quầy.`,
         `Tiền cọc ${fmtMoney(c.depositPaid)} được giữ suốt thời hạn hợp đồng và hoàn lại khi trả kho, sau khi đối soát phí phát sinh.`,
       ],
     },
@@ -140,14 +140,14 @@ export default function ContractPolicy() {
 
   return (
     <>
-      <Hero c={c} crumb="Policy hợp đồng" title="Xem trước policy của hợp đồng" subtitle={`Xem lại điều khoản đang áp dụng cho hợp đồng ${c.contractNumber}.`} />
+      <Hero c={c} crumb="Chính sách hợp đồng" title="Xem trước chính sách của hợp đồng" subtitle={`Xem lại điều khoản đang áp dụng cho hợp đồng ${c.contractNumber}.`} />
       <div className="container page-body">
         <ContractStrip c={c} unitType={unitType} />
 
         <div className="notice info-notice">
           <span className="notice-icon info"><Icon name="clipboard" size={16} /></span>
           <div>
-            <b>Policy đang áp dụng cho hợp đồng {c.contractNumber}</b>
+            <b>Chính sách đang áp dụng cho hợp đồng {c.contractNumber}</b>
             <p>Đây là các điều khoản có hiệu lực theo hợp đồng của bạn. Nội dung đề xuất (nếu có) chỉ có hiệu lực sau khi hoàn tất thủ tục.</p>
           </div>
         </div>
@@ -202,7 +202,7 @@ export default function ContractPolicy() {
               <div className="info-row"><span className="muted">Hiệu lực từ</span><b>{fmtDate(c.startDate)}</b></div>
               <hr />
               <small className="muted">Bản xem trước tóm tắt các điều khoản chính. Toàn văn áp dụng chung cho mọi hợp đồng ở trang Điều khoản.</small>
-              <Link to={termsHref({ back: `/my-units/${c.contractId}/policy${from ? `?from=${from}` : ''}`, label: 'Quay lại policy hợp đồng', ...(from && BACK[from] ? { next: backTo, nextLabel: back.label.replace('Quay lại', 'Tiếp tục') } : {}) })} className="btn outline block"><Icon name="file" size={15} /> Xem toàn văn điều khoản</Link>
+              <Link to={termsHref({ back: `/my-units/${c.contractId}/policy${from ? `?from=${from}` : ''}`, label: 'Quay lại chính sách hợp đồng', ...(from && BACK[from] ? { next: backTo, nextLabel: back.label.replace('Quay lại', 'Tiếp tục') } : {}) })} className="btn outline block"><Icon name="file" size={15} /> Xem toàn văn điều khoản</Link>
               <Link to={backTo} className="btn primary block"><Icon name="arrowRight" size={15} className="flip" /> {back.label}</Link>
             </section>
             <section className="panel stack-sm">
@@ -221,7 +221,7 @@ export default function ContractPolicy() {
         </div>
 
         <section className="panel policy-done-bar">
-          <div className="grow"><b>Đã đọc xong policy?</b><p className="muted">{back.hint}</p></div>
+          <div className="grow"><b>Đã đọc xong chính sách?</b><p className="muted">{back.hint}</p></div>
           <Link to={backTo} className="btn primary"><Icon name="arrowRight" size={16} className="flip" /> {back.label}</Link>
         </section>
       </div>
