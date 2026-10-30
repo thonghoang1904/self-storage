@@ -56,7 +56,7 @@ export default function AccountSecurity() {
         detail: [a.details, a.ipAddress && `IP ${a.ipAddress}`].filter(Boolean).join(' · '), result: a.result })
     }
     const access = await Promise.all(contracts.map((c) => api<AccessRecord[]>(`/api/contracts/${c.contractId}/access-history`).catch(() => [] as AccessRecord[])))
-    access.forEach((rs, ci) => rs.forEach((r, n) => rows.push({ key: `r${r.accessRecordId}-${ci}-${n}`, at: r.entryTime, group: 'access', to: `/my-units/${contracts[ci].contractId}`,
+    access.forEach((rs, ci) => rs.forEach((r, n) => rows.push({ key: `r${r.accessRecordId}-${ci}-${n}`, at: r.entryTime, group: 'access',
       title: `${r.result === 'Granted' ? 'Vào kho' : 'Bị từ chối vào kho'} ${r.unitCode}`,
       detail: [r.visitorName, r.exitTime && `ra lúc ${fmtTime(r.exitTime)}`, r.verifiedBy && `NV ${r.verifiedBy}`].filter(Boolean).join(' · '), result: r.result })))
     invoices.forEach((i) => i.payments.forEach((p, n) => rows.push({ key: `p${i.invoiceId}-${p.paymentId}-${n}`, at: p.paymentDate, group: 'payment', to: `/invoices/${i.invoiceId}`,
