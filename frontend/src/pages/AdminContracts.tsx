@@ -91,7 +91,7 @@ export default function AdminContracts() {
             <tbody>
               {rows.map((c) => (
                 <tr key={c.contractId} className={openId === c.contractId ? 'selected' : ''}>
-                  <td className="code">{c.contractNumber}</td>
+                  <td className="code"><button type="button" className="link-btn" title="Xem chi tiết hợp đồng" onClick={() => setOpenId(openId === c.contractId ? null : c.contractId)}>{c.contractNumber}</button></td>
                   <td><b>{c.customerName}</b><br /><small className="muted">{c.customerEmail} · {c.customerPhoneNumber}</small></td>
                   <td>{c.facilityName}<br /><small className="muted">Kho {c.unitCode}</small></td>
                   <td>{fmtDate(c.startDate)} – {fmtDate(c.endDate)}</td>

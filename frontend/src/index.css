@@ -362,6 +362,8 @@ td { padding: 14px 16px; border-bottom: 1px solid var(--border); vertical-align:
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover td { background: #fafcfd; }
 td.code { color: var(--cyan-600); font-weight: 700; white-space: nowrap; }
+td.code .link-btn { text-decoration: none; }
+td.code .link-btn:hover { text-decoration: underline; }
 td.money { font-weight: 700; color: var(--text-strong); white-space: nowrap; }
 td .select-btn { height: 36px; width: auto; min-width: 120px; font-size: 13px; }
 .unit-code { display: inline-grid; place-items: center; min-width: 52px; padding: 6px 10px; border-radius: 8px; background: var(--cyan-50); color: var(--cyan-600); font-weight: 800; font-family: var(--font-head); }
