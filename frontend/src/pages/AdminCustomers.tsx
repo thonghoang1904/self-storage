@@ -85,7 +85,7 @@ export default function AdminCustomers() {
 
       <div className="stat-grid">
         <Metric icon="users" tone="info" label="Khách hàng đang hoạt động" value={String(active)} note={`${rows.length} tài khoản khách hàng`} />
-        <Metric icon="file" tone="ok" label="Hợp đồng hiệu lực" value={String(liveContracts)} note={renting ? `${(liveContracts / renting).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} hợp đồng / khách đang thuê` : 'chưa có khách đang thuê'} />
+        <Metric icon="file" tone="ok" label="Hợp đồng hiệu lực" value={String(liveContracts)} note={renting ? `${liveContracts} hợp đồng / ${renting} khách đang thuê` : 'chưa có khách đang thuê'} />
         <Metric icon="package" tone="info" label="Khách đang thuê kho" value={String(renting)} note={`${rows.length - renting} khách chưa thuê kho`} />
         <Metric icon="alert" tone={overdue + soon ? 'bad' : 'ok'} label="Cần xử lý" value={String(overdue + soon)} note={`${overdue} quá hạn • ${soon} sắp hết hạn`} />
       </div>
