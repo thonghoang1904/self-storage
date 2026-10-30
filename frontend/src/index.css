@@ -328,6 +328,7 @@ a.my-unit-media:hover img, a.my-unit-media:hover svg { transform: scale(1.03); }
 .add-unit-card small { color: var(--muted); max-width: 240px; }
 .add-circle { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--cyan); color: var(--cyan); background: #fff; margin-bottom: 6px; }
 .dash-grid { display: grid; grid-template-columns: 1fr 360px; gap: 28px; align-items: start; }
+.dash-row { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; }
 .panel { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 22px 24px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 16px; }
 .panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .panel-head.wrap { flex-wrap: wrap; align-items: center; }
@@ -472,7 +473,7 @@ button.stat-filter.active { border-color: var(--cyan); box-shadow: 0 0 0 3px var
 @media (max-width: 1100px) {
   .feature-grid, .unit-grid { grid-template-columns: repeat(2, 1fr); }
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
-  .checkout-grid, .dash-grid, .visit-grid { grid-template-columns: 1fr; }
+  .checkout-grid, .dash-grid, .dash-row, .visit-grid { grid-template-columns: 1fr; }
   .order-summary { position: static; }
   .my-unit-grid { grid-template-columns: repeat(2, 1fr); }
 }

@@ -15,27 +15,9 @@ const ago = (iso: string) => {
   const d = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(iso).setHours(0, 0, 0, 0)) / 86400000)
   return d <= 0 ? 'Hôm nay' : d === 1 ? '1 ngày trước' : `${d} ngày trước`
 }
-const PAY_STATE: Record<string, { label: string; tone: string }> = {
-  Paid: { label: 'Đã Thanh Toán', tone: 'ok' },
-  Unpaid: { label: 'Chờ Thanh Toán', tone: 'warn' },
-  Overdue: { label: 'Quá Hạn', tone: 'bad' },
-  Cancelled: { label: 'Đã Hủy', tone: 'muted' },
-}
-
-/** Short line like the Figma rows, e.g. "Kho A-02 – Tiền thuê tháng 09/2026". */
-function payLabel(i: Invoice, unit?: string) {
-  const where = unit ? `Kho ${unit} – ` : ''
-  const p = i.billingPeriodStart ?? i.dueDate
-  switch (i.invoiceType) {
-    case 'MONTHLY_RENT': return `${where}Tiền thuê tháng ${p.slice(5, 7)}/${p.slice(0, 4)}`
-    case 'RENEWAL': return `${where}Gia hạn ${String(i.details[0]?.quantity ?? '').padStart(2, '0')} tháng`
-    case 'DEPOSIT': return 'Tiền cọc đặt kho'
-    default: return `${where}${i.details[0]?.description ?? i.invoiceType}`
-  }
-}
 
 /**
- * Figma "user-dashboard": rented units, payment history, quick actions and latest notices.
+ * Figma "user-dashboard": rented units, quick actions and latest notices.
  * The authorized-person / entry-history panel opens from the contract page (?contract=&tab=).
  */
 export default function MyUnits() {
@@ -69,7 +51,6 @@ export default function MyUnits() {
   const openReservations = reservations.filter((r) => r.status === 'PendingDeposit' || r.status === 'Confirmed')
   const ending = contracts?.filter((c) => c.status === 'Active' && daysUntil(c.endDate) <= 45) ?? []
   const unpaid = invoices?.filter((i) => i.status === 'Unpaid' || i.status === 'Overdue') ?? []
-  const history = [...(invoices ?? [])].sort((a, b) => (b.payments[0]?.paymentDate ?? b.createdAt).localeCompare(a.payments[0]?.paymentDate ?? a.createdAt)).slice(0, 5)
   // Deposits belong to the reservation card above, not to the notification list.
   const notices = unpaid.filter((i) => i.invoiceType !== 'DEPOSIT')
   const unitOf = (i: Invoice) => contracts?.find((c) => c.contractId === i.contractId)?.unitCode
@@ -160,37 +141,7 @@ export default function MyUnits() {
           </section>
         )}
 
-        <div className="dash-grid">
-          <section className="panel">
-            <div className="row between wrap">
-              <h2 className="section-title with-icon"><Icon name="card" size={20} className="cyan" /> Lịch Sử Thanh Toán</h2>
-              <Link to="/invoices" className="link">Xem Tất Cả</Link>
-            </div>
-            <div className="table-scroll">
-              <table className="pay-history">
-                <thead><tr><th>Mã giao dịch</th><th>Kho lưu trữ</th><th>Số tiền</th><th>Ngày giao dịch</th><th>Trạng thái</th><th>Hành động</th></tr></thead>
-                <tbody>
-                  {history.map((i) => {
-                    const st = PAY_STATE[i.status] ?? { label: i.status, tone: 'muted' }
-                    const unit = unitOf(i)
-                    return (
-                      <tr key={i.invoiceId}>
-                        <td className="code">{i.invoiceNumber}</td>
-                        <td>{payLabel(i, unit)}</td>
-                        <td className="money">{fmtMoney(i.totalAmount)}</td>
-                        <td>{fmtDate((i.payments[0]?.paymentDate ?? i.dueDate).slice(0, 10))}</td>
-                        <td><span className={`badge ${st.tone}`}>{st.label}</span></td>
-                        <td><Link to="/invoices" className="link">{i.status === 'Paid' ? 'Xem hóa đơn' : 'Thanh toán'}</Link></td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-              {invoices?.length === 0 && <Empty icon="wallet">Chưa có giao dịch nào.</Empty>}
-            </div>
-          </section>
-
-          <aside className="stack-lg">
+        <div className="dash-row">
             <div className="stack">
               <h3 className="aside-title">Thao Tác Nhanh</h3>
               <Link to="/rent" className="quick-action">
@@ -227,7 +178,6 @@ export default function MyUnits() {
               ))}
               {notices.length + ending.length === 0 && <p className="muted">Không có thông báo mới.</p>}
             </div>
-          </aside>
         </div>
       </div>
     </>
