@@ -54,7 +54,10 @@ public sealed class SystemAdminController(
     {
         var role = await db.Roles.FindAsync([req.RoleId], ct)
             ?? throw AppException.NotFound("Không tìm thấy vai trò");
-        await ValidateAccountAsync(req.Username, req.Email, req.CitizenId, null, ct);
+        var citizenId = NormalizeCitizenId(req.CitizenId);
+        if (role.RoleName == AppRoles.Customer && citizenId is null)
+            throw AppException.BadRequest("Tài khoản khách thuê cần có số CCCD để nhân viên xác thực tại cổng");
+        await ValidateAccountAsync(req.Username, req.Email, citizenId, null, ct);
         var facilityIds = req.FacilityIds?.Distinct().ToArray() ?? [];
         ValidateFacilityAssignments(role.RoleName, facilityIds);
         if (facilityIds.Length > 0 && await db.Facilities.CountAsync(f => facilityIds.Contains(f.FacilityId), ct)
@@ -68,9 +71,9 @@ public sealed class SystemAdminController(
             Role = role,
             Username = req.Username.Trim(),
             FullName = req.FullName.Trim(),
-            Email = req.Email.Trim(),
-            PhoneNumber = req.PhoneNumber.Trim(),
-            CitizenId = Normalize(req.CitizenId),
+            Email = Contact.NormalizeEmail(req.Email),
+            PhoneNumber = Contact.NormalizePhone(req.PhoneNumber),
+            CitizenId = citizenId,
             Status = "Active",
         };
         user.PasswordHash = hasher.HashPassword(user, req.Password);
@@ -95,9 +98,9 @@ public sealed class SystemAdminController(
         int userId, UpdateAdminUserProfileRequest req, CancellationToken ct)
     {
         var fullName = req.FullName.Trim();
-        var email = req.Email.Trim();
-        var phoneNumber = req.PhoneNumber.Trim();
-        var citizenId = Normalize(req.CitizenId);
+        var email = Contact.NormalizeEmail(req.Email);
+        var phoneNumber = Contact.NormalizePhone(req.PhoneNumber);
+        var citizenId = NormalizeCitizenId(req.CitizenId);
         if (fullName.Length == 0 || phoneNumber.Length == 0)
             throw AppException.BadRequest("Họ tên và số điện thoại không được để trống");
 
@@ -105,6 +108,8 @@ public sealed class SystemAdminController(
         var user = await db.Users.Include(u => u.Role)
             .FirstOrDefaultAsync(u => u.UserId == userId, ct)
             ?? throw AppException.NotFound("Không tìm thấy tài khoản");
+        if (user.Role.RoleName == AppRoles.Customer && user.CitizenId is not null && citizenId is null)
+            throw AppException.BadRequest("Không thể xóa số CCCD của khách thuê; nhân viên cần CCCD để xác thực tại cổng");
         await ValidateAccountAsync(user.Username, email, citizenId, userId, ct);
 
         var changedFields = new List<string>();
@@ -226,9 +231,9 @@ public sealed class SystemAdminController(
         [FromQuery] int page = 1, [FromQuery] int pageSize = 50, CancellationToken ct = default)
     {
         ValidatePaging(page, pageSize);
-        if (status is not null && status is not ("Pending" or "Success" or "Failed" or "Refunded"))
+        if (status is not null && status is not ("Pending" or "Success" or "Failed" or "Refunded" or "RefundDue" or "Reversed"))
             throw AppException.BadRequest("Trạng thái giao dịch không hợp lệ");
-        if (method is not null && method is not ("VNPay" or "MoMo" or "BankTransfer" or "Cash" or "CreditCard"))
+        if (method is not null && method is not ("VNPay" or "MoMo" or "BankTransfer" or "Cash" or "CreditCard" or "DepositOffset"))
             throw AppException.BadRequest("Phương thức thanh toán không hợp lệ");
 
         var query = from p in db.Payments
@@ -258,7 +263,8 @@ public sealed class SystemAdminController(
     {
         var now = clock.GetLocalNow().DateTime;
         var monthStart = new DateTime(now.Year, now.Month, 1);
-        var received = await db.Payments.Where(p => p.Status == "Success" && p.PaymentDate >= monthStart)
+        var received = await db.Payments.Where(p => p.Status == "Success" && p.PaymentMethod != "DepositOffset"
+                && p.PaymentDate >= monthStart)
             .SumAsync(p => (decimal?)p.AmountPaid, ct) ?? 0m;
         var refunded = await db.Payments.Where(p => p.Status == "Refunded" && p.PaymentDate >= monthStart)
             .SumAsync(p => (decimal?)p.AmountPaid, ct) ?? 0m;
@@ -284,13 +290,14 @@ public sealed class SystemAdminController(
         string username, string email, string? citizenId, int? excludeUserId, CancellationToken ct)
     {
         var normalizedUsername = username.Trim();
-        var normalizedEmail = email.Trim();
-        var normalizedCitizenId = Normalize(citizenId);
-        var duplicate = await db.Users.AnyAsync(u => (excludeUserId == null || u.UserId != excludeUserId.Value)
-            && (u.Username == normalizedUsername || u.Email == normalizedEmail
-                || (normalizedCitizenId != null && u.CitizenId == normalizedCitizenId)), ct);
-        if (duplicate)
-            throw AppException.Conflict("Tên đăng nhập, email hoặc CCCD đã được sử dụng");
+        var normalizedEmail = Contact.NormalizeEmail(email);
+        var others = db.Users.Where(u => excludeUserId == null || u.UserId != excludeUserId.Value);
+        if (await others.AnyAsync(u => u.Username == normalizedUsername, ct))
+            throw AppException.Conflict("Tên đăng nhập đã được sử dụng");
+        if (await others.AnyAsync(u => u.Email == normalizedEmail, ct))
+            throw AppException.Conflict("Email đã được sử dụng");
+        if (citizenId != null && await others.AnyAsync(u => u.CitizenId == citizenId, ct))
+            throw AppException.Conflict("Số CCCD đã được đăng ký cho tài khoản khác");
     }
 
     private static void ValidateFacilityAssignments(string roleName, IReadOnlyCollection<int> facilityIds)
@@ -320,8 +327,8 @@ public sealed class SystemAdminController(
         new(user.UserId, user.Username, user.FullName, user.Email, user.PhoneNumber,
             user.CitizenId, user.Status, user.RoleId, user.Role.RoleName);
 
-    private static string? Normalize(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static string? NormalizeCitizenId(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : Contact.NormalizeCitizenId(value);
 
     private static void ValidatePaging(int page, int pageSize)
     {

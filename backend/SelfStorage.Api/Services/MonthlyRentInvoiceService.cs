@@ -16,7 +16,15 @@ public sealed class MonthlyRentInvoiceService(
         using var timer = new PeriodicTimer(TimeSpan.FromHours(6));
         do
         {
-            await CreateDueInvoicesAsync(stoppingToken);
+            try
+            {
+                await CreateDueInvoicesAsync(stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // One failed run (e.g. the database is briefly unavailable) must not stop the service or the host.
+                logger.LogError(ex, "Monthly rent invoicing failed; retrying on the next tick");
+            }
         } while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 

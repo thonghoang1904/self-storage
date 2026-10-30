@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
+import { amountError, transactionCodeError } from '../validation'
 import { api, fmtMoney, fmtTime } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon } from '../components/ui'
 import { CancellationStatuses, type CancellationRefund, type CancellationRequest, type Invoice } from '../types'
-import { amountError, transactionCodeError } from '../validation'
+import { Select } from '../components/Select'
 
 /**
  * Reservation cancellations at the facility (#43): customers ask to cancel a reservation not yet handed over,
@@ -100,6 +101,9 @@ function CancellationCard({ request: c, facilityId, remaining, onResolved, onRef
   const owed = remaining ?? c.approvedRefundAmount ?? 0
 
   const resolve = async (approve: boolean) => {
+    // A rejection must tell the customer why.
+    if (!approve && notes.trim().length < 5) return onError('Từ chối hủy cần ghi rõ lý do cho khách (ít nhất 5 ký tự)')
+    onError('')
     setBusy(true)
     try {
       onResolved(await api<CancellationRequest>(`/api/facilities/${facilityId}/cancellation-requests/${c.cancellationRequestId}/resolve`, {
@@ -130,7 +134,7 @@ function CancellationCard({ request: c, facilityId, remaining, onResolved, onRef
 
       {c.status === 'Pending' && (
         <div className="row wrap">
-          <input className="grow" value={notes} maxLength={1000} onChange={(e) => setNotes(e.target.value)} placeholder="Ghi chú cho khách (không bắt buộc)" />
+          <input className="grow" value={notes} maxLength={1000} onChange={(e) => setNotes(e.target.value)} placeholder="Ghi chú cho khách (bắt buộc khi từ chối)" />
           <button className="btn ghost danger-text" disabled={busy} onClick={() => resolve(false)}>Từ chối</button>
           <button className="btn primary" disabled={busy} onClick={() => resolve(true)}><Icon name="check" size={15} /> Duyệt hủy</button>
         </div>
@@ -162,6 +166,7 @@ function RefundForm({ reservationId, max, onDone, onError }: { reservationId: nu
       || amountError(amount, 'Số tiền hoàn', 1, max)
       || (method === 'BankTransfer' || code.trim() ? transactionCodeError(code) : null)
     if (invalid) { onError(invalid); return }
+    onError('')
     setBusy(true)
     try {
       onDone(await api<CancellationRefund>(`/api/reservations/${reservationId}/cancellation-refunds`, {
@@ -177,19 +182,19 @@ function RefundForm({ reservationId, max, onDone, onError }: { reservationId: nu
     <div className="charge-form">
       <div className="form-grid four">
         <label className="field"><span>Số tiền hoàn</span>
-          <input type="number" min={1} max={max} value={amount} onChange={(e) => setAmount(Number(e.target.value) || 0)} />
+          <input type="number" min={1} max={max} step={1000} value={amount || ''} onChange={(e) => setAmount(Math.round(Number(e.target.value) || 0))} />
         </label>
         <label className="field"><span>Hình thức</span>
-          <select value={method} onChange={(e) => setMethod(e.target.value as 'Cash' | 'BankTransfer')}>
+          <Select value={method} onChange={(e) => setMethod(e.target.value as 'Cash' | 'BankTransfer')}>
             <option value="Cash">Tiền mặt</option>
             <option value="BankTransfer">Chuyển khoản</option>
-          </select>
+          </Select>
         </label>
         <label className="field"><span>Mã giao dịch{method === 'BankTransfer' ? ' *' : ''}</span>
           <input value={code} maxLength={50} onChange={(e) => setCode(e.target.value.replace(/[^A-Za-z0-9-]/g, '').slice(0, 50))} placeholder={method === 'BankTransfer' ? 'Bắt buộc khi chuyển khoản' : 'Không bắt buộc'} />
         </label>
         <label className="field"><span>Ghi chú</span>
-          <input value={notes} maxLength={500} onChange={(e) => setNotes(e.target.value)} />
+          <input value={notes} maxLength={255} onChange={(e) => setNotes(e.target.value)} />
         </label>
       </div>
       <div className="row end">

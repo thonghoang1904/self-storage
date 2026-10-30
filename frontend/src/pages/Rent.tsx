@@ -1,14 +1,13 @@
-import { Fragment, useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { api, fmtDate, fmtMoney, fmtTime } from '../api'
+import { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { api, fmtDate, fmtMoney } from '../api'
 import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
-import { AppointmentPicker } from '../components/appointment'
-import { Empty, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
+import { depositDueAt } from '../components/appointment'
+import { Icon, splitTypeName, UnitArt } from '../components/ui'
 import { TermsList, TERMS_VERSION } from './Terms'
-import { CancellationStatuses, type Availability, type CancellationRequest, type Facility, type Reservation, type UnitType } from '../types'
-import { CODE_FILTER, promoCodeError, textError } from '../validation'
-import { FieldNote, useInputFilter } from '../components/form'
+import { type Availability, type Facility, type Reservation, type UnitType } from '../types'
+import { localToday } from '../validation'
 
 const DURATIONS = [1, 3, 6, 12]
 const SIGN_KEY = 'ss_signed_contracts'
@@ -25,46 +24,35 @@ const todayIso = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-/** Customer: choose a facility and unit size, reserve it, and follow reservations. */
+/** Customer: choose a facility and unit size, and reserve it. */
 export default function Rent() {
   const { user } = useAuth()
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [facilityId, setFacilityId] = useState<number | null>(null)
+  const [params] = useSearchParams()
   const [types, setTypes] = useState<UnitType[]>([])
   const [availability, setAvailability] = useState<Availability[]>([])
-  const [reservations, setReservations] = useState<Reservation[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [startDate, setStartDate] = useState(todayIso)
+  // After 19:00 there is no time left to pay and pick up today: default to tomorrow.
+  const [startDate, setStartDate] = useState(() => { if (new Date().getHours() < 19) return todayIso(); const d = new Date(); d.setDate(d.getDate() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` })
   const [months, setMonths] = useState(6)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [promoCode, setPromoCode] = useState('')
-  const promo = useInputFilter(CODE_FILTER)
-  /** Latest cancellation request of each reservation that can still have one. */
-  const [cancellations, setCancellations] = useState<Record<number, CancellationRequest | undefined>>({})
-  const [cancelling, setCancelling] = useState<number | null>(null)
   // Step 3: read the contract terms and agree before the reservation (and its deposit invoice) is created.
   const [signing, setSigning] = useState(false)
+  // The full terms unfold in place (no jump to another page while booking).
+  const [termsOpen, setTermsOpen] = useState(false)
   const navigate = useNavigate()
   const [agreed, setAgreed] = useState(false)
-  const signedList = readSigned()
-
-  const loadReservations = () => api<Reservation[]>('/api/reservations/my').then((rs) => {
-    setReservations(rs)
-    rs.filter((r) => ['PendingDeposit', 'Confirmed', 'Cancelled'].includes(r.status)).forEach((r) => {
-      api<CancellationRequest[]>(`/api/reservations/${r.reservationId}/cancellation-requests/my`)
-        .then((list) => setCancellations((m) => ({ ...m, [r.reservationId]: list[0] })))
-        .catch(() => {})
-    })
-  }).catch(() => {})
 
   useEffect(() => {
     api<UnitType[]>('/api/unit-types').then(setTypes).catch(() => {})
     api<Facility[]>('/api/facilities').then((fs) => {
       setFacilities(fs)
-      if (fs.length) setFacilityId(fs[0].facilityId)
+      // ?facility=<id> (from the home page facility cards) picks that facility; otherwise the first one.
+      const wanted = fs.find((f) => f.facilityId === Number(params.get('facility')))
+      if (fs.length) setFacilityId((wanted ?? fs[0]).facilityId)
     }).catch((e) => setError((e as Error).message))
-    void loadReservations()
   }, [])
 
   useEffect(() => {
@@ -88,7 +76,6 @@ export default function Rent() {
     const invalid = (!startDate && 'Vui lòng chọn ngày bắt đầu thuê')
       || (startDate < todayIso() && 'Ngày bắt đầu thuê không được ở quá khứ')
       || ((months < 1 || months > 60) && 'Số tháng thuê phải từ 1 đến 60')
-      || promoCodeError(promoCode)
     if (invalid) { setError(invalid); return }
     setError('')
     setSigning(true)
@@ -97,16 +84,18 @@ export default function Rent() {
 
   const reserve = async () => {
     if (!facilityId || !selected) return
+    const dateProblem = checkStartDate(startDate)
+    if (dateProblem) { setError(dateProblem); return }
     if (signError) { setError(signError); return }
     setError('')
     setBusy(true)
     try {
       const r = await api<Reservation>('/api/reservations', {
-        body: { facilityId, unitTypeId: selected.unitTypeId, expectedStartDate: startDate, durationMonths: months, promoCode: promoCode.trim() || null },
+        body: { facilityId, unitTypeId: selected.unitTypeId, expectedStartDate: startDate, durationMonths: months, promoCode: null },
       })
       saveSigned(r.reservationCode, { at: new Date().toISOString(), version: TERMS_VERSION })
       // Agreed and reserved: go straight to paying the deposit.
-      navigate(`/invoices?reservation=${r.reservationId}&code=${encodeURIComponent(r.reservationCode)}&deadline=${encodeURIComponent(r.depositDeadline)}`)
+      navigate(`/invoices?reservation=${r.reservationId}&code=${encodeURIComponent(r.reservationCode)}&deadline=${encodeURIComponent(depositDueAt(r))}`)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -117,7 +106,7 @@ export default function Rent() {
   return (
     <>
       <PageHero center eyebrow="Đặt kho nhanh chóng · chỉ trong 4 bước" title="Đặt Kho Lưu Trữ SafeKeep">
-        Chọn cơ sở và kích thước kho, đồng ý điều khoản hợp đồng rồi thanh toán cọc. Đơn được giữ 24 giờ để bạn đặt cọc.
+        Chọn cơ sở và kích thước kho, đồng ý điều khoản hợp đồng rồi thanh toán cọc. Đơn được giữ 24 giờ (không quá 20:00 ngày bắt đầu) để bạn đặt cọc.
       </PageHero>
 
       <div className="container page-body">
@@ -225,18 +214,12 @@ export default function Rent() {
               <div><dt>Bắt đầu từ</dt><dd>{fmtDate(startDate)}</dd></div>
               <div><dt>Tiền cọc (1 tháng)</dt><dd>{selected ? fmtMoney(selected.baseMonthlyRate) : '—'}</dd></div>
             </dl>
-            <label className="field compact promo-field">
-              <span>Mã khuyến mãi (nếu có)</span>
-              <input value={promoCode} onChange={(e) => setPromoCode(promo.keep(e.target.value))} placeholder="vd: WELCOME10" maxLength={30} />
-              <FieldNote text={promo.hint} />
-            </label>
             <div className="summary-total"><span>Tạm Tính</span><b>{fmtMoney(total)}</b></div>
-            {promoCode.trim() && <p className="fine-print">Mã chỉ dành cho lần thuê đầu tiên; mức giảm được trừ vào tiền thuê tháng đầu và hiện sau khi giữ chỗ.</p>}
             {error && !signing && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
             <button className="btn primary block lg" disabled={!selected || busy || signing} onClick={openSigning}>
               {signing ? 'Xem điều khoản bên dưới ↓' : 'Tiếp Tục: Điều Khoản Hợp Đồng'}
             </button>
-            <p className="fine-print">Đơn được giữ 24 giờ. Muốn đổi ý, bạn gửi yêu cầu hủy ở bảng đơn đặt kho; cọc được hoàn sau khi trừ phí hủy theo chính sách.</p>
+            <p className="fine-print">Đơn được giữ 24 giờ, không quá 20:00 ngày bắt đầu thuê. Muốn đổi ý, bạn gửi yêu cầu hủy; cọc được hoàn sau khi trừ phí hủy theo chính sách.</p>
           </aside>
         </div>
 
@@ -260,12 +243,13 @@ export default function Rent() {
                   <div><dt>Thời hạn</dt><dd>{months} tháng</dd></div>
                   <div><dt>Giá thuê</dt><dd>{fmtMoney(selected.baseMonthlyRate)}/tháng</dd></div>
                   <div><dt>Tiền cọc dự kiến</dt><dd>{fmtMoney(selected.baseMonthlyRate)}</dd></div>
-                  {promoCode.trim() && <div><dt>Mã khuyến mãi</dt><dd>{promoCode.trim()}</dd></div>}
                 </dl>
-                <div className="terms-box" tabIndex={0} aria-label="Điều khoản hợp đồng">
+                <div id="rent-terms" className={`terms-box ${termsOpen ? 'open' : ''}`} tabIndex={0} aria-label="Điều khoản hợp đồng">
                   <TermsList compact />
                 </div>
-                <Link to="/terms" target="_blank" className="link">Mở trang điều khoản đầy đủ <Icon name="arrowRight" size={14} /></Link>
+                <button type="button" className="link-btn terms-toggle" aria-expanded={termsOpen} aria-controls="rent-terms" onClick={() => setTermsOpen(!termsOpen)}>
+                  {termsOpen ? 'Thu gọn điều khoản' : 'Xem toàn bộ điều khoản'} <Icon name="arrowRight" size={14} />
+                </button>
               </div>
               <div className="stack sign-side">
                 <label className="check-row">
@@ -282,105 +266,18 @@ export default function Rent() {
           </section>
         )}
 
-        <section className="stack" id="my-reservations">
-          <div className="row between">
-            <h2 className="section-title">Đơn Đặt Kho Của Tôi</h2>
-            <Link to="/my-units" className="link">Xem kho của tôi <Icon name="arrowRight" size={14} /></Link>
-          </div>
-          <div className="table-card">
-            <table>
-              <thead><tr><th>Mã đơn</th><th>Cơ sở · loại kho</th><th>Bắt đầu</th><th>Tiền cọc</th><th>Hạn cọc</th><th>Lịch nhận kho</th><th>Trạng thái</th><th /></tr></thead>
-              <tbody>
-                {reservations.map((r) => {
-                  const cr = cancellations[r.reservationId]
-                  const canCancel = (r.status === 'PendingDeposit' || r.status === 'Confirmed') && cr?.status !== 'Pending'
-                  return (
-                  <Fragment key={r.reservationId}>
-                  <tr>
-                    <td className="code">{r.reservationCode}{signedList[r.reservationCode] && <><br /><small className="ok-text">Đã đồng ý ĐK {fmtDate(signedList[r.reservationCode].at)}</small></>}</td>
-                    <td>{r.facilityName}<br /><small className="muted">{splitTypeName(r.unitTypeName).name}{r.assignedUnitCode && ` · kho ${r.assignedUnitCode}`}</small></td>
-                    <td>{fmtDate(r.expectedStartDate)}<br /><small className="muted">{r.durationMonths} tháng</small></td>
-                    <td className="money">{fmtMoney(r.depositAmount)}{r.promoCode && <><br /><small className="ok-text">Mã {r.promoCode} · −{fmtMoney(r.promotionDiscountAmount ?? 0)}</small></>}</td>
-                    <td>{r.status === 'PendingDeposit' ? fmtTime(r.depositDeadline) : '—'}</td>
-                    <td><AppointmentPicker reservation={r} operatingHours={facilities.find((f) => f.facilityName === r.facilityName)?.operatingHours}
-                      onSaved={(u) => setReservations((rs) => rs.map((x) => (x.reservationId === u.reservationId ? u : x)))} /></td>
-                    <td>
-                      <StatusBadge status={r.status} />
-                      {cr && <><br /><span className={`badge ${CancellationStatuses[cr.status]?.tone ?? 'muted'}`}>{CancellationStatuses[cr.status]?.label ?? cr.status}</span></>}
-                    </td>
-                    <td>
-                      {canCancel && cancelling !== r.reservationId && (
-                        <button type="button" className="link-btn danger-text" onClick={() => setCancelling(r.reservationId)}>Yêu cầu hủy</button>
-                      )}
-                    </td>
-                  </tr>
-                  {(cancelling === r.reservationId || (cr && cr.status !== 'Pending')) && (
-                    <tr className="sub-row">
-                      <td colSpan={8}>
-                        {cancelling === r.reservationId
-                          ? <CancelForm reservation={r} onDone={(c) => { setCancelling(null); if (c) setCancellations((m) => ({ ...m, [r.reservationId]: c })) }} />
-                          : cr && <CancellationResult request={cr} />}
-                      </td>
-                    </tr>
-                  )}
-                  </Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-            {reservations.length === 0 && <Empty icon="clipboard">Chưa có đơn đặt kho nào.</Empty>}
-          </div>
-        </section>
       </div>
     </>
   )
 }
 
-/** Reason form for POST /api/reservations/{id}/cancellation-requests. */
-function CancelForm({ reservation: r, onDone }: { reservation: Reservation; onDone: (c: CancellationRequest | null) => void }) {
-  const [reason, setReason] = useState('')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const send = async () => {
-    const invalid = textError(reason, 'Lý do hủy', 5, 1000)
-    if (invalid) { setError(invalid); return }
-    setError('')
-    setBusy(true)
-    try {
-      onDone(await api<CancellationRequest>(`/api/reservations/${r.reservationId}/cancellation-requests`, { body: { reason: reason.trim() } }))
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <div className="cancel-form">
-      <div className="stack-sm grow">
-        <b>Yêu cầu hủy đơn {r.reservationCode}</b>
-        <small className="muted">
-          {r.status === 'Confirmed'
-            ? 'Bạn đã đặt cọc: khi nhân viên duyệt, cọc được hoàn lại sau khi trừ phí hủy theo chính sách thuê của cơ sở.'
-            : 'Đơn chưa đặt cọc: khi nhân viên duyệt, đơn được hủy và không phát sinh phí.'}
-        </small>
-        <textarea rows={2} maxLength={1000} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Lý do hủy, vd: đổi kế hoạch chuyển nhà" autoFocus />
-        {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
-      </div>
-      <div className="row">
-        <button type="button" className="btn ghost sm" onClick={() => onDone(null)}>Đóng</button>
-        <button type="button" className="btn danger sm" disabled={busy} onClick={send}>{busy ? 'Đang gửi…' : 'Gửi yêu cầu hủy'}</button>
-      </div>
-    </div>
-  )
+/** Start date: today or later (and before 19:00 when it is today, so there is still time to pay and pick up), within a year. */
+function checkStartDate(iso: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return 'Vui lòng chọn ngày bắt đầu thuê'
+  const today = todayIso()
+  if (iso < today) return 'Ngày bắt đầu không được ở quá khứ'
+  if (iso === today && new Date().getHours() >= 19) return 'Đã quá giờ nhận kho hôm nay, vui lòng chọn từ ngày mai'
+  if (iso > localToday(365)) return 'Chỉ đặt trước tối đa 1 năm'
+  return ''
 }
 
-function CancellationResult({ request: c }: { request: CancellationRequest }) {
-  return (
-    <p className="muted cancel-result">
-      <Icon name={c.status === 'Approved' ? 'check' : 'alert'} size={14} /> Yêu cầu hủy {c.status === 'Approved' ? 'đã được duyệt' : 'bị từ chối'}
-      {c.resolvedAt && ` lúc ${fmtTime(c.resolvedAt)}`}
-      {c.status === 'Approved' && c.approvedRefundAmount != null && <> · hoàn cọc <b>{fmtMoney(c.approvedRefundAmount)}</b></>}
-      {c.resolutionNotes && <> · ghi chú: {c.resolutionNotes}</>}
-    </p>
-  )
-}

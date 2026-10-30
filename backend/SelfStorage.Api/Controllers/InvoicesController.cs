@@ -16,7 +16,8 @@ public class InvoicesController(
     SelfStorageDbContext db,
     BillingService billing,
     PaymentGatewayService paymentGateways,
-    TimeProvider clock) : ControllerBase
+    TimeProvider clock,
+    IWebHostEnvironment environment) : ControllerBase
 {
     [HttpGet("my")]
     [Authorize(Roles = AppRoles.Customer)]
@@ -148,13 +149,60 @@ public class InvoicesController(
 
     /// <summary>
     /// Starts or resumes a VNPay/MoMo checkout. MoMo returns its QR URL, app deep links,
-    /// and a payment URL; invoice status is confirmed only by the verified provider IPN.
+    /// and a payment URL; invoice status is confirmed only by the provider's signed result (IPN, or VNPay's return).
     /// </summary>
     [HttpPost("{id:int}/checkout/{provider}")]
     [Authorize(Roles = AppRoles.Customer)]
     public Task<CheckoutResponse> StartCheckout(int id, string provider, CancellationToken ct) =>
         paymentGateways.StartCheckoutAsync(id, User.GetUserId(), provider,
             HttpContext.Connection.RemoteIpAddress?.ToString(), ct);
+
+    /// <summary>Online payments received for invoices that could no longer accept them; staff must refund these.</summary>
+    [HttpGet("facilities/{facilityId:int}/refund-due")]
+    [Authorize(Roles = AppRoles.GateRoles)]
+    public async Task<List<RefundDuePaymentDto>> RefundDue(int facilityId, CancellationToken ct)
+    {
+        await EnsureAssignedAsync(User.GetUserId(), facilityId, ct);
+        return await (from payment in db.Payments
+                      join invoice in db.Invoices on payment.InvoiceId equals invoice.InvoiceId
+                      join customer in db.Users on invoice.CustomerId equals customer.UserId
+                      where payment.Status == "RefundDue"
+                          && ((invoice.ContractId != null && db.Contracts.Any(c => c.ContractId == invoice.ContractId
+                                  && c.Unit.FacilityId == facilityId))
+                              || (invoice.ReservationId != null && db.Reservations.Any(r =>
+                                  r.ReservationId == invoice.ReservationId && r.FacilityId == facilityId)))
+                      orderby payment.PaymentDate
+                      select new RefundDuePaymentDto(payment.PaymentId, invoice.InvoiceId, invoice.InvoiceNumber,
+                          invoice.InvoiceType, customer.FullName, payment.PaymentMethod, payment.TransactionCode,
+                          payment.AmountPaid, payment.PaymentDate, payment.PaymentNotes))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>Staff has paid back a RefundDue online payment (cash or bank transfer).</summary>
+    [HttpPost("payments/{paymentId:int}/refund")]
+    [Authorize(Roles = AppRoles.GateRoles)]
+    public async Task<PaymentDto> RefundPayment(int paymentId, RefundDuePaymentRequest req, CancellationToken ct)
+    {
+        var staffId = User.GetUserId();
+        var payment = await billing.RefundDuePaymentAsync(paymentId, staffId, req, ct);
+        var staffName = await db.Users.Where(u => u.UserId == staffId).Select(u => u.FullName).SingleAsync(ct);
+        return new PaymentDto(payment.PaymentId, payment.PaymentMethod, payment.TransactionCode,
+            payment.AmountPaid, payment.PaymentDate, payment.Status, payment.PaymentNotes, staffName);
+    }
+
+    /// <summary>
+    /// Development only (PaymentGateways:SandboxEnabled): marks the invoice paid as if the gateway had confirmed it,
+    /// so a deposit moves the reservation to Confirmed without staff. Returns the updated invoice.
+    /// </summary>
+    [HttpPost("{id:int}/checkout/{provider}/sandbox-complete")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public async Task<InvoiceDto> CompleteSandboxCheckout(int id, string provider, CancellationToken ct)
+    {
+        if (!environment.IsDevelopment())
+            throw AppException.NotFound("Không tìm thấy chức năng");
+        await paymentGateways.CompleteSandboxPaymentAsync(id, User.GetUserId(), provider, ct);
+        return await Detail(id, ct);
+    }
 
     private async Task EnsureAssignedAsync(int staffId, int facilityId, CancellationToken ct)
     {

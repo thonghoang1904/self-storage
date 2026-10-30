@@ -1,12 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { CITIZEN_ID_FILTER, citizenIdError, fullNameError, NAME_FILTER, normalizePhone, PHONE_FILTER, phoneError, relationshipError } from '../validation'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
-import { AppointmentPicker } from '../components/appointment'
-import { Empty, Eyebrow, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
-import { DenyReasons, type AccessRecord, type Contract, type Facility, type Invoice, type Person, type Reservation } from '../types'
+import { depositDueAt, depositMissed, pickupMissed } from '../components/appointment'
+import { Empty, Eyebrow, Icon, splitTypeName, StatusBadge } from '../components/ui'
+import { ContractUnitArt } from '../components/unitPhoto'
+import { DenyReasons, type AccessRecord, type Contract, type Invoice, type Person, type Reservation } from '../types'
 import { FormField, useValidatedForm } from '../components/form'
-import { CITIZEN_ID_FILTER, citizenIdError, fullNameError, NAME_FILTER, normalizePhone, PHONE_FILTER, phoneError, relationshipError } from '../validation'
 
 const daysUntil = (iso: string) => Math.ceil((new Date(`${iso}T00:00:00`).getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000)
 
@@ -14,27 +15,9 @@ const ago = (iso: string) => {
   const d = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(iso).setHours(0, 0, 0, 0)) / 86400000)
   return d <= 0 ? 'Hôm nay' : d === 1 ? '1 ngày trước' : `${d} ngày trước`
 }
-const PAY_STATE: Record<string, { label: string; tone: string }> = {
-  Paid: { label: 'Đã Thanh Toán', tone: 'ok' },
-  Unpaid: { label: 'Chờ Thanh Toán', tone: 'warn' },
-  Overdue: { label: 'Quá Hạn', tone: 'bad' },
-  Cancelled: { label: 'Đã Hủy', tone: 'muted' },
-}
-
-/** Short line like the Figma rows, e.g. "Kho A-02 – Tiền thuê tháng 09/2026". */
-function payLabel(i: Invoice, unit?: string) {
-  const where = unit ? `Kho ${unit} – ` : ''
-  const p = i.billingPeriodStart ?? i.dueDate
-  switch (i.invoiceType) {
-    case 'MONTHLY_RENT': return `${where}Tiền thuê tháng ${p.slice(5, 7)}/${p.slice(0, 4)}`
-    case 'RENEWAL': return `${where}Gia hạn ${String(i.details[0]?.quantity ?? '').padStart(2, '0')} tháng`
-    case 'DEPOSIT': return 'Tiền cọc đặt kho'
-    default: return `${where}${i.details[0]?.description ?? i.invoiceType}`
-  }
-}
 
 /**
- * Figma "user-dashboard": rented units, payment history, quick actions and latest notices.
+ * Figma "user-dashboard": rented units, quick actions and latest notices.
  * The authorized-person / entry-history panel opens from the contract page (?contract=&tab=).
  */
 export default function MyUnits() {
@@ -45,7 +28,6 @@ export default function MyUnits() {
   const [contracts, setContracts] = useState<Contract[] | null>(null)
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [invoices, setInvoices] = useState<Invoice[] | null>(null)
-  const [facilities, setFacilities] = useState<Facility[]>([])
   const [openId, setOpenId] = useState<number | null>(null)
   const [tab, setTab] = useState<'people' | 'history'>(wantedTab ?? 'people')
   const [error, setError] = useState('')
@@ -60,15 +42,17 @@ export default function MyUnits() {
     }).catch((e) => setError((e as Error).message))
     api<Reservation[]>('/api/reservations/my').then(setReservations).catch(() => {})
     api<Invoice[]>('/api/invoices/my').then(setInvoices).catch(() => setInvoices([]))
-    api<Facility[]>('/api/facilities').then(setFacilities).catch(() => {})
   }, [])
 
   const active = contracts?.filter((c) => c.status === 'Active' || c.status === 'Renewed').length ?? 0
   const open = contracts?.find((c) => c.contractId === openId)
+  // Units the customer still holds; contracts that have ended (returned or liquidated) are not listed here.
+  const current = contracts?.filter((c) => c.status === 'Active' || c.status === 'Renewed' || c.status === 'Overdue')
   const openReservations = reservations.filter((r) => r.status === 'PendingDeposit' || r.status === 'Confirmed')
   const ending = contracts?.filter((c) => c.status === 'Active' && daysUntil(c.endDate) <= 45) ?? []
   const unpaid = invoices?.filter((i) => i.status === 'Unpaid' || i.status === 'Overdue') ?? []
-  const history = [...(invoices ?? [])].sort((a, b) => (b.payments[0]?.paymentDate ?? b.createdAt).localeCompare(a.payments[0]?.paymentDate ?? a.createdAt)).slice(0, 5)
+  // Deposits belong to the reservation card above, not to the notification list.
+  const notices = unpaid.filter((i) => i.invoiceType !== 'DEPOSIT')
   const unitOf = (i: Invoice) => contracts?.find((c) => c.contractId === i.contractId)?.unitCode
 
   return (
@@ -84,33 +68,48 @@ export default function MyUnits() {
       <div className="container page-body">
         {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
 
+        {openReservations.length > 0 && (
+          <section className="stack">
+            <h2 className="section-title with-icon"><Icon name="clipboard" size={20} className="cyan" /> Đơn Đặt Kho Đang Xử Lý</h2>
+            <div className="order-cards">
+              {openReservations.map((r) => <OrderCard key={r.reservationId} r={r} />)}
+            </div>
+          </section>
+        )}
+
         <section className="stack">
           <div className="row between wrap">
             <h2 className="section-title with-icon"><Icon name="package" size={20} className="cyan" /> Kho Lưu Trữ Của Tôi {active > 0 && <span className="pill">{active} Đang Hoạt Động</span>}</h2>
+            <Link to="/visit" className="btn primary sm"><Icon name="calendar" size={15} /> Đăng ký vào kho</Link>
           </div>
           <div className="my-unit-grid">
-            {contracts?.map((c, i) => {
+            {current?.map((c) => {
               const left = daysUntil(c.endDate)
               return (
                 <article key={c.contractId} className="my-unit-card">
-                  <div className="my-unit-media">
-                    <UnitArt variant={(i + 1) % 4} />
+                  <Link to={`/my-units/${c.contractId}`} className="my-unit-media" aria-label={`Chi tiết kho ${c.unitCode}`}>
+                    <ContractUnitArt facilityId={c.facilityId} unitCode={c.unitCode} />
                     <span className="tag-dark">{c.unitCode}</span>
                     <span className="tag-status"><StatusBadge status={c.status} /></span>
-                  </div>
+                  </Link>
                   <div className="my-unit-body">
-                    <h3>Kho {c.unitCode} <small>· {c.facilityName}</small></h3>
+                    <h3><Link to={`/my-units/${c.contractId}`} className="my-unit-title">Kho {c.unitCode}</Link> <small>· {c.facilityName}</small></h3>
                     <ul className="meta-list">
                       <li><Icon name="calendar" size={14} /> Bắt đầu: {fmtDate(c.startDate)}</li>
                       <li><Icon name="clock" size={14} /> Hết hạn: <b>{fmtDate(c.endDate)}</b>{c.status === 'Active' && left >= 0 && left <= 45 && <span className="warn-text"> · còn {left} ngày</span>}</li>
                       <li><Icon name="card" size={14} /> Chi phí: <b className="cyan">{fmtMoney(c.monthlyRentFee)}/tháng</b></li>
                     </ul>
                     <div className="row">
-                      <Link to={`/my-units/${c.contractId}?renew=1`} className="btn primary sm grow">Gia Hạn</Link>
+                      {c.status === 'Active' && <Link to={`/my-units/${c.contractId}/renew`} className="btn primary sm grow">Gia Hạn</Link>}
                       <Link to={`/my-units/${c.contractId}`} className="btn outline sm grow">Chi Tiết</Link>
                     </div>
                     {(c.status === 'Active' || c.status === 'Renewed') && (
-                      <Link to={`/my-units/${c.contractId}/visit`} className="btn ghost sm block"><Icon name="calendar" size={14} /> Đăng Ký Ra Vào Kho</Link>
+                      <div className="row">
+                        <Link to={`/visit?contract=${c.contractId}`} className="btn ghost sm grow"><Icon name="calendar" size={14} /> Đăng Ký Vào Kho</Link>
+                      </div>
+                    )}
+                    {c.status === 'Active' && left > 0 && (
+                      <Link to={`/my-units/${c.contractId}?return=early`} className="btn ghost sm block"><Icon name="logout" size={14} /> Trả Kho Sớm</Link>
                     )}
                   </div>
                 </article>
@@ -122,7 +121,7 @@ export default function MyUnits() {
               <small>Mở rộng không gian lưu trữ dễ dàng chỉ với vài bước đơn giản</small>
             </Link>
           </div>
-          {contracts && contracts.length === 0 && <p className="muted">Bạn chưa có hợp đồng thuê kho nào. Sau khi đặt cọc, nhân viên sẽ bàn giao kho và hợp đồng sẽ hiện ở đây.</p>}
+          {current && current.length === 0 && <p className="muted">{contracts?.length ? 'Bạn không còn kho nào đang thuê.' : 'Bạn chưa có hợp đồng thuê kho nào. Sau khi đặt cọc, nhân viên sẽ bàn giao kho và hợp đồng sẽ hiện ở đây.'}</p>}
         </section>
 
         {open && (
@@ -142,37 +141,7 @@ export default function MyUnits() {
           </section>
         )}
 
-        <div className="dash-grid">
-          <section className="panel">
-            <div className="row between wrap">
-              <h2 className="section-title with-icon"><Icon name="card" size={20} className="cyan" /> Lịch Sử Thanh Toán</h2>
-              <Link to="/invoices" className="link">Xem Tất Cả</Link>
-            </div>
-            <div className="table-scroll">
-              <table className="pay-history">
-                <thead><tr><th>Mã giao dịch</th><th>Kho lưu trữ</th><th>Số tiền</th><th>Ngày giao dịch</th><th>Trạng thái</th><th>Hành động</th></tr></thead>
-                <tbody>
-                  {history.map((i) => {
-                    const st = PAY_STATE[i.status] ?? { label: i.status, tone: 'muted' }
-                    const unit = unitOf(i)
-                    return (
-                      <tr key={i.invoiceId}>
-                        <td className="code">{i.invoiceNumber}</td>
-                        <td>{payLabel(i, unit)}</td>
-                        <td className="money">{fmtMoney(i.totalAmount)}</td>
-                        <td>{fmtDate((i.payments[0]?.paymentDate ?? i.dueDate).slice(0, 10))}</td>
-                        <td><span className={`badge ${st.tone}`}>{st.label}</span></td>
-                        <td><Link to="/invoices" className="link">{i.status === 'Paid' ? 'Xem hóa đơn' : 'Thanh toán'}</Link></td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-              {invoices?.length === 0 && <Empty icon="wallet">Chưa có giao dịch nào.</Empty>}
-            </div>
-          </section>
-
-          <aside className="stack-lg">
+        <div className="dash-row">
             <div className="stack">
               <h3 className="aside-title">Thao Tác Nhanh</h3>
               <Link to="/rent" className="quick-action">
@@ -189,7 +158,7 @@ export default function MyUnits() {
 
             <div className="stack">
               <h3 className="aside-title">Thông Báo Mới Nhất</h3>
-              {unpaid.slice(0, 3).map((i) => (
+              {notices.slice(0, 3).map((i) => (
                 <div key={`i${i.invoiceId}`} className="notice">
                   <span className="notice-icon warn"><Icon name="wallet" size={16} /></span>
                   <div className="grow">
@@ -198,36 +167,17 @@ export default function MyUnits() {
                   </div>
                 </div>
               ))}
-              {openReservations.map((r) => (
-                <div key={`r${r.reservationId}`} className="notice">
-                  <span className="notice-icon warn"><Icon name="calendar" size={16} /></span>
-                  <div className="grow">
-                    <div className="notice-head"><b>{r.status === 'PendingDeposit' ? 'Chờ đặt cọc' : r.checkInAppointmentAt ? 'Đã hẹn nhận kho' : 'Đặt lịch nhận kho'}</b><small>Nhận kho {fmtDate(r.expectedStartDate)}</small></div>
-                    <p>
-                      Đơn {r.reservationCode} ({splitTypeName(r.unitTypeName).name}, {r.facilityName})
-                      {r.status === 'PendingDeposit' ? ` cần đặt cọc ${fmtMoney(r.depositAmount)} trước ${fmtTime(r.depositDeadline)}.`
-                        : r.checkInAppointmentAt ? ` — đến cơ sở đúng giờ hẹn để nhân viên bàn giao kho.`
-                        : ` đã nhận cọc. Chọn giờ đến nhận kho trong ngày ${fmtDate(r.expectedStartDate)}, nhân viên chỉ bàn giao từ giờ hẹn.`}
-                    </p>
-                    {r.status === 'Confirmed' && (
-                      <AppointmentPicker reservation={r} operatingHours={facilities.find((f) => f.facilityName === r.facilityName)?.operatingHours}
-                        onSaved={(u) => setReservations((rs) => rs.map((x) => (x.reservationId === u.reservationId ? u : x)))} />
-                    )}
-                  </div>
-                </div>
-              ))}
               {ending.map((c) => (
                 <div key={`c${c.contractId}`} className="notice">
                   <span className="notice-icon bad"><Icon name="alert" size={16} /></span>
                   <div className="grow">
                     <div className="notice-head"><b>Cảnh báo hết hạn hợp đồng</b><small>Còn {daysUntil(c.endDate)} ngày</small></div>
-                    <p>Kho {c.unitCode} của bạn sắp kết thúc thời hạn thuê vào ngày {fmtDate(c.endDate)}. <Link to={`/my-units/${c.contractId}?renew=1`} className="link">Gửi yêu cầu gia hạn</Link></p>
+                    <p>Kho {c.unitCode} của bạn sắp kết thúc thời hạn thuê vào ngày {fmtDate(c.endDate)}. <Link to={`/my-units/${c.contractId}/renew`} className="link">Gửi yêu cầu gia hạn</Link></p>
                   </div>
                 </div>
               ))}
-              {unpaid.length + openReservations.length + ending.length === 0 && <p className="muted">Không có thông báo mới.</p>}
+              {notices.length + ending.length === 0 && <p className="muted">Không có thông báo mới.</p>}
             </div>
-          </aside>
         </div>
       </div>
     </>
@@ -258,11 +208,14 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
     void load()
   }, [contractId])
 
+  const [busy, setBusy] = useState(false)
   const add = async (e: FormEvent) => {
     e.preventDefault()
+    if (busy) return
     setError('')
     if (!form.validateAll()) return
     const f = form.values
+    setBusy(true)
     try {
       await api(base, {
         body: { fullName: f.fullName.trim(), citizenId: f.citizenId, phoneNumber: normalizePhone(f.phoneNumber), relationship: f.relationship.trim() || null },
@@ -272,6 +225,8 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
       void load()
     } catch (err) {
       setError((err as Error).message)
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -287,7 +242,7 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
 
   return (
     <div className="stack">
-      <p className="muted">Những người này được vào kho thay bạn khi xuất trình CCCD của chính họ cho nhân viên.</p>
+      <p className="muted">Bạn có thể ủy quyền cho bất kỳ ai (người nhà, bạn bè, nhân viên, bên vận chuyển). Họ vào kho thay bạn khi xuất trình CCCD của chính họ cho nhân viên.</p>
       <div className="person-list">
         {people.map((p) => (
           <div key={p.authorizedPersonId} className="person-row">
@@ -314,10 +269,10 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
             <FormField label="Họ tên" error={form.error('fullName')}><input {...form.field('fullName')} maxLength={100} placeholder="Nguyễn Thị Bình" autoFocus /></FormField>
             <FormField label="Số CCCD" error={form.error('citizenId')}><input {...form.field('citizenId')} inputMode="numeric" placeholder="12 chữ số" /></FormField>
             <FormField label="Số điện thoại" error={form.error('phoneNumber')}><input {...form.field('phoneNumber')} inputMode="tel" placeholder="0912345678" /></FormField>
-            <FormField label="Quan hệ (không bắt buộc)" error={form.error('relationship')}><input {...form.field('relationship')} maxLength={50} placeholder="Vợ, con, nhân viên…" /></FormField>
+            <FormField label="Quan hệ (không bắt buộc)" error={form.error('relationship')}><input {...form.field('relationship')} maxLength={50} placeholder="vd: Người nhà, bạn bè, nhân viên, bên vận chuyển" /></FormField>
           </div>
           <div className="row">
-            <button className="btn primary sm" type="submit">Lưu người được ủy quyền</button>
+            <button className="btn primary sm" type="submit" disabled={busy}>{busy ? 'Đang lưu…' : 'Lưu người được ủy quyền'}</button>
             <button className="btn ghost sm" type="button" onClick={() => { setAdding(false); form.reset() }}>Hủy</button>
           </div>
         </form>
@@ -356,5 +311,45 @@ function History({ contractId }: { contractId: number }) {
       </table>
       {rows?.length === 0 && <Empty icon="history">Chưa có lượt ra vào.</Empty>}
     </div>
+  )
+}
+
+/**
+ * A reservation on its way to a unit, shown like an order tracker: deposit → pickup time → handover, with the one
+ * thing the customer has to do next as the main button (not hidden among notifications).
+ */
+function OrderCard({ r }: { r: Reservation }) {
+  const lateDeposit = depositMissed(r)
+  const latePickup = pickupMissed(r)
+  const step = r.status === 'PendingDeposit' ? 0 : r.checkInAppointmentAt ? 2 : 1
+  const steps = ['Thanh toán cọc', 'Đặt lịch nhận kho', 'Nhận kho tại cơ sở']
+  return (
+    <article className={`order-card ${lateDeposit || latePickup ? 'late' : step < 2 ? 'todo' : ''}`}>
+      <div className="row between wrap">
+        <div><b className="code">{r.reservationCode}</b><small className="muted block">{splitTypeName(r.unitTypeName).name} · {r.facilityName} · nhận kho {fmtDate(r.expectedStartDate)}</small></div>
+        <StatusBadge status={r.status} />
+      </div>
+      <ol className="order-steps">
+        {steps.map((t, i) => <li key={t} className={i < step ? 'done' : i === step ? 'current' : ''}><span>{i < step ? <Icon name="check" size={13} /> : i + 1}</span>{t}</li>)}
+      </ol>
+      {lateDeposit ? <p className="alert bad"><Icon name="alert" size={16} />Quá hạn đặt cọc, đơn sẽ tự hủy. Bạn có thể đặt kho lại.</p>
+        : latePickup ? <p className="alert bad"><Icon name="alert" size={16} />Đã quá 20:00 ngày {fmtDate(r.expectedStartDate)} mà chưa nhận kho; đơn sẽ tự hủy, cọc hoàn sau khi trừ phí hủy.</p>
+        : step === 0 ? (
+          <div className="order-next">
+            <span>Thanh toán <b>{fmtMoney(r.depositAmount)}</b> trước <b>{fmtTime(depositDueAt(r))}</b> để giữ kho.</span>
+            <Link to={`/invoices?reservation=${r.reservationId}`} className="btn primary"><Icon name="wallet" size={16} /> Thanh toán cọc</Link>
+          </div>
+        ) : step === 1 ? (
+          <div className="order-next">
+            <span>Đã nhận cọc. <b>Chọn giờ đến nhận kho</b> trong ngày {fmtDate(r.expectedStartDate)}, trước 20:00.</span>
+            <Link to={`/reservations/${r.reservationId}/pickup`} className="btn primary"><Icon name="calendar" size={16} /> Đặt lịch nhận kho</Link>
+          </div>
+        ) : (
+          <div className="order-next">
+            <span>Hẹn nhận kho lúc <b>{fmtTime(r.checkInAppointmentAt!)}</b>. Mang CCCD đến đúng giờ để nhân viên bàn giao kho.</span>
+            <Link to={`/reservations/${r.reservationId}/pickup`} className="btn outline"><Icon name="calendar" size={16} /> Đổi giờ</Link>
+          </div>
+        )}
+    </article>
   )
 }

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using SelfStorage.Api.Infrastructure;
 
 namespace SelfStorage.Api.Dtos;
 
@@ -23,7 +24,9 @@ public record VisitCandidateDto(
     IReadOnlyList<string> PeopleInside,
     IReadOnlyList<AccessIssueDto> Issues,
     bool HasApprovedVisitRegistration,
-    bool CanEnter);
+    bool CanEnter,
+    // For staff recording the customer's CCCD after checking the card.
+    int CustomerId);
 
 public record GrantEntryRequest(
     [Required] int ContractId,
@@ -31,9 +34,18 @@ public record GrantEntryRequest(
     // Null = the contract's customer came in person.
     int? AuthorizedPersonId,
     // CCCD number read off the visitor's card, compared with the one on file.
-    [Required, StringLength(25)] string CitizenId,
+    [Required(ErrorMessage = "Vui lòng nhập số CCCD trên thẻ của khách")]
+    [CitizenId]
+    string CitizenId,
     [StringLength(255)] string? Purpose,
     [StringLength(500)] string? Notes);
+
+/// <summary>Staff checked the customer's card in person and records (or corrects) the CCCD on file.</summary>
+public record UpdateCustomerCitizenIdRequest(
+    [Required(ErrorMessage = "Vui lòng nhập số CCCD trên thẻ của khách")]
+    [CitizenId]
+    string CitizenId,
+    [StringLength(300)] string? Notes);
 
 public record DenyEntryRequest(
     [Required] int ContractId,
@@ -42,14 +54,15 @@ public record DenyEntryRequest(
     [StringLength(500)] string? Notes);
 
 public record CreateVisitRegistrationRequest(
-    [Required, StringLength(25)] string CitizenId,
+    [Required, CitizenId] string CitizenId,
     int? AuthorizedPersonId,
     [Required] DateTimeOffset ScheduledEntryAt,
     [Required] DateTimeOffset ScheduledExitAt,
     [Required, StringLength(255)] string Purpose);
 
+// Nullable so that a missing value is a 400 instead of silently binding to false (= reject).
 public record ReviewVisitRegistrationRequest(
-    [Required] bool Approve,
+    [Required] bool? Approve,
     [StringLength(500)] string? Notes);
 
 public record VisitRegistrationDto(

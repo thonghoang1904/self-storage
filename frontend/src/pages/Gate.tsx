@@ -1,10 +1,12 @@
-import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react'
-import { api, fmtDate, fmtTime, IS_DEMO } from '../api'
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
+import { api, billingLink, fmtDate, fmtTime, IS_DEMO } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import { DenyReasons, type AccessRecord, type Person, type VisitCandidate, type VisitRegistration } from '../types'
 import { CITIZEN_ID_FILTER } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
+import { Select } from '../components/Select'
 
 const REFRESH_MS = 5000
 const hhmm = (iso: string) => iso.slice(11, 16)
@@ -87,7 +89,12 @@ export default function Gate() {
     void refresh()
   }
 
+  // Ignore repeated clicks while a review or exit is being saved.
+  const inFlight = useRef(new Set<string>())
   const review = async (r: VisitRegistration, approve: boolean, notes?: string) => {
+    const key = `r${r.visitRegistrationId}`
+    if (inFlight.current.has(key)) return
+    inFlight.current.add(key)
     setError('')
     try {
       await api(`/api/gate/facilities/${facilityId}/visit-registrations/${r.visitRegistrationId}/review`, { body: { approve, notes: notes || null } })
@@ -95,16 +102,23 @@ export default function Gate() {
       void refresh()
     } catch (e) {
       setError((e as Error).message)
+    } finally {
+      inFlight.current.delete(key)
     }
   }
 
   const confirmExit = async (r: AccessRecord) => {
+    const key = `x${r.accessRecordId}`
+    if (inFlight.current.has(key)) return
+    inFlight.current.add(key)
     try {
       await api(`/api/gate/access-records/${r.accessRecordId}/exit`, { method: 'POST' })
       setNotice({ tone: 'ok', text: `${r.visitorName} đã ra khỏi kho ${r.unitCode}.` })
       void refresh()
     } catch (e) {
       setError((e as Error).message)
+    } finally {
+      inFlight.current.delete(key)
     }
   }
 
@@ -134,13 +148,13 @@ export default function Gate() {
 
       <section className="panel">
         <h3 className="panel-title">Tìm & kiểm tra khách đến</h3>
-        <p className="muted">Nhập mã kho, số hợp đồng, số CCCD hoặc số điện thoại của khách hay người được ủy quyền.</p>
+        <p className="muted">Nhập mã kho, số hợp đồng, số CCCD, số điện thoại hoặc tên của khách hay người được ủy quyền. Chỉ cần gõ một phần, chữ hoa hay thường đều được (vd: <b>a</b>, <b>b-0</b>, <b>0912</b>).</p>
         <form className="search-row" onSubmit={search}>
           <span className="input-wrap grow">
             <Icon name="search" className="input-lead" />
             <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="vd: B-01, HD-DEMO-0001, 079300000456" />
           </span>
-          <button className="btn primary" type="submit" disabled={searching || query.trim().length < 2}><Icon name="search" size={16} /> {searching ? 'Đang tìm…' : 'Kiểm tra'}</button>
+          <button className="btn primary" type="submit" disabled={searching || !query.trim()}><Icon name="search" size={16} /> {searching ? 'Đang tìm…' : 'Kiểm tra'}</button>
         </form>
         {IS_DEMO && (
           <div className="quick-tries">
@@ -264,13 +278,17 @@ function RegistrationsPanel({ facilityId, regs, onReview }: { facilityId: number
                 <span className={`badge ${live ? 'ok' : 'info'}`}>{live ? 'Đang trong giờ' : 'Sắp tới'}</span>
               ) : rejecting === r.visitRegistrationId ? (
                 <span className="row wrap">
-                  <input value={notes} maxLength={500} placeholder="Lý do từ chối" onChange={(e) => setNotes(e.target.value)} />
-                  <button className="btn danger sm" disabled={notes.trim().length < 3} title="Nhập lý do từ chối (ít nhất 3 ký tự)" onClick={() => { onReview(r, false, notes.trim()); setRejecting(null); setNotes('') }}>Từ chối</button>
+                  <input value={notes} maxLength={500} placeholder="Lý do từ chối (bắt buộc)" onChange={(e) => setNotes(e.target.value)} aria-label="Lý do từ chối" />
+                  <button className="btn danger sm" disabled={notes.trim().length < 5} title={notes.trim().length < 5 ? 'Nhập lý do ít nhất 5 ký tự để khách biết vì sao bị từ chối' : undefined}
+                    onClick={() => { onReview(r, false, notes.trim()); setRejecting(null); setNotes('') }}>Từ chối</button>
                   <button className="btn ghost sm" onClick={() => setRejecting(null)}>Hủy</button>
                 </span>
               ) : (
                 <span className="row">
-                  <button className="btn primary sm" onClick={() => onReview(r, true)}><Icon name="check" size={14} /> Duyệt</button>
+                  {/* The API refuses to approve once the booked entry time has passed: only rejecting is left. */}
+                  {new Date(r.scheduledEntryAt).getTime() <= now
+                    ? <span className="badge bad" title="Không duyệt được lịch đã qua giờ vào dự kiến">Quá giờ hẹn</span>
+                    : <button className="btn primary sm" onClick={() => onReview(r, true)}><Icon name="check" size={14} /> Duyệt</button>}
                   <button className="btn outline sm" onClick={() => { setRejecting(r.visitRegistrationId); setNotes('') }}>Từ chối</button>
                 </span>
               )}
@@ -358,7 +376,10 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
   regs: VisitRegistration[]
   onRecorded: (r: AccessRecord) => void
 }) {
-  const people: Person[] = [v.customer, ...v.authorizedPersons]
+  // CCCD recorded at the gate in this session (PUT .../customers/{id}/citizen-id) replaces the one on file.
+  const [holderCid, setHolderCid] = useState<string | null>(null)
+  const holder = holderCid ? { ...v.customer, citizenId: holderCid } : v.customer
+  const people: Person[] = [holder, ...v.authorizedPersons]
   // Searched by someone's CCCD or phone: preselect that person.
   const [personIdx, setPersonIdx] = useState(() =>
     Math.max(0, people.findIndex((p) => p.citizenId === query || p.phoneNumber === query)))
@@ -373,6 +394,25 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
   const matches = typed !== '' && typed === (person.citizenId ?? '').trim()
   const alreadyInside = v.peopleInside.includes(person.fullName)
   const reg = activeRegistration(regs, v.contractId, person.authorizedPersonId)
+  const isHolder = person.authorizedPersonId == null
+  const [cidSaved, setCidSaved] = useState('')
+
+  // Only the holder's CCCD can be recorded here (staff checked the card in person); a co-signer's lives in the contract.
+  const recordCid = async () => {
+    if (busy || !v.customerId) return
+    setBusy(true); setError(''); setCidSaved('')
+    try {
+      const p = await api<Person>(`/api/gate/facilities/${facilityId}/customers/${v.customerId}/citizen-id`, {
+        method: 'PUT', body: { citizenId: typed, notes: person.citizenId ? `Sửa CCCD tại cổng (cũ: ${person.citizenId})` : 'Ghi nhận CCCD tại cổng' },
+      })
+      setHolderCid(p.citizenId ?? typed)
+      setCidSaved(person.citizenId ? 'Đã cập nhật số CCCD trong hồ sơ khách.' : 'Đã ghi nhận số CCCD vào hồ sơ khách.')
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const run = async (fn: () => Promise<AccessRecord>) => {
     setBusy(true)
@@ -426,6 +466,17 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
           <StatusBadge status={v.unitStatus} />
         </div>
         {v.issues.map((i) => <p key={i.code} className="alert bad"><Icon name="alert" size={16} />{i.message}</p>)}
+        {/* OverdueLocked has two causes (AccessService.FindIssues): unpaid rent/extra-charge bills, which the billing page
+            collects; or the contract itself past its end and locked, which is settled by renewing or returning the unit. */}
+        {v.issues.some((i) => i.code === 'OverdueLocked' && i.message.startsWith('Còn hóa đơn')) && (
+          <Link to={billingLink(v.contractNumber)} className="btn outline sm self-start"><Icon name="wallet" size={14} /> Thu tiền cho hợp đồng này</Link>
+        )}
+        {v.issues.some((i) => i.code === 'OverdueLocked' && !i.message.startsWith('Còn hóa đơn')) && (
+          <span className="row wrap">
+            <Link to={`/staff-contracts`} className="btn outline sm"><Icon name="refresh" size={14} /> Gia hạn & quá hạn</Link>
+            <Link to={`/staff-return?contract=${v.contractId}`} className="btn outline sm"><Icon name="door" size={14} /> Trả kho</Link>
+          </span>
+        )}
       </section>
 
       <section className="panel stack">
@@ -435,7 +486,7 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
         </div>
         <div className="person-picker">
           {people.map((p, i) => (
-            <button key={i} type="button" className={`person-option ${i === personIdx ? 'active' : ''}`} onClick={() => { setPersonIdx(i); setCitizenId(''); setError('') }}>
+            <button key={i} type="button" className={`person-option ${i === personIdx ? 'active' : ''}`} onClick={() => { setPersonIdx(i); setCitizenId(''); setError(''); setCidSaved('') }}>
               <span className="radio" />
               <span className="grow">
                 <b>{p.fullName}</b>
@@ -455,6 +506,19 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
           </span>
           <FieldNote text={cid.hint} />
         </label>
+        {isHolder && v.customerId != null && !person.citizenId && (
+          <div className="alert warn stack-sm">
+            <span><Icon name="idCard" size={16} /> Hồ sơ của {person.fullName} chưa có số CCCD. Kiểm tra thẻ tận tay, gõ số trên thẻ rồi ghi nhận vào hồ sơ trước khi cho vào.</span>
+            <button type="button" className="btn outline sm self-start" disabled={busy || typed.length !== 12} onClick={recordCid}>Ghi nhận CCCD vào hồ sơ</button>
+          </div>
+        )}
+        {isHolder && v.customerId != null && person.citizenId && typed.length === 12 && !matches && (
+          <div className="alert warn stack-sm">
+            <span><Icon name="alert" size={16} /> Số trên thẻ khác hồ sơ. Chỉ sửa khi đã đối chiếu thẻ CCCD gốc của chính chủ hợp đồng (ví dụ khách đổi thẻ mới); nếu không phải chính chủ, hãy ghi nhận từ chối.</span>
+            <button type="button" className="btn outline sm self-start" disabled={busy} onClick={recordCid}>Cập nhật CCCD trong hồ sơ</button>
+          </div>
+        )}
+        {cidSaved && <p className="alert ok"><Icon name="check" size={16} />{cidSaved}</p>}
         <label className="field">
           <span>Mục đích (không bắt buộc)</span>
           <input value={purpose} maxLength={255} placeholder={reg?.purpose ?? 'Gửi đồ, lấy đồ…'} onChange={(e) => setPurpose(e.target.value)} />
@@ -470,9 +534,9 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
           </button>
           {alreadyInside && <small className="muted">Người này đang ở trong kho, hãy xác nhận ra trước.</small>}
           <div className="deny-row">
-            <select value={denyReason} onChange={(e) => setDenyReason(e.target.value)}>
+            <Select value={denyReason} onChange={(e) => setDenyReason(e.target.value)}>
               {Object.entries(DenyReasons).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-            </select>
+            </Select>
             <button className="btn danger" disabled={busy} onClick={deny}>Ghi nhận từ chối</button>
           </div>
         </div>

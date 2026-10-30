@@ -3,7 +3,8 @@ import { api, fmtDate } from '../api'
 import { Badge, Empty, Icon } from '../components/ui'
 import type { Facility, FacilityReport, OperationsReport } from '../types'
 import { FormField, useValidatedForm } from '../components/form'
-import { hotlineError, normalizePhone, PHONE_FILTER, operatingHoursError, textError } from '../validation'
+import { hotlineError, localToday, normalizePhone, PHONE_FILTER, operatingHoursError, textError } from '../validation'
+import { Select } from '../components/Select'
 
 /**
  * #44 Operations manager, Figma "facility-branch-management": every facility (GET /api/operations/facilities)
@@ -91,7 +92,7 @@ export default function OpsFacilities() {
     const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }))
     const a = document.createElement('a')
     a.href = url
-    a.download = `co-so-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `co-so-${localToday()}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -125,14 +126,14 @@ export default function OpsFacilities() {
             <Icon name="search" size={16} className="input-lead" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm tên hoặc mã cơ sở..." />
           </span>
-          <select value={area} onChange={(e) => setArea(e.target.value)} aria-label="Khu vực">
+          <Select value={area} onChange={(e) => setArea(e.target.value)} aria-label="Khu vực">
             <option value="all">Khu vực: Tất cả</option>
             {areas.map((a) => <option key={a} value={a}>Khu vực: {a}</option>)}
-          </select>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Trạng thái">
+          </Select>
+          <Select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Trạng thái">
             <option value="all">Trạng thái: Tất cả</option>
             {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>Trạng thái: {v}</option>)}
-          </select>
+          </Select>
         </div>
         <button className="btn outline" onClick={exportCsv} disabled={shown.length === 0}><Icon name="file" size={15} /> Xuất báo cáo</button>
       </div>
@@ -241,7 +242,7 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
     setBusy(true)
     const body = {
       facilityName: f.facilityName.trim(), address: f.address.trim(), district: f.district.trim(),
-      city: f.city.trim(), hotline: normalizePhone(f.hotline), operatingHours: f.operatingHours.trim(),
+      city: f.city.trim(), hotline: normalizePhone(f.hotline), operatingHours: f.operatingHours.trim().replace(/\s*-\s*/, ' - '),
     }
     try {
       if (facility) {
@@ -249,7 +250,7 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
         await onDone(`Đã cập nhật ${body.facilityName}.`)
       } else {
         await api('/api/operations/facilities', { body })
-        await onDone(`Đã thêm cơ sở ${body.facilityName}. Quản lý cơ sở sẽ thêm kho cho cơ sở này.`)
+        await onDone(`Đã thêm cơ sở ${body.facilityName}. Thêm kho cho cơ sở này ở mục Kho từng cơ sở.`)
       }
     } catch (err) {
       setError((err as Error).message)
@@ -270,9 +271,9 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
         <FormField label="Giờ hoạt động" error={form.error('operatingHours')} hint="vd: 06:00 - 22:00 hoặc 24/7"><input {...form.field('operatingHours')} maxLength={100} /></FormField>
         {facility && (
           <label className="field"><span>Trạng thái</span>
-            <select value={f.status} onChange={(e) => form.setValue('status', e.target.value)}>
+            <Select value={f.status} onChange={(e) => form.setValue('status', e.target.value)}>
               {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            </Select>
           </label>
         )}
       </div>

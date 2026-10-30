@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react'
-import { BrowserRouter, HashRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { useEffect, type ReactNode } from 'react'
+import { BrowserRouter, HashRouter, Navigate, Route, Routes, useLocation, useNavigationType } from 'react-router-dom'
 import { IS_DEMO } from './api'
 import { AuthProvider, useAuth } from './auth'
 import { AdminLayout, OpsLayout, PortalLayout, StaffLayout } from './components/layout'
@@ -24,6 +24,18 @@ import Gate from './pages/Gate'
 import ContractDetail from './pages/ContractDetail'
 import Home from './pages/Home'
 import Invoices from './pages/Invoices'
+import InvoiceDetail from './pages/InvoiceDetail'
+import MoveInRegistration from './pages/MoveInRegistration'
+import ContractPolicy from './pages/ContractPolicy'
+import ContractRenew from './pages/ContractRenew'
+import ContractEarlyReturn from './pages/ContractEarlyReturn'
+import ContractSuspend from './pages/ContractSuspend'
+import AccountSecurity from './pages/AccountSecurity'
+import AccountProfile from './pages/AccountProfile'
+import { AdminSupport } from './pages/StaffSupport'
+import AdminSystem from './pages/AdminSystem'
+import AdminRevenue from './pages/AdminRevenue'
+import PickupAppointment from './pages/PickupAppointment'
 import { Login, Register } from './pages/Login'
 import MyUnits from './pages/MyUnits'
 import Rent from './pages/Rent'
@@ -35,11 +47,19 @@ import StaffReservations from './pages/StaffReservations'
 import StaffSupport from './pages/StaffSupport'
 import Support from './pages/Support'
 import TermsPage from './pages/Terms'
-import VisitRegistrationPage from './pages/VisitRegistration'
+import VisitRegistrationPage, { VisitHub } from './pages/VisitRegistration'
 import { GATE_ROLES, homeFor, Roles } from './types'
 
 // The demo build is served as a static page, so it keeps the route in the URL hash.
 const Router = IS_DEMO ? HashRouter : BrowserRouter
+
+/** Opening another page starts at its top; Back keeps where the browser was. */
+function ScrollToTop() {
+  const { pathname } = useLocation()
+  const type = useNavigationType()
+  useEffect(() => { if (type !== 'POP') window.scrollTo(0, 0) }, [pathname])
+  return null
+}
 
 function RequireRole({ roles, children }: { roles: string[]; children: ReactNode }) {
   const { user, loading } = useAuth()
@@ -53,6 +73,7 @@ export default function App() {
   return (
     <AuthProvider>
       <Router>
+        <ScrollToTop />
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
@@ -63,10 +84,22 @@ export default function App() {
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/my-units" element={<RequireRole roles={[Roles.Customer]}><MyUnits /></RequireRole>} />
             <Route path="/my-units/:id" element={<RequireRole roles={[Roles.Customer]}><ContractDetail /></RequireRole>} />
+            <Route path="/visit" element={<RequireRole roles={[Roles.Customer]}><VisitHub /></RequireRole>} />
             <Route path="/my-units/:id/visit" element={<RequireRole roles={[Roles.Customer]}><VisitRegistrationPage /></RequireRole>} />
+            <Route path="/my-units/:id/move-in" element={<RequireRole roles={[Roles.Customer]}><MoveInRegistration /></RequireRole>} />
+            <Route path="/my-units/:id/policy" element={<RequireRole roles={[Roles.Customer]}><ContractPolicy /></RequireRole>} />
+            <Route path="/my-units/:id/early-return" element={<RequireRole roles={[Roles.Customer]}><ContractEarlyReturn /></RequireRole>} />
+            <Route path="/my-units/:id/renew" element={<RequireRole roles={[Roles.Customer]}><ContractRenew /></RequireRole>} />
+            <Route path="/my-units/:id/suspend" element={<RequireRole roles={[Roles.Customer]}><ContractSuspend /></RequireRole>} />
+            <Route path="/account/profile" element={<RequireRole roles={Object.values(Roles)}><AccountProfile /></RequireRole>} />
+            <Route path="/account/profile/edit" element={<RequireRole roles={Object.values(Roles)}><AccountProfile mode="edit" /></RequireRole>} />
+            <Route path="/account/password" element={<RequireRole roles={Object.values(Roles)}><AccountProfile mode="password" /></RequireRole>} />
+            <Route path="/account/security" element={<RequireRole roles={[Roles.Customer]}><AccountSecurity /></RequireRole>} />
             <Route path="/support" element={<RequireRole roles={[Roles.Customer]}><Support /></RequireRole>} />
             <Route path="/rent" element={<RequireRole roles={[Roles.Customer]}><Rent /></RequireRole>} />
             <Route path="/invoices" element={<RequireRole roles={[Roles.Customer]}><Invoices /></RequireRole>} />
+            <Route path="/reservations/:id/pickup" element={<RequireRole roles={[Roles.Customer]}><PickupAppointment /></RequireRole>} />
+            <Route path="/invoices/:id" element={<RequireRole roles={[Roles.Customer]}><InvoiceDetail /></RequireRole>} />
             <Route path="/payment-result" element={<RequireRole roles={[Roles.Customer]}><Invoices /></RequireRole>} />
           </Route>
           <Route element={<RequireRole roles={GATE_ROLES}><StaffLayout /></RequireRole>}>
@@ -85,12 +118,19 @@ export default function App() {
           <Route element={<RequireRole roles={[Roles.Admin]}><AdminLayout /></RequireRole>}>
             <Route path="/admin" element={<ConsoleOverview admin />} />
             <Route path="/admin/storage" element={<AdminStorage />} />
+            {/* Units are managed on "Kho Lưu Trữ"; the old per-facility page keeps working as a link. */}
+            <Route path="/admin/units" element={<KeepQuery to="/admin/storage" />} />
+            <Route path="/admin/facilities" element={<OpsFacilities />} />
             <Route path="/admin/customers" element={<AdminCustomers />} />
+            <Route path="/admin/policies" element={<OpsPolicies />} />
             <Route path="/admin/settings" element={<AccountSettings />} />
             <Route path="/admin/users" element={<AdminUsers />} />
             <Route path="/admin/contracts" element={<AdminContracts />} />
             <Route path="/admin/emails" element={<AdminEmails />} />
-            <Route path="/admin/revenue" element={<OpsRevenue />} />
+            <Route path="/admin/support" element={<AdminSupport />} />
+            <Route path="/admin/system" element={<AdminSystem />} />
+            <Route path="/admin/revenue" element={<AdminRevenue />} />
+            <Route path="/admin/reports" element={<OpsRevenue title="Báo Cáo" />} />
           </Route>
           <Route element={<RequireRole roles={[Roles.OpsManager]}><OpsLayout /></RequireRole>}>
             <Route path="/ops" element={<ConsoleOverview admin={false} />} />
@@ -105,4 +145,9 @@ export default function App() {
       </Router>
     </AuthProvider>
   )
+}
+
+/** Redirect that keeps the query string (?facility=…&q=…). */
+function KeepQuery({ to }: { to: string }) {
+  return <Navigate to={to + useLocation().search} replace />
 }

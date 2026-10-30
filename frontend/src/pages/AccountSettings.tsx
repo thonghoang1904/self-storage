@@ -4,6 +4,7 @@ import { api } from '../api'
 import { useAuth } from '../auth'
 import { Icon } from '../components/ui'
 import { Roles, roleLabel, type UserDto } from '../types'
+import { staffCode } from '../validation'
 
 /**
  * "Cài Đặt" of the administrator and the operations manager: the signed-in account (GET /api/auth/me), what the
@@ -15,8 +16,7 @@ const PERMISSIONS: Record<string, string[]> = {
   [Roles.Admin]: [
     'Xem tổng quan, doanh thu và kho của mọi cơ sở',
     'Quản lý tài khoản nhân viên: thêm, đổi vai trò, khóa',
-    'Tra cứu khách hàng, sửa hợp đồng, trả kho',
-    'Theo dõi email hệ thống và gửi lại email lỗi',
+    'Tra cứu khách hàng, xem hợp đồng, trả kho',
   ],
   [Roles.OpsManager]: [
     'Xem tổng quan và doanh thu của mọi cơ sở',
@@ -52,7 +52,7 @@ export default function AccountSettings() {
         </div>
         <dl className="kv-grid">
           <div><dt>Tên đăng nhập</dt><dd>{me.username}</dd></div>
-          <div><dt>Mã tài khoản</dt><dd>#{me.userId}</dd></div>
+          <div><dt>Mã nhân viên</dt><dd><span className="code-chip">{staffCode(me.userId)}</span></dd></div>
           <div><dt>Vai trò</dt><dd>{roleLabel(me.role)}</dd></div>
           <div><dt>Đổi thông tin cá nhân</dt><dd className="muted">{me.role === Roles.Admin ? 'Sửa ở mục Nhân Viên' : 'Nhờ quản trị hệ thống sửa ở mục Nhân Viên'}</dd></div>
         </dl>

@@ -4,19 +4,15 @@ import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, splitTypeName, StatusBadge } from '../components/ui'
 import type { StorageUnit, UnitType } from '../types'
 import { Metric } from './FacilityOverview'
-import { CODE_FILTER, textError, unitCodeError } from '../validation'
-import { FieldNote, useInputFilter } from '../components/form'
+import { Select } from '../components/Select'
+import { EMPTY_UNIT_FORM, LOCKED_UNIT_STATUSES, saveUnit, UnitForm, unitFormOf, type UnitFormValue } from '../components/UnitForm'
 
 /**
  * Facility manager: the units of the facility (#43, Figma "storage-management").
- * Lists them (GET .../facility-management/facilities/{id}/units), adds one (POST), edits code/type/floor/zone (PUT)
- * and moves a free unit in or out of maintenance (PUT .../status). The price always follows the unit type's
- * listed rate, which only the operations manager changes.
+ * Lists them (GET .../facility-management/facilities/{id}/units), adds one (POST), edits code/type/floor/zone (PUT;
+ * a rented or reserved unit can only be renamed) and moves a free unit in or out of maintenance (PUT .../status).
+ * The price always follows the unit type's listed rate, which only the operations manager changes.
  */
-
-interface Form { unitId: number | null; unitTypeId: number; unitCode: string; floorNumber: number; zoneArea: string }
-const EMPTY: Form = { unitId: null, unitTypeId: 0, unitCode: '', floorNumber: 1, zoneArea: '' }
-const LOCKED = ['Rented', 'OverdueLocked', 'Reserved']
 
 export default function FacilityUnits() {
   const { facilityId } = useStaffFacility()
@@ -25,8 +21,7 @@ export default function FacilityUnits() {
   const [q, setQ] = useState('')
   const [status, setStatus] = useState('all')
   const [typeId, setTypeId] = useState(0)
-  const [form, setForm] = useState<Form | null>(null)
-  const code = useInputFilter(CODE_FILTER)
+  const [form, setForm] = useState<UnitFormValue | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -46,13 +41,14 @@ export default function FacilityUnits() {
   const shown = units.filter((u) => (status === 'all' || u.status === status) && (!typeId || u.unitTypeId === typeId)
     && (!q.trim() || `${u.unitCode} ${u.zoneArea ?? ''}`.toLowerCase().includes(q.trim().toLowerCase())))
 
-  const run = async (fn: () => Promise<unknown>, done: string) => {
+  /** Runs an action; the notice is `done`, or else the message the action returns. */
+  const run = async (fn: () => Promise<unknown>, done?: string) => {
     setError('')
     setNotice('')
     setBusy(true)
     try {
-      await fn()
-      setNotice(done)
+      const result = await fn()
+      setNotice(done ?? String(result))
       await load()
       return true
     } catch (e) {
@@ -66,17 +62,7 @@ export default function FacilityUnits() {
   const save = async (e: FormEvent) => {
     e.preventDefault()
     if (!form || !facilityId) return
-    const type = types.find((t) => t.unitTypeId === form.unitTypeId) ?? types[0]
-    if (!type) { setError('Vui lòng chọn loại kho'); return }
-    const invalid = unitCodeError(form.unitCode)
-      || ((!Number.isInteger(form.floorNumber) || form.floorNumber < 1 || form.floorNumber > 100) && 'Tầng phải là số nguyên từ 1 đến 100')
-      || textError(form.zoneArea, 'Khu vực', 1, 30, true)
-    if (invalid) { setError(invalid); return }
-    const body = { unitTypeId: type.unitTypeId, unitCode: form.unitCode.trim(), floorNumber: form.floorNumber, zoneArea: form.zoneArea.trim() || null, monthlyPrice: type.baseMonthlyRate }
-    const base = `/api/facility-management/facilities/${facilityId}/units`
-    const ok = await run(
-      () => form.unitId ? api(`${base}/${form.unitId}`, { method: 'PUT', body }) : api(base, { body }),
-      form.unitId ? `Đã cập nhật kho ${body.unitCode}.` : `Đã thêm kho ${body.unitCode}.`)
+    const ok = await run(() => saveUnit(facilityId, form, units, types))
     if (ok) setForm(null)
   }
 
@@ -84,7 +70,13 @@ export default function FacilityUnits() {
     () => api(`/api/facility-management/facilities/${facilityId}/units/${u.unitId}/status`, { method: 'PUT', body: { status: next } }),
     next === 'UnderMaintenance' ? `Kho ${u.unitCode} đã chuyển sang bảo trì.` : `Kho ${u.unitCode} đã hoạt động trở lại.`)
 
-  const selectedType = types.find((t) => t.unitTypeId === form?.unitTypeId) ?? (form ? types[0] : undefined)
+  // DELETE only works for an empty or maintenance unit that never had a contract, reservation or ticket;
+  // otherwise the API answers 409 and the unit should go to maintenance instead.
+  const [removing, setRemoving] = useState<number | null>(null)
+  const removeUnit = async (u: StorageUnit) => {
+    const ok = await run(() => api(`/api/facility-management/facilities/${facilityId}/units/${u.unitId}`, { method: 'DELETE' }), `Đã xóa kho ${u.unitCode}.`)
+    if (ok) setRemoving(null)
+  }
 
   return (
     <div className="stack-xl">
@@ -93,7 +85,7 @@ export default function FacilityUnits() {
           <h1>Kho Lưu Trữ</h1>
           <p className="muted">Thêm kho mới, sửa vị trí và đưa kho vào bảo trì khi cần sửa chữa.</p>
         </div>
-        <button className="btn primary" disabled={!types.length} onClick={() => { setForm({ ...EMPTY, unitTypeId: types[0]?.unitTypeId ?? 0 }); setError(''); setNotice('') }}>
+        <button className="btn primary" disabled={!types.length} onClick={() => { setForm({ ...EMPTY_UNIT_FORM, unitTypeId: types[0]?.unitTypeId ?? 0 }); setError(''); setNotice('') }}>
           <Icon name="plus" size={16} /> Thêm kho
         </button>
       </div>
@@ -105,38 +97,7 @@ export default function FacilityUnits() {
         <Metric icon="settings" tone="warn" label="Đang bảo trì" value={String(count('UnderMaintenance'))} note="không nhận khách mới" />
       </div>
 
-      {form && (
-        <form className="panel" onSubmit={save}>
-          <div className="panel-head">
-            <h2 className="panel-title">{form.unitId ? `Sửa kho ${units.find((u) => u.unitId === form.unitId)?.unitCode ?? ''}` : 'Thêm kho mới'}</h2>
-            <button type="button" className="icon-btn" aria-label="Đóng" onClick={() => setForm(null)}><Icon name="x" /></button>
-          </div>
-          <div className="form-grid four">
-            <label className="field"><span>Mã kho</span>
-              <input value={form.unitCode} onChange={(e) => setForm({ ...form, unitCode: code.keep(e.target.value) })} placeholder="vd: B-04" maxLength={30} required autoFocus />
-              <FieldNote text={code.hint} />
-            </label>
-            <label className="field"><span>Loại kho</span>
-              <select value={form.unitTypeId} onChange={(e) => setForm({ ...form, unitTypeId: Number(e.target.value) })} required>
-                {types.map((t) => <option key={t.unitTypeId} value={t.unitTypeId}>{splitTypeName(t.typeName).name}</option>)}
-              </select>
-            </label>
-            <label className="field"><span>Tầng</span>
-              <input type="number" min={1} max={100} value={form.floorNumber} onChange={(e) => setForm({ ...form, floorNumber: Number(e.target.value) || 1 })} required />
-            </label>
-            <label className="field"><span>Khu vực</span>
-              <input value={form.zoneArea} onChange={(e) => setForm({ ...form, zoneArea: e.target.value })} placeholder="vd: Khu B" maxLength={30} />
-            </label>
-          </div>
-          {selectedType && (
-            <p className="hint"><Icon name="wallet" size={15} /> Giá thuê theo bảng giá loại kho: <b>{fmtMoney(selectedType.baseMonthlyRate)}/tháng</b> · {splitTypeName(selectedType.typeName).size}{selectedType.hasClimateControl ? ' · có điều hòa' : ''}</p>
-          )}
-          <div className="row end">
-            <button type="button" className="btn ghost" onClick={() => setForm(null)}>Hủy</button>
-            <button className="btn primary" disabled={busy}>{busy ? 'Đang lưu…' : form.unitId ? 'Lưu thay đổi' : 'Thêm kho'}</button>
-          </div>
-        </form>
-      )}
+      {form && <UnitForm form={form} onChange={setForm} units={units} types={types} busy={busy} onSubmit={save} onClose={() => setForm(null)} />}
 
       {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
@@ -147,17 +108,17 @@ export default function FacilityUnits() {
             <Icon name="search" size={16} className="input-lead" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm mã kho, khu vực…" />
           </span>
-          <select value={typeId} onChange={(e) => setTypeId(Number(e.target.value))}>
+          <Select value={typeId} onChange={(e) => setTypeId(Number(e.target.value))}>
             <option value={0}>Tất cả loại kho</option>
             {types.map((t) => <option key={t.unitTypeId} value={t.unitTypeId}>{splitTypeName(t.typeName).name}</option>)}
-          </select>
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+          </Select>
+          <Select value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="all">Tất cả trạng thái</option>
             <option value="Available">Còn trống</option>
             <option value="Rented">Đang cho thuê</option>
             <option value="UnderMaintenance">Đang bảo trì</option>
             <option value="OverdueLocked">Khóa do quá hạn</option>
-          </select>
+          </Select>
         </div>
         <button className="btn ghost" onClick={() => { setQ(''); setStatus('all'); setTypeId(0) }}>Xóa bộ lọc</button>
       </div>
@@ -168,7 +129,7 @@ export default function FacilityUnits() {
             <thead><tr><th>Mã kho</th><th>Loại kho</th><th>Vị trí</th><th>Giá thuê</th><th>Trạng thái</th><th className="right">Thao tác</th></tr></thead>
             <tbody>
               {shown.map((u) => {
-                const locked = LOCKED.includes(u.status)
+                const locked = LOCKED_UNIT_STATUSES.includes(u.status)
                 return (
                   <tr key={u.unitId}>
                     <td className="code">{u.unitCode}</td>
@@ -184,10 +145,22 @@ export default function FacilityUnits() {
                         {u.status === 'UnderMaintenance' && (
                           <button className="btn primary sm" disabled={busy} onClick={() => setUnitStatus(u, 'Available')}><Icon name="check" size={14} /> Hoạt động lại</button>
                         )}
-                        <button className="icon-action" title={locked ? 'Kho đang có khách, không sửa được' : 'Sửa kho'} disabled={locked || busy}
-                          onClick={() => { setForm({ unitId: u.unitId, unitTypeId: u.unitTypeId, unitCode: u.unitCode, floorNumber: u.floorNumber, zoneArea: u.zoneArea ?? '' }); setError(''); setNotice(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
+                        <button className="icon-action" title={locked ? 'Kho đang có khách: chỉ đổi được mã kho' : 'Sửa kho'} disabled={busy}
+                          onClick={() => { setForm(unitFormOf(u)); setError(''); setNotice(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
                           <Icon name="edit" size={15} />
                         </button>
+                        {(u.status === 'Available' || u.status === 'UnderMaintenance') && removing !== u.unitId && (
+                          <button className="icon-action" title="Xóa kho" disabled={busy} onClick={() => { setRemoving(u.unitId); setError(''); setNotice('') }}>
+                            <Icon name="trash" size={15} />
+                          </button>
+                        )}
+                        {removing === u.unitId && (
+                          <>
+                            <small>Xóa kho {u.unitCode}?</small>
+                            <button className="btn danger sm" disabled={busy} onClick={() => void removeUnit(u)}>Xóa</button>
+                            <button className="btn ghost sm" disabled={busy} onClick={() => setRemoving(null)}>Không</button>
+                          </>
+                        )}
                       </span>
                     </td>
                   </tr>
@@ -197,7 +170,7 @@ export default function FacilityUnits() {
           </table>
           {shown.length === 0 && <Empty icon="package">{units.length ? 'Không có kho nào khớp bộ lọc.' : 'Cơ sở chưa có kho nào.'}</Empty>}
         </div>
-        <small className="muted">Kho đang cho thuê, giữ chỗ hoặc khóa quá hạn không sửa và không chuyển bảo trì được. Đưa kho vào bảo trì bị chặn nếu làm thiếu chỗ cho các đơn đã đặt.</small>
+        <small className="muted">Kho đang cho thuê, giữ chỗ hoặc khóa quá hạn chỉ đổi được mã kho, không chuyển bảo trì được. Đưa kho vào bảo trì bị chặn nếu làm thiếu chỗ cho các đơn đã đặt.</small>
       </section>
     </div>
   )

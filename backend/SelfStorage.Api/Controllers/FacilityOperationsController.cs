@@ -123,41 +123,39 @@ public sealed class FacilityOperationsController(
             ?? throw AppException.NotFound("Không tìm thấy yêu cầu hủy");
         if (request.Status != "Pending")
             throw AppException.Conflict("Yêu cầu hủy đã được xử lý");
-        if (req.Approve && request.Reservation.Status is not
+        var approve = req.Approve == true;
+        if (!approve && string.IsNullOrWhiteSpace(req.Notes))
+            throw AppException.BadRequest("Vui lòng ghi lý do từ chối yêu cầu hủy để khách biết");
+        if (approve && request.Reservation.Status is not
             (ReservationStatus.PendingDeposit or ReservationStatus.Confirmed))
             throw AppException.Conflict("Đơn đặt kho không còn ở trạng thái có thể hủy");
 
-        if (req.Approve)
+        if (approve)
         {
             var depositInvoice = await db.Invoices.Include(i => i.Payments)
                 .FirstOrDefaultAsync(i => i.ReservationId == request.ReservationId
                     && i.InvoiceType == "DEPOSIT", ct);
+            // Cancelling under a running online payment would leave the customer's money without an invoice.
+            if (depositInvoice is not null && depositInvoice.Payments.Any(p => p.Status == "Pending"))
+                throw AppException.Conflict("Khách đang thanh toán cọc trực tuyến; hãy chờ giao dịch hoàn tất rồi duyệt hủy");
             var paidDeposit = depositInvoice?.Payments.Where(p => p.Status == "Success")
                 .Sum(p => p.AmountPaid) ?? 0m;
             var policy = await rentalPolicies.ForFacilityAsync(facilityId, ct);
-            var cancellationFee = decimal.Round(paidDeposit * policy.CancellationFeePercent / 100m, 2,
-                MidpointRounding.AwayFromZero);
-            request.ApprovedRefundAmount = Math.Max(0m, paidDeposit - cancellationFee);
+            // Free within the grace period counted from booking to when the customer asked to cancel.
+            request.ApprovedRefundAmount = policy.CancellationRefund(
+                paidDeposit, request.Reservation.CreatedAt, request.RequestedAt);
             request.Reservation.Status = ReservationStatus.Cancelled;
-            if (depositInvoice is { Status: "Unpaid" })
-            {
-                depositInvoice.Status = "Cancelled";
-                foreach (var pendingPayment in depositInvoice.Payments.Where(p => p.Status == "Pending"))
-                {
-                    pendingPayment.Status = "Failed";
-                    pendingPayment.PaymentNotes = "Giao dịch bị hủy do đơn đặt kho đã được duyệt hủy.";
-                }
-            }
+            if (depositInvoice is { Status: "Unpaid" }) depositInvoice.Status = "Cancelled";
         }
 
-        request.Status = req.Approve ? "Approved" : "Rejected";
+        request.Status = approve ? "Approved" : "Rejected";
         request.ResolvedByStaffId = staffId;
         request.ResolvedAt = clock.GetLocalNow().DateTime;
         request.ResolutionNotes = string.IsNullOrWhiteSpace(req.Notes) ? null : req.Notes.Trim();
         db.ActivityLogs.Add(new ActivityLog
         {
             UserId = staffId,
-            Action = req.Approve ? "ReservationCancellationApproved" : "ReservationCancellationRejected",
+            Action = approve ? "ReservationCancellationApproved" : "ReservationCancellationRejected",
             IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
             Details = $"Reservation {request.Reservation.ReservationCode}; approved refund {request.ApprovedRefundAmount ?? 0m:N0}",
             CreatedAt = clock.GetLocalNow().DateTime,
@@ -200,7 +198,7 @@ public sealed class FacilityOperationsController(
             .ToDictionaryAsync(x => x.Status, x => x.Count, ct);
 
         var revenueByStatus = await db.Payments
-            .Where(p => (p.Status == "Success" || p.Status == "Refunded")
+            .Where(p => (p.Status == "Success" || p.Status == "Refunded") && p.PaymentMethod != "DepositOffset"
                 && p.PaymentDate >= start.ToDateTime(TimeOnly.MinValue)
                 && p.PaymentDate < end.AddDays(1).ToDateTime(TimeOnly.MinValue)
                 && db.Invoices.Any(i => i.InvoiceId == p.InvoiceId

@@ -1,8 +1,10 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
-import { api, fmtDate, fmtMoney } from '../api'
+import { Link, useLocation } from 'react-router-dom'
+import { api, billingLink, fmtDate, fmtMoney } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import { ExtraChargeFees, type Contract, type ExtraChargeInvoice } from '../types'
+import { Select } from '../components/Select'
 
 /**
  * Contracts of the facility (GET /api/facilities/{id}/contracts?status) and billing an extra charge on one
@@ -11,20 +13,21 @@ import { ExtraChargeFees, type Contract, type ExtraChargeInvoice } from '../type
  */
 
 const STATUSES = [
+  { value: '', label: 'Tất cả' },
   { value: 'Active', label: 'Đang hiệu lực' },
   { value: 'Overdue', label: 'Quá hạn' },
   { value: 'Renewed', label: 'Đã gia hạn' },
   { value: 'Terminated', label: 'Đã chấm dứt' },
   { value: 'Liquidated', label: 'Đã thanh lý' },
-  { value: '', label: 'Tất cả' },
 ]
 const pad = (n: number) => String(n).padStart(2, '0')
 const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` }
 
 export default function FacilityContracts() {
   const { facilityId } = useStaffFacility()
-  const [status, setStatus] = useState('Active')
-  const [q, setQ] = useState('')
+  const [status, setStatus] = useState('')
+  const location = useLocation()
+  const [q, setQ] = useState(() => new URLSearchParams(location.search).get('q') ?? '')
   const [contracts, setContracts] = useState<Contract[]>([])
   const [chargeFor, setChargeFor] = useState<number | null>(null)
   const [created, setCreated] = useState<ExtraChargeInvoice[]>([])
@@ -66,7 +69,8 @@ export default function FacilityContracts() {
 
       {created.length > 0 && (
         <p className="alert ok"><Icon name="check" size={16} />
-          Đã lập {created.length} hóa đơn phụ thu ({created.map((x) => x.invoiceNumber).join(', ')}), tổng {fmtMoney(total)}. Khách thấy ở mục Thanh Toán; nhân viên thu tại Hóa Đơn & Thu Tiền.
+          Đã lập {created.length} hóa đơn phụ thu ({created.map((x) => x.invoiceNumber).join(', ')}), tổng {fmtMoney(total)}. Khách thấy ở mục Thanh Toán.
+          {created.length === 1 && <> <Link to={billingLink(created[0].invoiceNumber)} className="link">Thu tiền ngay</Link></>}
         </p>
       )}
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
@@ -87,9 +91,10 @@ export default function FacilityContracts() {
                       <td className="money">{fmtMoney(c.monthlyRentFee)}<small className="muted">/tháng</small></td>
                       <td><StatusBadge status={c.status} /></td>
                       <td className="right">
-                        {billable
-                          ? <button className="btn outline sm" onClick={() => setChargeFor(chargeFor === c.contractId ? null : c.contractId)}><Icon name="plus" size={14} /> Lập phụ thu</button>
-                          : <small className="muted">—</small>}
+                        <span className="row end">
+                          {billable && <button className="btn outline sm" onClick={() => setChargeFor(chargeFor === c.contractId ? null : c.contractId)}><Icon name="plus" size={14} /> Lập phụ thu</button>}
+                          <Link to={billingLink(c.contractNumber)} className="btn ghost sm"><Icon name="wallet" size={14} /> Hóa đơn</Link>
+                        </span>
                       </td>
                     </tr>
                     {chargeFor === c.contractId && (
@@ -107,7 +112,7 @@ export default function FacilityContracts() {
           </table>
           {shown.length === 0 && <Empty icon="clipboard">Không có hợp đồng nào.</Empty>}
         </div>
-        <small className="muted">Chỉ lập phụ thu cho hợp đồng đang hiệu lực hoặc quá hạn. Đơn giá theo bảng phí của quản lý vận hành.</small>
+        <small className="muted">Chỉ lập phụ thu cho hợp đồng đang hiệu lực hoặc quá hạn. Đơn giá theo bảng phí hiện hành.</small>
       </section>
     </div>
   )
@@ -123,6 +128,9 @@ function ChargeForm({ contract: c, facilityId, onDone }: { contract: Contract; f
   const fee = ExtraChargeFees.find((f) => f.feeTypeId === feeTypeId)!
 
   const submit = async () => {
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 365) return setError('Số lượng từ 1 đến 365')
+    if (dueDate && dueDate < todayIso()) return setError('Hạn thanh toán không được ở quá khứ')
+    if (notes.trim().length > 255) return setError('Ghi chú tối đa 255 ký tự')
     setError('')
     setBusy(true)
     try {
@@ -141,9 +149,9 @@ function ChargeForm({ contract: c, facilityId, onDone }: { contract: Contract; f
       <b>Phụ thu cho hợp đồng {c.contractNumber} · kho {c.unitCode}</b>
       <div className="form-grid four">
         <label className="field"><span>Loại phí</span>
-          <select value={feeTypeId} onChange={(e) => setFeeTypeId(Number(e.target.value))}>
+          <Select value={feeTypeId} onChange={(e) => setFeeTypeId(Number(e.target.value))}>
             {ExtraChargeFees.map((f) => <option key={f.feeTypeId} value={f.feeTypeId}>{f.feeName}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="field"><span>{fee.perDay ? 'Số ngày' : 'Số lượng'}</span>
           <input type="number" min={1} max={365} value={quantity} onChange={(e) => setQuantity(Math.max(1, Math.min(365, Number(e.target.value) || 1)))} />

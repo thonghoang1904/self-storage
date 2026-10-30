@@ -5,8 +5,8 @@
  * Data lives in localStorage of this browser only; "Đặt lại dữ liệu demo" wipes it.
  */
 import type {
-  AccessIssue, ActivityLog, AdminUser, AdminContract, EmailOutboxMessage, OperationsReportRow, CancellationRequest, CancellationRefund, ExtraChargeInvoice, FacilityStaff, FacilityWorkQueue, FacilityTaskContract, FacilityReport, OperationsReport, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
-  OverdueSummary, Person, Renewal, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate, VisitRegistration, RentalPolicy, FeeConfiguration, Promotion,
+  AccessIssue, ActivityLog, EarlyReturnQuote, EarlyReturnRequest, AdminUser, AdminContract, EmailOutboxMessage, OperationsReportRow, CancellationRequest, CancellationRefund, ExtraChargeInvoice, FacilityStaff, FacilityWorkQueue, FacilityTaskContract, FacilityReport, OperationsReport, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
+  OverdueSummary, Person, Renewal, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate, VisitRegistration, RentalPolicy, FeeConfiguration, Promotion, ContractSuspension, SecuritySettings, LoginSession, AccountProfile, AccountActivity,
 } from '../types'
 import { Roles } from '../types'
 
@@ -15,10 +15,10 @@ const DB_KEY = 'ss_mock_db_v12'
 
 // ------------------------------------------------------------------ data model
 
-interface User { userId: number; username: string; password: string; fullName: string; email: string; phoneNumber: string; citizenId: string | null; role: string; status?: string }
+interface User { userId: number; username: string; password: string; fullName: string; email: string; phoneNumber: string; citizenId: string | null; role: string; status?: string; address?: string | null }
 interface Unit { unitId: number; facilityId: number; unitTypeId: number; unitCode: string; floorNumber: number; zoneArea: string; monthlyPrice: number; status: string }
 interface Rsv { reservationId: number; reservationCode: string; customerId: number; facilityId: number; unitTypeId: number; assignedUnitId: number | null; expectedStartDate: string; checkInAppointmentAt?: string | null; durationMonths: number; depositAmount: number; estimatedTotalFee: number; status: string; depositDeadline: string; createdAt: string; promoCode?: string | null; promotionDiscountAmount?: number; depositWasPaid?: boolean }
-interface Ctr { contractId: number; contractNumber: string; customerId: number; unitId: number; startDate: string; endDate: string; monthlyRentFee: number; depositPaid: number; status: string; signedDate?: string; termsConditions?: string | null }
+interface Ctr { contractId: number; contractNumber: string; customerId: number; unitId: number; startDate: string; endDate: string; monthlyRentFee: number; depositPaid: number; status: string; signedDate?: string; termsConditions?: string | null; earlyReturnFee?: number }
 interface Rnw { renewalId: number; contractId: number; oldEndDate: string; newEndDate: string; extensionMonths: number; renewalFee: number; status: string; requestedAt: string }
 interface Sup { requestId: number; requestCode: string; customerId: number; facilityId: number; contractId: number; unitId: number; assignedStaffId: number | null; category: string; priority: string; title: string; description: string; status: string; createdAt: string; resolvedAt: string | null; checklist?: Chk[] }
 interface Chk { checklistItemId: number; sortOrder: number; description: string; isCompleted: boolean; completedAt: string | null; completedByStaffId: number | null; notes: string | null }
@@ -51,6 +51,7 @@ interface Db {
   supports: Sup[]
   supportUpdates: SupUpd[]
   refunds?: { contractId: number; amount: number; at: string }[]
+  earlyRequests?: EarlyReturnRequest[]
   logs?: (ActivityLog & { userId: number })[]
   /** ReservationCancellationRequests; refunds of an approved one are kept with it. */
   cancellations?: Cnl[]
@@ -58,6 +59,10 @@ interface Db {
   extraCharges?: Xtra[]
   /** EmailOutboxMessages: invoice and receipt emails (sent by a worker in the real backend). */
   emails?: (EmailOutboxMessage & { emailOutboxMessageId: number })[]
+  /** Awaiting backend (docs/API-cho-backend.md): contract suspensions and account security. */
+  suspensions?: ContractSuspension[]
+  security?: Record<number, SecuritySettings>
+  sessions?: Record<number, LoginSession[]>
 }
 interface Cnl { cancellationRequestId: number; reservationId: number; customerId: number; reason: string; status: string; requestedAt: string; resolvedAt: string | null; resolvedByStaffId: number | null; resolutionNotes: string | null; approvedRefundAmount: number | null; refunds: { amount: number; method: string; code: string | null; at: string; staffId: number }[] }
 interface Xtra { id: number; contractId: number; feeCode: string; feeName: string; unitPrice: number; quantity: number; notes: string | null; dueDate: string; createdAt: string; paid?: Paid }
@@ -134,7 +139,7 @@ function seed(): Db {
 
   const records: Rec[] = [
     { accessRecordId: 1, contractId: 1, facilityId: 1, unitId: unit(1, 'B-01').unitId, authorizedPersonId: null, verifiedByStaffId: 3, result: 'Granted', denyReason: null, purpose: 'Gửi đồ', entryTime: localIso(addDays(atToday(9, 10), -3)), exitTime: localIso(addDays(atToday(9, 45), -3)) },
-    { accessRecordId: 2, contractId: 1, facilityId: 1, unitId: unit(1, 'B-01').unitId, authorizedPersonId: 1, verifiedByStaffId: 3, result: 'Granted', denyReason: null, purpose: 'Lấy đồ', entryTime: localIso(addDays(atToday(17, 20), -1)), exitTime: localIso(addDays(atToday(17, 40), -1)) },
+    { accessRecordId: 2, contractId: 1, facilityId: 1, unitId: unit(1, 'B-01').unitId, authorizedPersonId: 1, verifiedByStaffId: 3, result: 'Granted', denyReason: null, purpose: 'Lấy đồ ra', entryTime: localIso(addDays(atToday(17, 20), -1)), exitTime: localIso(addDays(atToday(17, 40), -1)) },
     { accessRecordId: 3, contractId: 4, facilityId: 1, unitId: unit(1, 'C-02').unitId, authorizedPersonId: null, verifiedByStaffId: 3, result: 'Denied', denyReason: 'OverdueLocked', purpose: null, entryTime: localIso(atToday(7, 5)), exitTime: null },
     { accessRecordId: 4, contractId: 3, facilityId: 1, unitId: unit(1, 'C-01').unitId, authorizedPersonId: null, verifiedByStaffId: 3, result: 'Granted', denyReason: null, purpose: 'Lấy hàng', entryTime: localIso(atToday(6, 40)), exitTime: localIso(atToday(7, 15)) },
     { accessRecordId: 5, contractId: 5, facilityId: 1, unitId: unit(1, 'D-01').unitId, authorizedPersonId: 2, verifiedByStaffId: 3, result: 'Granted', denyReason: null, purpose: 'Nhập hàng', companionCount: 2, entryTime: localIso(atToday(6, 50)), exitTime: null },
@@ -157,8 +162,8 @@ function seed(): Db {
     unitTypes, units, reservations, contracts, persons, records,
     visits: [
       // Người Nhà of B-01 is approved to come in now (gate demo); the owner has one waiting for staff tomorrow.
-      { visitRegistrationId: 1, contractId: 1, customerId: 4, authorizedPersonId: 1, scheduledEntryAt: tz(new Date(now.getTime() - 3600000)), scheduledExitAt: tz(new Date(now.getTime() + 3 * 3600000)), purpose: 'Lấy đồ', status: 'Approved', requestedAt: localIso(addDays(now, -1)), reviewedAt: localIso(addDays(now, -1)), reviewNotes: null },
-      { visitRegistrationId: 2, contractId: 1, customerId: 4, authorizedPersonId: null, scheduledEntryAt: tz(addDays(atToday(9, 0), 1)), scheduledExitAt: tz(addDays(atToday(10, 30), 1)), purpose: 'Gửi thêm đồ', status: 'Pending', requestedAt: localIso(now), reviewedAt: null, reviewNotes: null },
+      { visitRegistrationId: 1, contractId: 1, customerId: 4, authorizedPersonId: 1, scheduledEntryAt: tz(new Date(now.getTime() - 3600000)), scheduledExitAt: tz(new Date(now.getTime() + 3 * 3600000)), purpose: 'Lấy đồ ra', status: 'Approved', requestedAt: localIso(addDays(now, -1)), reviewedAt: localIso(addDays(now, -1)), reviewNotes: null },
+      { visitRegistrationId: 2, contractId: 1, customerId: 4, authorizedPersonId: null, scheduledEntryAt: tz(addDays(atToday(9, 0), 1)), scheduledExitAt: tz(addDays(atToday(10, 30), 1)), purpose: 'Kiểm tra đồ trong kho', status: 'Pending', requestedAt: localIso(now), reviewedAt: null, reviewNotes: null },
       { visitRegistrationId: 3, contractId: 5, customerId: 7, authorizedPersonId: 2, scheduledEntryAt: tz(atToday(6, 30)), scheduledExitAt: tz(atToday(12, 0)), purpose: 'Nhập hàng', status: 'Approved', requestedAt: localIso(addDays(now, -1)), reviewedAt: localIso(addDays(now, -1)), reviewNotes: null },
       { visitRegistrationId: 4, contractId: 3, customerId: 5, authorizedPersonId: null, scheduledEntryAt: tz(addDays(atToday(14, 0), 1)), scheduledExitAt: tz(addDays(atToday(15, 0), 1)), purpose: 'Kiểm tra kho', status: 'Pending', requestedAt: localIso(now), reviewedAt: null, reviewNotes: null },
     ],
@@ -228,6 +233,14 @@ function requireRole(u: User, roles: string[]) {
   if (!roles.includes(u.role)) throw forbidden()
 }
 const STAFF = [Roles.Staff, Roles.Manager] as string[]
+/** FacilityManagementController.UnitManagerRoles: the facility's manager, or a system admin for any facility. */
+const UNIT_MANAGERS = [Roles.Manager, Roles.Admin] as string[]
+/** The signed-in customer; other roles get 403. */
+function customerOnly(token: string | null): User {
+  const me = currentUser(token)
+  requireRole(me, [Roles.Customer])
+  return me
+}
 
 function ensureAssigned(staffId: number, facilityId: number) {
   if (!db.assignments.some((a) => a.staffId === staffId && a.facilityId === facilityId))
@@ -264,7 +277,7 @@ const promotionsOf = () => (db.promotions ??= [
   { promotionId: 2, promoCode: 'TET2027', title: 'Ưu đãi Tết: giảm 15% thuê từ 6 tháng', discountPercent: 15, maxDiscountAmount: 1000000, minRentalMonths: 6, startDate: '2027-01-15', endDate: '2027-02-28', isActive: true },
   { promotionId: 3, promoCode: 'SUMMER26', title: 'Hè 2026 cho sinh viên', discountPercent: 20, maxDiscountAmount: 300000, minRentalMonths: 1, startDate: '2026-06-01', endDate: '2026-08-31', isActive: false },
 ])
-const opsOnly = (token: string | null) => requireRole(currentUser(token), [Roles.OpsManager])
+const opsOnly = (token: string | null) => requireRole(currentUser(token), [Roles.OpsManager, Roles.Admin])
 /** Approved registration whose window contains now, for this visitor (AccessService.GrantEntryAsync). */
 const approvedNow = (contractId: number, apId?: number | null) => {
   const now = Date.now()
@@ -356,9 +369,18 @@ function ownContract(user: User, id: number): Ctr {
 }
 
 const returnAppointment = (c: Ctr) => `${c.endDate}T20:00:00`
+/** Fee for handing a unit back before its end date (demo value; the real one comes from the fee configuration). */
+const EARLY_RETURN_FEE = 200000
+function earlyQuote(c: Ctr, returnDate = today()): EarlyReturnQuote {
+  const late = openOverdue(c.contractId)?.accumulatedLateFee ?? 0
+  const charges = late + EARLY_RETURN_FEE
+  const daysEarly = Math.max(0, Math.round((new Date(c.endDate + 'T00:00:00').getTime() - new Date(returnDate + 'T00:00:00').getTime()) / 86400000))
+  return { contractId: c.contractId, endDate: c.endDate, daysEarly, earlyReturnFee: EARLY_RETURN_FEE, lateFees: late, depositPaid: c.depositPaid,
+    depositDeducted: Math.min(c.depositPaid, charges), depositRefundDue: Math.max(0, c.depositPaid - charges), amountStillOwed: Math.max(0, charges - c.depositPaid), invoicesCancelled: 0 }
+}
 const openOverdue = (contractId: number) =>
   db.overdues.filter((o) => o.contractId === contractId && !o.resolvedAt).sort((a, b) => b.overdueId - a.overdueId)[0]
-const renewalDto = (r: Rnw): Renewal => ({ ...r })
+const renewalDto = (r: Rnw): Renewal => ({ ...r, invoiceId: 20000 + r.renewalId })
 const addMonthsIso = (iso: string, n: number) => {
   const d = new Date(`${iso}T00:00:00`)
   const day = d.getDate()
@@ -407,12 +429,42 @@ const SUPPORT_CATEGORIES = ['LockIssue', 'AccessCodeIssue', 'DamagedUnit', 'Paym
 const SUPPORT_PRIORITIES = ['Low', 'Medium', 'High', 'Urgent']
 const SUPPORT_STATUSES = ['Open', 'InProgress', 'Resolved', 'Closed']
 
-type Paid = { method: string; code: string | null; at: string; staffId: number }
+/** Applies a successful payment, like BillingService: a deposit confirms the reservation, a renewal extends the contract. */
+function markPaid(inv: Invoice, paid: Paid, now: string) {
+  if (inv.invoiceType === 'DEPOSIT') {
+    const r = db.reservations.find((x) => x.reservationId === inv.reservationId)!
+    if (r.status !== 'PendingDeposit' || r.depositDeadline <= now) throw conflict('Đơn đặt kho không còn chờ đặt cọc')
+    r.status = 'Confirmed'
+    ;(r as Rsv & { paid?: typeof paid }).paid = paid
+  } else if (inv.invoiceType === 'MONTHLY_RENT') {
+    db.rentPaid = { ...db.rentPaid, [`${inv.contractId}:${inv.billingPeriodStart}`]: paid }
+  } else if (inv.invoiceType === 'EXTRA_CHARGE') {
+    db.extraCharges!.find((x) => 40000 + x.id === inv.invoiceId)!.paid = paid
+  } else {
+    const rn = db.renewals.find((x) => 20000 + x.renewalId === inv.invoiceId)!
+    const c = db.contracts.find((x) => x.contractId === rn.contractId)!
+    if (rn.status !== 'Pending' || c.endDate !== rn.oldEndDate) throw conflict('Yêu cầu gia hạn không còn chờ thanh toán')
+    rn.status = 'Paid'
+    c.endDate = rn.newEndDate
+    unitById(c.unitId).status = 'Rented'
+    ;(rn as Rnw & { paid?: typeof paid }).paid = paid
+  }
+}
+
+type Paid = { method: string; code: string | null; at: string; staffId: number | null }
+/** Payments as rows (the demo derives them from the invoices), for /api/payments/my and /api/admin/payments. */
+function paymentRows() {
+  return allInvoices().flatMap(({ customerId, invoice: i }) => i.payments.map((p) => ({
+    paymentId: i.invoiceId * 10 + p.paymentId, invoiceId: i.invoiceId, invoiceNumber: i.invoiceNumber, paymentMethod: p.paymentMethod, status: p.status,
+    amountPaid: p.amountPaid, paymentDate: p.paymentDate, transactionCode: p.transactionCode, invoiceStatus: i.status, paymentNotes: p.paymentNotes,
+    customerId, customerName: db.users.find((u) => u.userId === customerId)?.fullName ?? '',
+  }))).sort((a, b) => b.paymentDate.localeCompare(a.paymentDate))
+}
 /** Invoices derived from deposits and renewals (the demo keeps no separate invoice table). */
 function allInvoices(): { customerId: number; facilityId: number; invoice: Invoice }[] {
   const payments = (id: number, amount: number, p: Paid | undefined, fallbackAt: string, note: string) => [{
     paymentId: id, paymentMethod: p?.method ?? 'Cash', transactionCode: p?.code ?? null, amountPaid: amount,
-    paymentDate: p?.at ?? fallbackAt, status: 'Success', paymentNotes: note, receivedByStaff: userById(p?.staffId ?? 3).fullName,
+    paymentDate: p?.at ?? fallbackAt, status: 'Success', paymentNotes: p && p.staffId === null ? `Thanh toán trực tuyến ${p.method} đã được xác nhận.` : note, receivedByStaff: p && p.staffId === null ? null : userById(p?.staffId ?? 3).fullName,
   }]
   const now = localIso(new Date())
   const fromRsv = db.reservations.map((r) => {
@@ -483,6 +535,17 @@ const adminUserDto = (u: User): AdminUser => ({
   userId: u.userId, username: u.username, fullName: u.fullName, email: u.email, phoneNumber: u.phoneNumber,
   citizenId: u.citizenId, status: u.status ?? 'Active', roleId: ROLE_ROWS.find((r) => r.roleName === u.role)!.roleId, roleName: u.role,
 })
+const profileOf = (u: User): AccountProfile => ({ userId: u.userId, username: u.username, fullName: u.fullName, email: u.email, phoneNumber: u.phoneNumber,
+  citizenId: u.citizenId, address: u.address ?? null, role: u.role, status: u.status ?? 'Active', createdAt: '2026-01-05T09:00:00' })
+const securityOf = (userId: number): SecuritySettings => (db.security ??= {})[userId] ?? { accessAlerts: true, newDeviceAlerts: true, paymentEmails: true }
+function sessionsOf(userId: number): LoginSession[] {
+  db.sessions ??= {}
+  return (db.sessions[userId] ??= [
+    { sessionId: `cur-${userId}`, device: 'Chrome · Windows', location: 'TP. Hồ Chí Minh', lastActiveAt: localIso(new Date()), current: true },
+    { sessionId: `ios-${userId}`, device: 'Safari · iPhone', location: 'TP. Hồ Chí Minh', lastActiveAt: localIso(addDays(new Date(), -2)), current: false },
+    { sessionId: `mac-${userId}`, device: 'Chrome · macOS', location: 'Hà Nội', lastActiveAt: localIso(addDays(new Date(), -9)), current: false },
+  ])
+}
 function addLog(userId: number, action: string, details: string) {
   db.logs ??= []
   db.logs.push({ logId: nextId(), userId, action, details, ipAddress: '127.0.0.1', createdAt: localIso(new Date()) })
@@ -579,11 +642,11 @@ function dateRange(query: URLSearchParams) {
   if (from > to) throw bad('Ngày bắt đầu phải nhỏ hơn hoặc bằng ngày kết thúc')
   return { from, to }
 }
-/** Staff or manager assigned at the facility (AccessService.EnsureAssignedAsync). */
+/** Staff or manager assigned at the facility (AccessService.EnsureAssignedAsync); a system admin, where allowed, at any facility. */
 function facilityStaff(token: string | null, facilityId: number, roles = STAFF) {
   const me = currentUser(token)
   requireRole(me, roles)
-  ensureAssigned(me.userId, facilityId)
+  if (me.role !== Roles.Admin) ensureAssigned(me.userId, facilityId)
   if (!facilityById(facilityId)) throw notFound('Không tìm thấy cơ sở')
   return me
 }
@@ -681,7 +744,9 @@ const routes: [string, RegExp, Handler][] = [
   // ---- auth
   ['POST', /^\/api\/auth\/login$/, (_m, { body }) => {
     const u = db.users.find((x) => x.username === body.username)
+    if (u && u.password !== body.password) addLog(u.userId, 'LOGIN_FAILED', 'Sai mật khẩu')
     if (!u || u.password !== body.password || (u.status ?? 'Active') !== 'Active') throw new MockHttpError(401, 'Sai tên đăng nhập hoặc mật khẩu')
+    addLog(u.userId, 'LOGIN', 'Đăng nhập trên trình duyệt này')
     const res: LoginResponse = { token: `mock.${u.userId}`, expiresAt: localIso(addDays(new Date(), 1)), user: toUserDto(u) }
     return res
   }],
@@ -699,6 +764,124 @@ const routes: [string, RegExp, Handler][] = [
     return toUserDto(u)
   }],
   ['GET', /^\/api\/auth\/me$/, (_m, { token }) => toUserDto(currentUser(token))],
+
+  // ---- account security (awaiting backend; spec in docs/API-cho-backend.md)
+  // GET /api/auth/profile and PUT /api/auth/me (AuthController)
+  ['GET', /^\/api\/auth\/(?:me\/)?profile$/, (_m, { token }) => profileOf(currentUser(token))],
+  ['PUT', /^\/api\/auth\/me$/, (_m, { token, body }) => {
+    const u = currentUser(token)
+    const fullName = String(body.fullName ?? '').trim()
+    const email = String(body.email ?? '').trim()
+    const phoneNumber = String(body.phoneNumber ?? '').trim()
+    if (!fullName || !phoneNumber) throw bad('Họ tên và số điện thoại không được để trống')
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw bad('Email không hợp lệ')
+    if (db.users.some((x) => x.userId !== u.userId && x.email.toLowerCase() === email.toLowerCase())) throw conflict('Email đã được sử dụng')
+    const cid = String(body.citizenId ?? '').replace(/\D/g, '')
+    if (cid) {
+      if (u.citizenId && u.citizenId !== cid) throw conflict('Số CCCD đã lưu không thể tự thay đổi. Vui lòng mang CCCD đến cơ sở để nhân viên cập nhật.')
+      if (!/^\d{12}$/.test(cid)) throw bad('Số CCCD phải gồm đúng 12 chữ số')
+      if (db.users.some((x) => x.userId !== u.userId && x.citizenId === cid)) throw conflict('Số CCCD đã được đăng ký cho tài khoản khác')
+      u.citizenId = cid
+    }
+    Object.assign(u, { fullName, email, phoneNumber, address: String(body.address ?? '').trim() || null })
+    addLog(u.userId, 'PROFILE_UPDATED', 'Cập nhật thông tin tài khoản')
+    return profileOf(u)
+  }],
+  ['GET', /^\/api\/auth\/me\/security-settings$/, (_m, { token }) => securityOf(currentUser(token).userId)],
+  ['PUT', /^\/api\/auth\/me\/security-settings$/, (_m, { token, body }) => {
+    const u = currentUser(token)
+    const s: SecuritySettings = { accessAlerts: !!body.accessAlerts, newDeviceAlerts: !!body.newDeviceAlerts, paymentEmails: !!body.paymentEmails }
+    ;(db.security ??= {})[u.userId] = s
+    addLog(u.userId, 'SECURITY_SETTINGS', 'Cập nhật cài đặt cảnh báo bảo mật')
+    return s
+  }],
+  ['GET', /^\/api\/auth\/me\/sessions$/, (_m, { token }) => sessionsOf(currentUser(token).userId)],
+  ['DELETE', /^\/api\/auth\/me\/sessions\/([\w-]+)$/, (m, { token }) => {
+    const u = currentUser(token)
+    const list = sessionsOf(u.userId)
+    const s = list.find((x) => x.sessionId === m[1])
+    if (!s) throw notFound('Không tìm thấy phiên đăng nhập')
+    if (s.current) throw bad('Không thể tự đăng xuất phiên hiện tại ở đây; hãy dùng nút Đăng xuất')
+    db.sessions![u.userId] = list.filter((x) => x.sessionId !== s.sessionId)
+    addLog(u.userId, 'SESSION_REVOKED', `Đăng xuất thiết bị ${s.device}`)
+    return null
+  }],
+  ['POST', /^\/api\/auth\/me\/sessions\/revoke-others$/, (_m, { token }) => {
+    const u = currentUser(token)
+    db.sessions![u.userId] = sessionsOf(u.userId).filter((x) => x.current)
+    addLog(u.userId, 'SESSION_REVOKED', 'Đăng xuất mọi thiết bị khác')
+    return null
+  }],
+  ['POST', /^\/api\/auth\/change-password$/, (_m, { token, body }) => {
+    const u = currentUser(token)
+    const current = String(body.currentPassword ?? '')
+    const next = String(body.newPassword ?? '')
+    if (current !== u.password) {
+      addLog(u.userId, 'PASSWORD_CHANGE_FAILED', 'Nhập sai mật khẩu hiện tại khi đổi mật khẩu')
+      throw bad('Mật khẩu hiện tại không đúng')
+    }
+    if (next.length < 8 || next.length > 100) throw bad('Mật khẩu mới từ 8 đến 100 ký tự')
+    if (next === current) throw bad('Mật khẩu mới phải khác mật khẩu hiện tại')
+    u.password = next
+    addLog(u.userId, 'PASSWORD_CHANGED', 'Đổi mật khẩu thành công')
+    return { message: 'Đã đổi mật khẩu' }
+  }],
+  ['GET', /^\/api\/auth\/me\/activity$/, (_m, { token }) => {
+    const u = currentUser(token)
+    const label: Record<string, [string, string, string]> = {
+      LOGIN: ['Login', 'Đăng nhập', 'Success'], LOGIN_FAILED: ['Login', 'Đăng nhập thất bại', 'Failed'],
+      PASSWORD_CHANGED: ['Password', 'Đổi mật khẩu', 'Success'], PASSWORD_CHANGE_FAILED: ['Password', 'Đổi mật khẩu thất bại', 'Failed'],
+      SECURITY_SETTINGS: ['Settings', 'Đổi cài đặt bảo mật', 'Success'], SESSION_REVOKED: ['Session', 'Đăng xuất thiết bị', 'Warning'],
+      SUSPENSION_REQUESTED: ['Contract', 'Gửi yêu cầu tạm ngưng hợp đồng', 'Success'],
+    }
+    const seeded: AccountActivity[] = [
+      { logId: -2, category: 'Login', action: 'Đăng nhập', details: 'Safari · iPhone', ipAddress: '113.161.20.4', createdAt: localIso(addDays(new Date(), -2)), result: 'Success' },
+      { logId: -1, category: 'Login', action: 'Đăng nhập thất bại', details: 'Sai mật khẩu · Chrome · macOS', ipAddress: '171.244.8.19', createdAt: localIso(addDays(new Date(), -5)), result: 'Failed' },
+    ]
+    return [...(db.logs ?? []).filter((l) => l.userId === u.userId).map((l): AccountActivity => {
+      const [category, action, result] = label[l.action] ?? ['Login', l.action, 'Success']
+      return { logId: l.logId, category, action, details: l.details, ipAddress: l.ipAddress, createdAt: l.createdAt, result }
+    }), ...seeded].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 100)
+  }],
+
+  // ---- contract suspension (awaiting backend; spec in docs/API-cho-backend.md)
+  ['GET', /^\/api\/contracts\/(\d+)\/suspensions$/, (m, { token }) => {
+    const c = ownContract(currentUser(token), Number(m[1]))
+    return (db.suspensions ?? []).filter((x) => x.contractId === c.contractId).sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))
+  }],
+  ['POST', /^\/api\/contracts\/(\d+)\/suspensions$/, (m, { token, body }) => {
+    const me = currentUser(token)
+    requireRole(me, [Roles.Customer])
+    const c = ownContract(me, Number(m[1]))
+    const start = String(body.startDate ?? ''), end = String(body.endDate ?? '')
+    const reason = String(body.reason ?? '').trim()
+    if (c.status !== 'Active') throw conflict('Chỉ hợp đồng đang hoạt động mới tạm ngưng được')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || end < start) throw bad('Ngày tạm ngưng không hợp lệ')
+    if (start < dateOnly(addDays(new Date(), 3))) throw bad('Ngày bắt đầu phải sau hôm nay ít nhất 3 ngày')
+    const days = Math.round((new Date(`${end}T00:00:00`).getTime() - new Date(`${start}T00:00:00`).getTime()) / 86400000) + 1
+    if (days < 30 || days > 90) throw bad('Thời gian tạm ngưng từ 30 đến 90 ngày')
+    if (end >= c.endDate) throw bad('Ngày kết thúc tạm ngưng phải trước ngày hết hạn hợp đồng')
+    if (!reason) throw bad('Vui lòng chọn lý do tạm ngưng')
+    if ((db.suspensions ?? []).some((x) => x.contractId === c.contractId && ['Pending', 'Approved', 'Active'].includes(x.status))) throw conflict('Hợp đồng đã có yêu cầu tạm ngưng đang xử lý')
+    if (db.renewals.some((r) => r.contractId === c.contractId && r.status === 'Pending')) throw conflict('Hợp đồng đang có yêu cầu gia hạn chờ thanh toán')
+    const x: ContractSuspension = {
+      suspensionId: nextId(), contractId: c.contractId, startDate: start, endDate: end, days, reason,
+      notes: (body.notes as string | null)?.trim() || null, status: 'Pending',
+      holdingFee: Math.round((c.monthlyRentFee / 30) * days * 0.3 / 1000) * 1000,
+      newEndDate: dateOnly(addDays(new Date(`${c.endDate}T00:00:00`), days)), requestedAt: localIso(new Date()), reviewNotes: null,
+    }
+    ;(db.suspensions ??= []).push(x)
+    addLog(me.userId, 'SUSPENSION_REQUESTED', `Hợp đồng ${c.contractNumber}: ${start} → ${end}`)
+    return x
+  }],
+  ['DELETE', /^\/api\/contracts\/(\d+)\/suspensions\/(\d+)$/, (m, { token }) => {
+    const c = ownContract(currentUser(token), Number(m[1]))
+    const x = (db.suspensions ?? []).find((s) => s.suspensionId === Number(m[2]) && s.contractId === c.contractId)
+    if (!x) throw notFound('Không tìm thấy yêu cầu tạm ngưng')
+    if (x.status !== 'Pending') throw conflict('Chỉ hủy được yêu cầu đang chờ duyệt')
+    x.status = 'Cancelled'
+    return null
+  }],
 
   ['POST', /^\/api\/auth\/forgot-password$/, (_m, { body }) => {
     const email = String(body.email ?? '').trim().toLowerCase()
@@ -827,12 +1010,11 @@ const routes: [string, RegExp, Handler][] = [
     if (!r) throw notFound('Không tìm thấy đơn đặt kho')
     if (me.role !== Roles.Admin) ensureAssigned(me.userId, r.facilityId)
     if (r.status !== 'Confirmed') throw conflict('Đơn chưa được xác nhận cọc')
-    if (!r.checkInAppointmentAt) throw conflict('Khách hàng chưa đặt lịch nhận kho')
-    if (new Date() < new Date(r.checkInAppointmentAt)) throw conflict('Chưa đến thời gian hẹn nhận kho')
+    // Early hand-over allowed (ReservationsController.CheckIn): no need to wait for the pick-up time or start date.
     const unit = db.units.find((u) => u.unitId === Number(body.unitId))
     if (!unit || unit.facilityId !== r.facilityId || unit.unitTypeId !== r.unitTypeId) throw bad('Kho không đúng cơ sở hoặc loại kho đã đặt')
     if (unit.status !== 'Available') throw conflict('Kho này không còn trống')
-    const start = r.expectedStartDate < today() ? today() : r.expectedStartDate
+    const start = today()
     const c: Ctr = {
       contractId: nextId(),
       contractNumber: `HD-${start.replaceAll('-', '')}-${r.reservationId}`,
@@ -863,7 +1045,7 @@ const routes: [string, RegExp, Handler][] = [
       unitId: u.unitId, unitCode: u.unitCode, unitStatus: u.status, startDate: c.startDate, endDate: c.endDate, status: c.status,
       monthlyRentFee: c.monthlyRentFee, depositPaid: c.depositPaid, accumulatedLateFee: accrued,
       depositBalance: Math.max(0, c.depositPaid - accrued), outstandingLateFee: Math.max(0, accrued - c.depositPaid),
-      renewalAvailableFrom: `${dateOnly(addDays(new Date(`${c.endDate}T00:00:00`), -7))}T00:00:00`,
+      renewalAvailableFrom: `${c.startDate}T00:00:00`,
     }
     return d
   }],
@@ -878,9 +1060,8 @@ const routes: [string, RegExp, Handler][] = [
     const months = Number(body.extensionMonths)
     if (!(months >= 1 && months <= 60)) throw bad('Thời gian gia hạn từ 1 đến 60 tháng')
     const now = localIso(new Date())
-    const opens = dateOnly(addDays(new Date(`${c.endDate}T00:00:00`), -7))
-    if (c.status !== 'Active' || today() < opens || now >= returnAppointment(c))
-      throw conflict('Chỉ có thể yêu cầu gia hạn trong 7 ngày trước ngày hết hạn, khi hợp đồng còn hiệu lực')
+    if (c.status !== 'Active' || now >= returnAppointment(c))
+      throw conflict('Chỉ có thể yêu cầu gia hạn khi hợp đồng còn hiệu lực, trước 20:00 ngày hết hạn')
     if (db.renewals.some((r) => r.contractId === c.contractId && r.status === 'Pending'))
       throw conflict('Hợp đồng đã có yêu cầu gia hạn đang chờ xử lý')
     const r: Rnw = { renewalId: nextId(), contractId: c.contractId, oldEndDate: c.endDate, newEndDate: addMonthsIso(c.endDate, months), extensionMonths: months, renewalFee: c.monthlyRentFee * months, status: 'Pending', requestedAt: now }
@@ -935,6 +1116,50 @@ const routes: [string, RegExp, Handler][] = [
     r.status = 'Rejected'
     return undefined
   }],
+  // Early return (not in the real API yet): a fixed fee taken from the deposit, rent already paid is kept.
+  ['GET', /^\/api\/contracts\/(\d+)\/early-return-quote$/, (m, { token, query }) => {
+    const me = currentUser(token)
+    requireRole(me, [...STAFF, Roles.Customer])
+    const c = me.role === Roles.Customer ? ownContract(me, Number(m[1])) : db.contracts.find((x) => x.contractId === Number(m[1]))
+    if (!c) throw notFound('Không tìm thấy hợp đồng')
+    if (me.role !== Roles.Customer) ensureAssigned(me.userId, unitById(c.unitId).facilityId)
+    if (localIso(new Date()) >= returnAppointment(c)) throw conflict('Hợp đồng đã đến lịch trả kho, không phải trả sớm')
+    return earlyQuote(c, query.get('returnDate') ?? today())
+  }],
+  ['GET', /^\/api\/contracts\/(\d+)\/early-return-requests$/, (m, { token }) => {
+    const c = ownContract(customerOnly(token), Number(m[1]))
+    return (db.earlyRequests ?? []).filter((r) => r.contractId === c.contractId).sort((a, b) => b.requestId - a.requestId)
+  }],
+  ['POST', /^\/api\/contracts\/(\d+)\/early-return-requests$/, (m, { token, body }) => {
+    const me = customerOnly(token)
+    const c = ownContract(me, Number(m[1]))
+    const returnDate = String(body.returnDate ?? '')
+    const reason = String(body.reason ?? '').trim()
+    if (c.status !== 'Active' || localIso(new Date()) >= returnAppointment(c)) throw conflict('Chỉ gửi yêu cầu trả sớm khi hợp đồng còn hiệu lực và chưa đến ngày hết hạn')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(returnDate) || returnDate < today() || returnDate >= c.endDate) throw bad('Ngày trả kho phải từ hôm nay đến trước ngày hết hạn')
+    if (reason.length < 5 || reason.length > 500) throw bad('Lý do trả sớm từ 5 đến 500 ký tự')
+    db.earlyRequests ??= []
+    if (db.earlyRequests.some((r) => r.contractId === c.contractId && r.status === 'Pending')) throw conflict('Hợp đồng đã có yêu cầu trả sớm đang chờ')
+    const r: EarlyReturnRequest = { requestId: nextId(), contractId: c.contractId, contractNumber: c.contractNumber, unitCode: unitById(c.unitId).unitCode,
+      customerName: me.fullName, returnDate, reason, earlyReturnFee: EARLY_RETURN_FEE, status: 'Pending', requestedAt: localIso(new Date()) }
+    db.earlyRequests.push(r)
+    return r
+  }],
+  ['DELETE', /^\/api\/contracts\/(\d+)\/early-return-requests\/(\d+)$/, (m, { token }) => {
+    const c = ownContract(customerOnly(token), Number(m[1]))
+    const r = (db.earlyRequests ?? []).find((x) => x.requestId === Number(m[2]) && x.contractId === c.contractId)
+    if (!r) throw notFound('Không tìm thấy yêu cầu trả sớm')
+    if (r.status !== 'Pending') throw conflict('Chỉ hủy được yêu cầu đang chờ')
+    r.status = 'Cancelled'
+    return undefined
+  }],
+  ['GET', /^\/api\/contracts\/facilities\/(\d+)\/early-return-requests$/, (m, { token }) => {
+    const me = currentUser(token)
+    requireRole(me, STAFF)
+    ensureAssigned(me.userId, Number(m[1]))
+    return (db.earlyRequests ?? []).filter((r) => r.status === 'Pending' && unitById(db.contracts.find((c) => c.contractId === r.contractId)!.unitId).facilityId === Number(m[1]))
+      .sort((a, b) => a.returnDate.localeCompare(b.returnDate))
+  }],
   ['POST', /^\/api\/(?:admin\/)?contracts\/(\d+)\/return$/, (m, { token, body }) => {
     const me = currentUser(token)
     requireRole(me, [...STAFF, Roles.Admin])
@@ -943,19 +1168,27 @@ const routes: [string, RegExp, Handler][] = [
     const unit = unitById(c.unitId)
     if (me.role !== Roles.Admin) ensureAssigned(me.userId, unit.facilityId)
     const now = localIso(new Date())
-    if (now < returnAppointment(c)) throw conflict(`Lịch trả kho là 20:00 ngày ${c.endDate.split('-').reverse().join('/')}`)
+    const early = now < returnAppointment(c)
+    if (early && !body.earlyReturn) throw conflict(`Lịch trả kho là 20:00 ngày ${c.endDate.split('-').reverse().join('/')}`)
+    if (early && String(body.earlyReturnReason ?? '').trim().length < 5) throw bad('Cần ghi lý do khách trả kho sớm')
     if (!body.allItemsRemoved) throw bad('Nhân viên cần xác nhận kho đã được dọn sạch trước khi hoàn tất trả kho')
     if (c.status !== 'Active' && c.status !== 'Overdue') throw conflict('Hợp đồng không ở trạng thái có thể trả kho')
     if (db.records.some((r) => r.contractId === c.contractId && r.result === 'Granted' && !r.exitTime))
       throw conflict('Cần xác nhận tất cả khách đã ra khỏi cơ sở trước khi trả kho')
     const o = openOverdue(c.contractId)
-    const accumulated = o?.accumulatedLateFee ?? 0
+    const earlyFee = early ? EARLY_RETURN_FEE : 0
+    const accumulated = (o?.accumulatedLateFee ?? 0) + earlyFee
     const deducted = Math.min(c.depositPaid, accumulated)
     const stillOwed = accumulated - deducted
+    if (early) {
+      c.earlyReturnFee = earlyFee
+      c.endDate = today()
+      for (const r of db.earlyRequests ?? []) if (r.contractId === c.contractId && r.status === 'Pending') r.status = 'Completed'
+    }
     c.status = 'Terminated'
     unit.status = 'Available'
     if (o && stillOwed === 0) o.resolvedAt = now
-    const res: ReturnUnitResult = { contractId: c.contractId, status: c.status, unitStatus: unit.status, depositPaid: c.depositPaid, lateFeesDeducted: deducted, depositRefundDue: c.depositPaid - deducted, lateFeesStillOwed: stillOwed, returnedAt: now }
+    const res: ReturnUnitResult = { contractId: c.contractId, status: c.status, unitStatus: unit.status, depositPaid: c.depositPaid, lateFeesDeducted: deducted, depositRefundDue: c.depositPaid - deducted, lateFeesStillOwed: stillOwed, returnedAt: now, ...(early ? { earlyReturnFee: earlyFee } : {}) }
     return res
   }],
   ['POST', /^\/api\/contracts\/(\d+)\/deposit-refunds$/, (m, { token, body }) => {
@@ -972,7 +1205,7 @@ const routes: [string, RegExp, Handler][] = [
     const o = db.overdues.filter((x) => x.contractId === c.contractId).sort((a, b) => b.overdueId - a.overdueId)[0]
     db.refunds ??= []
     const already = db.refunds.filter((x) => x.contractId === c.contractId).reduce((s, x) => s + x.amount, 0)
-    const remaining = Math.max(0, c.depositPaid - (o?.accumulatedLateFee ?? 0)) - already
+    const remaining = Math.max(0, c.depositPaid - (o?.accumulatedLateFee ?? 0) - (c.earlyReturnFee ?? 0)) - already
     const amount = Number(body.amount)
     if (!(amount > 0) || amount > remaining) throw bad(`Số tiền hoàn cọc còn có thể hoàn là ${Math.max(0, remaining).toLocaleString('vi-VN')}đ`)
     const at = localIso(new Date())
@@ -1028,6 +1261,13 @@ const routes: [string, RegExp, Handler][] = [
     requireRole(me, [Roles.Customer])
     return allInvoices().filter((x) => x.customerId === me.userId).map((x) => x.invoice)
   }],
+  ['GET', /^\/api\/invoices\/(\d+)$/, (m, { token }) => {
+    const me = currentUser(token)
+    requireRole(me, [Roles.Customer])
+    const x = allInvoices().find((i) => i.customerId === me.userId && i.invoice.invoiceId === Number(m[1]))
+    if (!x) throw new MockHttpError(404, 'Không tìm thấy hóa đơn')
+    return x.invoice
+  }],
   ['GET', /^\/api\/invoices\/facilities\/(\d+)$/, (m, { token }) => {
     const me = currentUser(token)
     requireRole(me, STAFF)
@@ -1048,26 +1288,21 @@ const routes: [string, RegExp, Handler][] = [
     if (inv.status !== 'Unpaid' && inv.status !== 'Overdue') throw conflict('Hóa đơn không còn ở trạng thái chờ thanh toán')
     if (Number(body.amountPaid) !== inv.totalAmount) throw bad(`Số tiền cần thanh toán chính xác là ${inv.totalAmount.toLocaleString('vi-VN')}đ`)
     const now = localIso(new Date())
-    const paid = { method, code: code || null, at: now, staffId: me.userId }
-    if (inv.invoiceType === 'DEPOSIT') {
-      const r = db.reservations.find((x) => x.reservationId === inv.reservationId)!
-      if (r.status !== 'PendingDeposit' || r.depositDeadline <= now) throw conflict('Đơn đặt kho không còn chờ đặt cọc')
-      r.status = 'Confirmed'
-      ;(r as Rsv & { paid?: typeof paid }).paid = paid
-    } else if (inv.invoiceType === 'MONTHLY_RENT') {
-      db.rentPaid = { ...db.rentPaid, [`${inv.contractId}:${inv.billingPeriodStart}`]: paid }
-    } else if (inv.invoiceType === 'EXTRA_CHARGE') {
-      db.extraCharges!.find((x) => 40000 + x.id === inv.invoiceId)!.paid = paid
-    } else {
-      const rn = db.renewals.find((x) => 20000 + x.renewalId === inv.invoiceId)!
-      const c = db.contracts.find((x) => x.contractId === rn.contractId)!
-      if (rn.status !== 'Pending' || c.endDate !== rn.oldEndDate) throw conflict('Yêu cầu gia hạn không còn chờ thanh toán')
-      rn.status = 'Paid'
-      c.endDate = rn.newEndDate
-      unitById(c.unitId).status = 'Rented'
-      ;(rn as Rnw & { paid?: typeof paid }).paid = paid
-    }
+    const paid: Paid = { method, code: code || null, at: now, staffId: me.userId }
+    markPaid(inv, paid, now)
     return { paymentId: nextId(), paymentMethod: method, transactionCode: code || null, amountPaid: inv.totalAmount, paymentDate: now, status: 'Success', paymentNotes: (body.paymentNotes as string) || null, receivedByStaff: me.fullName }
+  }],
+  // Development sandbox (InvoicesController.CompleteSandboxCheckout): pays as if the gateway confirmed it.
+  ['POST', /^\/api\/invoices\/(\d+)\/checkout\/(vnpay|momo)\/sandbox-complete$/, (m, { token }) => {
+    const me = currentUser(token)
+    requireRole(me, [Roles.Customer])
+    const found = allInvoices().find((x) => x.invoice.invoiceId === Number(m[1]) && x.customerId === me.userId)
+    if (!found) throw notFound('Không tìm thấy hóa đơn')
+    const inv = found.invoice
+    if (inv.status !== 'Unpaid' && inv.status !== 'Overdue') throw conflict('Hóa đơn không còn chờ thanh toán')
+    const now = localIso(new Date())
+    markPaid(inv, { method: m[2] === 'vnpay' ? 'VNPay' : 'MoMo', code: `SANDBOX-${Date.now()}`, at: now, staffId: null }, now)
+    return allInvoices().find((x) => x.invoice.invoiceId === inv.invoiceId)!.invoice
   }],
   ['POST', /^\/api\/invoices\/(\d+)\/checkout\/(vnpay|momo)$/, (m, { token }) => {
     const me = currentUser(token)
@@ -1178,6 +1413,134 @@ const routes: [string, RegExp, Handler][] = [
     return supportDto(r)
   }],
 
+  // ---- admin support (AdminSupportRequestsController): every facility; Admin may act on any ticket
+  ['GET', /^\/api\/admin\/support-requests$/, (_m, { token, query }) => {
+    requireRole(currentUser(token), [Roles.Admin, Roles.OpsManager])
+    const fid = Number(query.get('facilityId') ?? 0)
+    const status = query.get('status')
+    return db.supports.filter((r) => (!fid || r.facilityId === fid) && (!status || r.status === status))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((r) => ({ ...supportDto(r), facilityId: r.facilityId, facilityName: facilityById(r.facilityId)?.facilityName ?? '', customerId: r.customerId, customerName: userById(r.customerId).fullName }))
+  }],
+  ['GET', /^\/api\/admin\/support-requests\/(\d+)\/updates$/, (m, { token }) => {
+    requireRole(currentUser(token), [Roles.Admin, Roles.OpsManager])
+    return db.supportUpdates.filter((u) => u.requestId === Number(m[1])).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.updateId - b.updateId)
+      .map<SupportUpdate>((u) => ({ updateId: u.updateId, updatedBy: userById(u.updatedByUserId).fullName, actionMessage: u.actionMessage, previousStatus: u.previousStatus, newStatus: u.newStatus, createdAt: u.createdAt }))
+  }],
+  ['GET', /^\/api\/admin\/support-requests\/(\d+)\/checklist$/, (m, { token }) => {
+    requireRole(currentUser(token), [Roles.Admin, Roles.OpsManager])
+    const r = db.supports.find((x) => x.requestId === Number(m[1]))
+    if (!r) throw notFound('Không tìm thấy yêu cầu hỗ trợ')
+    return checklistOf(r).map(checklistDto)
+  }],
+  ['POST', /^\/api\/admin\/support-requests\/(\d+)\/messages$/, (m, { token, body }) => {
+    const me = currentUser(token); requireRole(me, [Roles.Admin])
+    const r = db.supports.find((x) => x.requestId === Number(m[1]))
+    if (!r) throw notFound('Không tìm thấy yêu cầu hỗ trợ')
+    if (r.status === 'Closed') throw conflict('Yêu cầu đã đóng, không thể thêm phản hồi')
+    const msg = String(body.message ?? '').trim()
+    if (!msg) throw bad('Nội dung phản hồi không được để trống')
+    const u = { updateId: nextId(), requestId: r.requestId, updatedByUserId: me.userId, actionMessage: msg, previousStatus: null, newStatus: null, createdAt: localIso(new Date()) }
+    db.supportUpdates.push(u)
+    return { updateId: u.updateId, updatedBy: me.fullName, actionMessage: msg, previousStatus: null, newStatus: null, createdAt: u.createdAt }
+  }],
+  ['PUT', /^\/api\/admin\/support-requests\/(\d+)\/checklist\/(\d+)$/, (m, { token, body }) => {
+    const me = currentUser(token); requireRole(me, [Roles.Admin])
+    const r = db.supports.find((x) => x.requestId === Number(m[1]))
+    const item = r ? checklistOf(r).find((c) => c.checklistItemId === Number(m[2])) : undefined
+    if (!r || !item) throw notFound('Không tìm thấy mục checklist')
+    if (r.status !== 'InProgress') throw conflict('Chỉ được cập nhật checklist khi ticket đang được xử lý')
+    const done = body.isCompleted === true
+    item.isCompleted = done; item.completedByStaffId = done ? me.userId : null; item.completedAt = done ? localIso(new Date()) : null
+    item.notes = String(body.notes ?? '').trim() || null
+    db.supportUpdates.push({ updateId: nextId(), requestId: r.requestId, updatedByUserId: me.userId, actionMessage: `Checklist ${done ? 'hoàn tất' : 'bỏ hoàn tất'}: ${item.description}`, previousStatus: r.status, newStatus: r.status, createdAt: localIso(new Date()) })
+    return checklistDto(item)
+  }],
+  ['PUT', /^\/api\/admin\/support-requests\/(\d+)$/, (m, { token, body }) => {
+    const me = currentUser(token); requireRole(me, [Roles.Admin])
+    const status = String(body.status)
+    if (!SUPPORT_STATUSES.includes(status)) throw bad('Trạng thái yêu cầu không hợp lệ')
+    const r = db.supports.find((x) => x.requestId === Number(m[1]))
+    if (!r) throw notFound('Không tìm thấy yêu cầu hỗ trợ')
+    if (r.status === 'Closed' || (r.status === 'Resolved' && status !== 'Closed')) throw conflict('Yêu cầu đã kết thúc xử lý')
+    const ok = r.status === 'Open' ? status === 'InProgress' : r.status === 'InProgress' ? status === 'InProgress' || status === 'Resolved' : r.status === 'Resolved' ? status === 'Closed' : false
+    if (!ok) throw conflict(`Không thể chuyển yêu cầu từ ${r.status} sang ${status}`)
+    if (status === 'Resolved' && checklistOf(r).some((c) => !c.isCompleted)) throw conflict('Cần hoàn tất toàn bộ checklist trước khi đánh dấu ticket đã xử lý')
+    const prev = r.status
+    r.status = status
+    r.resolvedAt = status === 'Resolved' || status === 'Closed' ? localIso(new Date()) : null
+    db.supportUpdates.push({ updateId: nextId(), requestId: r.requestId, updatedByUserId: me.userId, actionMessage: String(body.actionMessage ?? ''), previousStatus: prev, newStatus: status, createdAt: localIso(new Date()) })
+    return supportDto(r)
+  }],
+
+  // ---- payments as rows (PaymentsController / SystemAdminController)
+  ['GET', /^\/api\/payments\/my$/, (_m, { token }) => {
+    const me = customerOnly(token)
+    return paymentRows().filter((p) => p.customerId === me.userId).map(({ customerId: _c, customerName: _n, ...p }) => p)
+  }],
+  ['POST', /^\/api\/payments\/(\d+)\/cancel$/, () => { throw conflict('Chỉ hủy được giao dịch đang chờ thanh toán') }],
+  ['GET', /^\/api\/admin\/payments$/, (_m, { token, query }) => {
+    requireRole(currentUser(token), [Roles.Admin])
+    const st = query.get('status'); const meth = query.get('method'); const q = (query.get('search') ?? '').toLowerCase()
+    const page = Number(query.get('page') ?? 1); const size = Number(query.get('pageSize') ?? 50)
+    return paymentRows().filter((p) => (!st || p.status === st) && (!meth || p.paymentMethod === meth)
+      && (!q || p.invoiceNumber.toLowerCase().includes(q) || (p.transactionCode ?? '').toLowerCase().includes(q)))
+      .slice((page - 1) * size, page * size)
+      .map((p) => ({ paymentId: p.paymentId, invoiceId: p.invoiceId, invoiceNumber: p.invoiceNumber, customerId: p.customerId, customerName: p.customerName, paymentMethod: p.paymentMethod, status: p.status, amountPaid: p.amountPaid, paymentDate: p.paymentDate, transactionCode: p.transactionCode }))
+  }],
+  ['GET', /^\/api\/admin\/activity-logs$/, (_m, { token, query }) => {
+    requireRole(currentUser(token), [Roles.Admin])
+    const a = (query.get('action') ?? '').toLowerCase(); const from = query.get('from'); const to = query.get('to')
+    const page = Number(query.get('page') ?? 1); const size = Number(query.get('pageSize') ?? 50)
+    return (db.logs ?? []).filter((l) => (!a || l.action.toLowerCase().includes(a)) && (!from || l.createdAt >= from) && (!to || l.createdAt <= to))
+      .sort((x, y) => y.createdAt.localeCompare(x.createdAt)).slice((page - 1) * size, page * size)
+      .map((l) => ({ logId: l.logId, userId: l.userId, username: db.users.find((u) => u.userId === l.userId)?.username ?? null, action: l.action, details: l.details, ipAddress: l.ipAddress, createdAt: l.createdAt }))
+  }],
+  ['GET', /^\/api\/admin\/dashboard$/, (_m, { token }) => {
+    requireRole(currentUser(token), [Roles.Admin])
+    const month = localIso(new Date()).slice(0, 7)
+    return {
+      generatedAt: localIso(new Date()), totalUsers: db.users.length, activeUsers: db.users.filter((u) => (u.status ?? 'Active') === 'Active').length,
+      facilities: db.facilities.length, totalUnits: db.units.length, availableUnits: db.units.filter((u) => u.status === 'Available').length,
+      rentedUnits: db.units.filter((u) => u.status === 'Rented').length, activeContracts: db.contracts.filter((c) => c.status === 'Active').length,
+      overdueContracts: db.contracts.filter((c) => c.status === 'Overdue').length,
+      openSupportRequests: db.supports.filter((r) => r.status === 'Open' || r.status === 'InProgress').length,
+      pendingPayments: 0, pendingEmails: (db.emails ?? []).filter((e) => e.status === 'Pending').length, failedEmails: (db.emails ?? []).filter((e) => e.status === 'Failed').length,
+      revenueThisMonth: paymentRows().filter((p) => p.status === 'Success' && p.paymentDate.startsWith(month)).reduce((t, p) => t + p.amountPaid, 0),
+    }
+  }],
+  ['GET', /^\/api\/invoices\/facilities\/(\d+)\/refund-due$/, (m, { token }) => {
+    const me = currentUser(token); requireRole(me, STAFF); ensureAssigned(me.userId, Number(m[1]))
+    return []   // the demo never receives a late online payment
+  }],
+  ['PUT', /^\/api\/gate\/facilities\/(\d+)\/customers\/(\d+)\/citizen-id$/, (m, { token, body }) => {
+    const me = currentUser(token); requireRole(me, STAFF); ensureAssigned(me.userId, Number(m[1]))
+    const cust = db.users.find((u) => u.userId === Number(m[2]) && u.role === Roles.Customer)
+    if (!cust) throw notFound('Không tìm thấy khách hàng tại cơ sở này')
+    const cid = String(body.citizenId ?? '').replace(/\D/g, '')
+    if (!/^\d{12}$/.test(cid)) throw bad('Số CCCD phải gồm đúng 12 chữ số')
+    if (db.users.some((u) => u.citizenId === cid && u.userId !== cust.userId)) throw conflict('Số CCCD đã được đăng ký cho tài khoản khác')
+    cust.citizenId = cid
+    return { authorizedPersonId: null, fullName: cust.fullName, citizenId: cid, phoneNumber: cust.phoneNumber, relationship: 'Chủ hợp đồng' }
+  }],
+  ['POST', /^\/api\/reservations\/(\d+)\/cancel$/, (m, { token }) => {
+    const me = customerOnly(token)
+    const r = db.reservations.find((x) => x.reservationId === Number(m[1]) && x.customerId === me.userId)
+    if (!r) throw notFound('Không tìm thấy đơn đặt kho')
+    if (r.status !== 'PendingDeposit') throw conflict('Chỉ hủy trực tiếp được đơn chưa đặt cọc; đơn đã đặt cọc cần gửi yêu cầu hủy')
+    r.status = 'Cancelled'
+    return reservationDto(r)
+  }],
+  ['DELETE', /^\/api\/facility-management\/facilities\/(\d+)\/units\/(\d+)$/, (m, { token }) => {
+    facilityStaff(token, Number(m[1]), UNIT_MANAGERS)
+    const u = db.units.find((x) => x.unitId === Number(m[2]) && x.facilityId === Number(m[1]))
+    if (!u) throw notFound('Không tìm thấy kho tại cơ sở')
+    if (u.status !== 'Available' && u.status !== 'UnderMaintenance') throw conflict('Chỉ xóa được kho đang trống hoặc đang bảo trì')
+    if (db.contracts.some((c) => c.unitId === u.unitId) || db.supports.some((r) => r.unitId === u.unitId)) throw conflict('Kho đã có lịch sử hợp đồng hoặc hỗ trợ nên không thể xóa; hãy chuyển sang bảo trì')
+    db.units = db.units.filter((x) => x !== u)
+    return undefined
+  }],
+
   // ---- visit registrations (customer books entry/exit times; staff approves; the gate admits only approved ones)
   ['GET', /^\/api\/contracts\/(\d+)\/visit-registrations$/, (m, { token }) => {
     const me = currentUser(token)
@@ -1259,25 +1622,30 @@ const routes: [string, RegExp, Handler][] = [
     requireRole(me, STAFF)
     const fid = Number(m[1])
     ensureAssigned(me.userId, fid)
-    const q = (query.get('q') ?? '').trim()
-    if (q.length < 2) throw bad('Nhập ít nhất 2 ký tự để tìm')
+    const q = (query.get('q') ?? '').trim().slice(0, 50)
+    if (!q) throw bad('Nhập mã kho, số hợp đồng, CCCD hoặc số điện thoại để tìm')
+    // Partial and case-insensitive, like the backend: "a" finds A-01, A-02…
     const qu = q.toUpperCase()
+    const has = (v?: string | null) => !!v && v.toUpperCase().includes(qu)
     return db.contracts
       .filter((c) => unitById(c.unitId).facilityId === fid)
       .filter((c) => {
         const cust = userById(c.customerId)
-        return unitById(c.unitId).unitCode.toUpperCase() === qu || c.contractNumber.toUpperCase() === qu
-          || cust.citizenId === q || cust.phoneNumber === q
-          || db.persons.some((p) => p.contractId === c.contractId && p.status === 'Active' && (p.citizenId === q || p.phoneNumber === q))
+        return has(unitById(c.unitId).unitCode) || has(c.contractNumber) || has(cust.fullName) || has(cust.citizenId) || has(cust.phoneNumber)
+          || db.persons.some((p) => p.contractId === c.contractId && p.status === 'Active' && (has(p.citizenId) || has(p.phoneNumber) || has(p.fullName)))
       })
-      .sort((a, b) => b.endDate.localeCompare(a.endDate))
-      .slice(0, 10)
+      .sort((a, b) => {
+        const exact = (c: Ctr) => (unitById(c.unitId).unitCode.toUpperCase() === qu || c.contractNumber.toUpperCase() === qu ? 0 : 1)
+        return exact(a) - exact(b) || unitById(a.unitId).unitCode.localeCompare(unitById(b.unitId).unitCode) || b.endDate.localeCompare(a.endDate)
+      })
+      .slice(0, 20)
       .map<VisitCandidate>((c) => {
         const cust = userById(c.customerId)
         const issues = findIssues(c)
         return {
           contractId: c.contractId, contractNumber: c.contractNumber, contractStatus: c.status,
           startDate: c.startDate, endDate: c.endDate, unitCode: unitById(c.unitId).unitCode, unitStatus: unitById(c.unitId).status,
+          customerId: cust.userId,
           customer: { authorizedPersonId: null, fullName: cust.fullName, citizenId: cust.citizenId, phoneNumber: cust.phoneNumber, relationship: 'Chủ hợp đồng' },
           authorizedPersons: db.persons.filter((p) => p.contractId === c.contractId && p.status === 'Active').map(personDto),
           peopleInside: db.records.filter((r) => r.contractId === c.contractId && r.result === 'Granted' && !r.exitTime).map((r) => recordDto(r).visitorName),
@@ -1411,19 +1779,24 @@ const routes: [string, RegExp, Handler][] = [
       .map<ActivityLog>(({ logId, action, details, ipAddress, createdAt }) => ({ logId, action, details, ipAddress, createdAt }))
   }],
   // ---- business operations manager (OperationsManagementController, OperationsReportsController)
+  ['GET', /^\/api\/operations\/facilities\/(\d+)\/units$/, (m, { token }) => {
+    opsOnly(token)
+    if (!facilityById(Number(m[1]))) throw notFound('Không tìm thấy cơ sở')
+    return db.units.filter((u) => u.facilityId === Number(m[1])).sort((a, b) => a.floorNumber - b.floorNumber || a.unitCode.localeCompare(b.unitCode)).map(unitDto)
+  }],
   ['GET', /^\/api\/operations\/facilities$/, (_m, { token }) => {
-    requireRole(currentUser(token), [Roles.OpsManager])
+    requireRole(currentUser(token), [Roles.OpsManager, Roles.Admin])
     return [...db.facilities].sort((a, b) => a.facilityName.localeCompare(b.facilityName))
   }],
   ['POST', /^\/api\/operations\/facilities$/, (_m, { token, body }) => {
-    requireRole(currentUser(token), [Roles.OpsManager])
+    requireRole(currentUser(token), [Roles.OpsManager, Roles.Admin])
     const f = facilityFields(body)
     const facility: Facility = { facilityId: nextId(), ...f, operatingHours: f.operatingHours || '24/7 Access', status: 'Active' }
     db.facilities.push(facility)
     return facility
   }],
   ['PUT', /^\/api\/operations\/facilities\/(\d+)$/, (m, { token, body }) => {
-    requireRole(currentUser(token), [Roles.OpsManager])
+    requireRole(currentUser(token), [Roles.OpsManager, Roles.Admin])
     const status = String(body.status ?? '')
     if (!['Active', 'Maintenance', 'Closed'].includes(status)) throw bad('Trạng thái cơ sở không hợp lệ')
     const facility = facilityById(Number(m[1]))
@@ -1613,12 +1986,12 @@ const routes: [string, RegExp, Handler][] = [
   // ---- facility management (FacilityManagementController)
   ['GET', /^\/api\/facility-management\/facilities\/(\d+)\/units$/, (m, { token }) => {
     const fid = Number(m[1])
-    facilityStaff(token, fid, [Roles.Manager])
+    facilityStaff(token, fid, UNIT_MANAGERS)
     return db.units.filter((u) => u.facilityId === fid).sort((a, b) => a.floorNumber - b.floorNumber || a.unitCode.localeCompare(b.unitCode)).map(unitDto)
   }],
   ['POST', /^\/api\/facility-management\/facilities\/(\d+)\/units$/, (m, { token, body }) => {
     const fid = Number(m[1])
-    facilityStaff(token, fid, [Roles.Manager])
+    facilityStaff(token, fid, UNIT_MANAGERS)
     if (facilityById(fid)!.status !== 'Active') throw conflict('Chỉ được tạo kho tại cơ sở đang hoạt động')
     const { type, code, floor, zone } = unitFields(body)
     if (db.units.some((u) => u.facilityId === fid && u.unitCode === code)) throw conflict('Mã kho này đã tồn tại tại cơ sở')
@@ -1628,21 +2001,24 @@ const routes: [string, RegExp, Handler][] = [
   }],
   ['PUT', /^\/api\/facility-management\/facilities\/(\d+)\/units\/(\d+)$/, (m, { token, body }) => {
     const fid = Number(m[1])
-    facilityStaff(token, fid, [Roles.Manager])
+    const me = facilityStaff(token, fid, UNIT_MANAGERS)
     const u = db.units.find((x) => x.unitId === Number(m[2]) && x.facilityId === fid)
     if (!u) throw notFound('Không tìm thấy kho tại cơ sở')
-    if (['Rented', 'OverdueLocked', 'Reserved'].includes(u.status)) throw conflict('Không thể sửa thông tin loại/vị trí kho khi kho đang được thuê hoặc giữ chỗ')
-    if (db.contracts.some((c) => c.unitId === u.unitId && (c.status === 'Active' || c.status === 'Overdue'))) throw conflict('Không thể sửa kho đang có hợp đồng hiệu lực')
     const { type, code, floor, zone } = unitFields(body)
+    // Renaming only changes the label, so it is allowed whatever the unit's status.
+    const renameOnly = u.unitTypeId === type.unitTypeId && u.floorNumber === floor && (u.zoneArea || null) === (zone || null)
+    if (!renameOnly && ['Rented', 'OverdueLocked', 'Reserved'].includes(u.status)) throw conflict('Không thể sửa thông tin loại/vị trí kho khi kho đang được thuê hoặc giữ chỗ; chỉ đổi được mã kho')
+    if (!renameOnly && db.contracts.some((c) => c.unitId === u.unitId && (c.status === 'Active' || c.status === 'Overdue'))) throw conflict('Không thể sửa loại/vị trí kho đang có hợp đồng hiệu lực; chỉ đổi được mã kho')
     if (u.status === 'Available' && u.unitTypeId !== type.unitTypeId && spareUnits(fid, u.unitTypeId) - 1 < 0)
       throw conflict('Không thể đổi loại kho vì sẽ làm thiếu chỗ cho các đơn đã đặt')
     if (db.units.some((x) => x.facilityId === fid && x.unitId !== u.unitId && x.unitCode === code)) throw conflict('Mã kho này đã tồn tại tại cơ sở')
+    if (u.unitCode !== code) addLog(me.userId, 'StorageUnitRenamed', `Unit ${u.unitId} at facility ${fid}: ${u.unitCode} -> ${code}`)
     Object.assign(u, { unitTypeId: type.unitTypeId, unitCode: code, floorNumber: floor, zoneArea: zone, monthlyPrice: type.baseMonthlyRate })
     return unitDto(u)
   }],
   ['PUT', /^\/api\/facility-management\/facilities\/(\d+)\/units\/(\d+)\/status$/, (m, { token, body }) => {
     const fid = Number(m[1])
-    const me = facilityStaff(token, fid)
+    const me = facilityStaff(token, fid, [...STAFF, Roles.Admin])
     const status = String(body.status ?? '')
     if (status !== 'Available' && status !== 'UnderMaintenance') throw bad('Trạng thái kho chỉ có thể chuyển thủ công giữa Available và UnderMaintenance')
     const u = db.units.find((x) => x.unitId === Number(m[2]) && x.facilityId === fid)

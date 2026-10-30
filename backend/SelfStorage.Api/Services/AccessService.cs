@@ -12,7 +12,7 @@ namespace SelfStorage.Api.Services;
 /// the visitor arrives -> staff looks up the contract and checks the ID card -> Granted or Denied row
 /// -> staff confirms exit (ExitTime). "Waiting for verification" exists only on the staff screen.
 /// </summary>
-public class AccessService(SelfStorageDbContext db, TimeProvider clock)
+public class AccessService(SelfStorageDbContext db, RentalPolicyService rentalPolicies, TimeProvider clock)
 {
     private DateTime Now => clock.GetLocalNow().DateTime;   // DB defaults use SYSDATETIME() (server local time)
 
@@ -23,12 +23,14 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
             .Include(c => c.AuthorizedPersons)
             .FirstOrDefaultAsync(c => c.ContractId == contractId && c.CustomerId == customerId, ct)
             ?? throw AppException.NotFound("Không tìm thấy hợp đồng đang thuê");
-        if (contract.Status != ContractStatus.Active || FindIssues(contract).Count > 0)
-            throw AppException.Conflict("Chỉ khách có hợp đồng đang hoạt động và kho không bị khóa mới đăng ký ra/vào");
+        var contractIssues = await FindIssuesAsync(contract, ct);
+        if (contract.Status != ContractStatus.Active || contractIssues.Count > 0)
+            throw AppException.Conflict(contractIssues.Count > 0
+                ? $"Chưa thể đăng ký ra/vào: {contractIssues[0].Message}"
+                : "Chỉ khách có hợp đồng đang hoạt động và kho không bị khóa mới đăng ký ra/vào");
         var expectedCitizenId = ResolveVisitor(contract, req.AuthorizedPersonId);
         if (string.IsNullOrWhiteSpace(expectedCitizenId)
-            || !string.Equals(req.CitizenId.Trim(), expectedCitizenId.Trim(),
-                StringComparison.OrdinalIgnoreCase))
+            || Contact.NormalizeCitizenId(req.CitizenId) != Contact.NormalizeCitizenId(expectedCitizenId))
             throw AppException.BadRequest("CCCD không khớp với khách thuê hoặc người được ủy quyền trên hợp đồng");
 
         var now = clock.GetUtcNow();
@@ -117,12 +119,15 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
             ?? throw AppException.NotFound("Không tìm thấy lịch ra/vào tại cơ sở này");
         if (registration.Status != "Pending")
             throw AppException.Conflict("Lịch ra/vào này đã được staff xử lý");
-        if (req.Approve)
+        var approve = req.Approve == true;
+        if (!approve && string.IsNullOrWhiteSpace(req.Notes))
+            throw AppException.BadRequest("Vui lòng ghi lý do từ chối lịch ra/vào để khách biết");
+        if (approve)
         {
             if (registration.ScheduledEntryAt <= clock.GetUtcNow())
                 throw AppException.Conflict("Không thể duyệt lịch đã qua giờ vào dự kiến");
             if (registration.Contract.Status != ContractStatus.Active
-                || FindIssues(registration.Contract).Count > 0)
+                || (await FindIssuesAsync(registration.Contract, ct)).Count > 0)
                 throw AppException.Conflict("Hợp đồng hoặc kho không còn đủ điều kiện ra/vào");
             var overlap = await db.VisitRegistrations.AnyAsync(v =>
                 v.ContractId == registration.ContractId
@@ -134,14 +139,14 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
                 throw AppException.Conflict("Khung giờ này bị trùng với một lịch ra/vào đã được duyệt");
         }
 
-        registration.Status = req.Approve ? "Approved" : "Rejected";
+        registration.Status = approve ? "Approved" : "Rejected";
         registration.ReviewedByStaffId = staffId;
         registration.ReviewedAt = Now;
         registration.ReviewNotes = string.IsNullOrWhiteSpace(req.Notes) ? null : req.Notes.Trim();
         db.ActivityLogs.Add(new ActivityLog
         {
             UserId = staffId,
-            Action = req.Approve ? "VisitRegistrationApproved" : "VisitRegistrationRejected",
+            Action = approve ? "VisitRegistrationApproved" : "VisitRegistrationRejected",
             Details = $"VisitRegistration {registrationId} for contract {registration.Contract.ContractNumber}",
             CreatedAt = Now,
         });
@@ -157,22 +162,38 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
     public async Task<IReadOnlyList<VisitCandidateDto>> LookupAsync(int staffId, int facilityId, string query, CancellationToken ct)
     {
         await EnsureAssignedAsync(staffId, facilityId, ct);
-        var q = query.Trim();
-        if (q.Length < 2) throw AppException.BadRequest("Nhập ít nhất 2 ký tự để tìm");
+        // Partial, case-insensitive match (SQL Server's default collation ignores case): "a" finds A-01, A-02…;
+        // "0912" finds every phone or CCCD containing it.
+        var q = (query ?? "").Trim();
+        if (q.Length == 0) throw AppException.BadRequest("Nhập mã kho, số hợp đồng, CCCD hoặc số điện thoại để tìm");
+        if (q.Length > 50) q = q[..50];
+        // CCCD / phone are stored normalized; staff may type them with spaces, dots or +84.
+        var qCitizen = Contact.NormalizeCitizenId(q);
+        var qPhone = Contact.NormalizePhone(q);
+        if (qCitizen.Length == 0) qCitizen = q;
+        if (qPhone.Length == 0) qPhone = q;
 
         var contracts = await db.Contracts
             .Include(c => c.Unit)
             .Include(c => c.Customer)
             .Include(c => c.AuthorizedPersons)
             .Where(c => c.Unit.FacilityId == facilityId)
-            .Where(c => c.Unit.UnitCode == q || c.ContractNumber == q
-                        || c.Customer.CitizenId == q || c.Customer.PhoneNumber == q
-                        || c.AuthorizedPersons.Any(p => p.Status == "Active" && (p.CitizenId == q || p.PhoneNumber == q)))
-            .OrderByDescending(c => c.EndDate)
-            .Take(10)
+            .Where(c => c.Unit.UnitCode.Contains(q) || c.ContractNumber.Contains(q)
+                        || c.Customer.FullName.Contains(q)
+                        || (c.Customer.CitizenId != null && c.Customer.CitizenId.Contains(qCitizen))
+                        || c.Customer.PhoneNumber.Contains(qPhone)
+                        || c.AuthorizedPersons.Any(p => p.Status == "Active"
+                            && (p.CitizenId.Contains(qCitizen) || (p.PhoneNumber != null && p.PhoneNumber.Contains(qPhone))
+                                || p.FullName.Contains(q))))
+            // Exact code/number first, then units in code order; the newest term first within a unit.
+            .OrderByDescending(c => c.Unit.UnitCode == q || c.ContractNumber == q)
+            .ThenBy(c => c.Unit.UnitCode)
+            .ThenByDescending(c => c.EndDate)
+            .Take(20)
             .ToListAsync(ct);
 
         var ids = contracts.Select(c => c.ContractId).ToList();
+        var unpaid = await ContractsWithOverdueBillsAsync(facilityId, ids, ct);
         var inside = await db.AccessRecords
             .Where(r => ids.Contains(r.ContractId) && r.Result == AccessResult.Granted && r.ExitTime == null)
             .Select(r => new
@@ -190,7 +211,7 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
 
         return contracts.Select(c =>
         {
-            var issues = FindIssues(c);
+            var issues = FindIssues(c, unpaid.Contains(c.ContractId));
             var hasApprovedVisitRegistration = approvedRegistrations.Any(v =>
                 v.ContractId == c.ContractId
                 && (v.AuthorizedPersonId is null
@@ -204,7 +225,8 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
                 inside.Where(i => i.ContractId == c.ContractId).Select(i => i.Name).ToList(),
                 issues,
                 hasApprovedVisitRegistration,
-                issues.Count == 0 && hasApprovedVisitRegistration);
+                issues.Count == 0 && hasApprovedVisitRegistration,
+                c.CustomerId);
         }).ToList();
     }
 
@@ -215,7 +237,7 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
         await EnsureAssignedAsync(staffId, facilityId, ct);
         var contract = await LoadContractAsync(facilityId, req.ContractId, ct);
 
-        var issues = FindIssues(contract);
+        var issues = await FindIssuesAsync(contract, ct);
         if (issues.Count > 0)
             throw AppException.Conflict($"Không thể cho vào: {issues[0].Message}. Hãy ghi nhận từ chối với lý do {issues[0].Code}.");
 
@@ -224,9 +246,7 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
         // Staff types the number printed on the visitor's CCCD; it must match what we have on file.
         if (string.IsNullOrWhiteSpace(expectedCitizenId))
             throw AppException.BadRequest("Người này chưa có số CCCD trong hồ sơ, không thể xác thực. Hãy từ chối với lý do IdentityMismatch.");
-        if (string.IsNullOrWhiteSpace(req.CitizenId))
-            throw AppException.BadRequest("Vui lòng nhập số CCCD trên thẻ của khách");
-        if (!string.Equals(req.CitizenId.Trim(), expectedCitizenId.Trim(), StringComparison.OrdinalIgnoreCase))
+        if (Contact.NormalizeCitizenId(req.CitizenId) != Contact.NormalizeCitizenId(expectedCitizenId))
             throw AppException.BadRequest("Số CCCD không khớp với hồ sơ. Hãy kiểm tra lại hoặc từ chối với lý do IdentityMismatch.");
 
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
@@ -246,8 +266,9 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
             && r.Result == AccessResult.Granted, ct))
             throw AppException.Conflict("Lịch ra/vào này đã được sử dụng");
 
+        // The same visitor (customer or this authorized person) must not be inside already.
         var alreadyInside = await db.AccessRecords.AnyAsync(r => r.ContractId == contract.ContractId
-            && r.AuthorizedPersonId == null
+            && r.AuthorizedPersonId == req.AuthorizedPersonId
             && r.Result == AccessResult.Granted && r.ExitTime == null, ct);
         if (alreadyInside)
             throw AppException.Conflict("Người này đang ở trong kho, hãy xác nhận ra trước");
@@ -357,8 +378,65 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
         if (!assigned) throw AppException.Forbidden("Bạn không được phân công tại cơ sở này");
     }
 
+    /// <summary>
+    /// Staff checked the customer's ID card in person and records (or corrects) the CCCD on file; customers cannot
+    /// change a CCCD themselves. Only for customers with a reservation or contract at this facility; the change is logged.
+    /// </summary>
+    public async Task<PersonDto> UpdateCustomerCitizenIdAsync(
+        int staffId, int facilityId, int customerId, UpdateCustomerCitizenIdRequest req, CancellationToken ct)
+    {
+        await EnsureAssignedAsync(staffId, facilityId, ct);
+        var isCustomerHere = await db.Contracts.AnyAsync(c => c.CustomerId == customerId && c.Unit.FacilityId == facilityId, ct)
+            || await db.Reservations.AnyAsync(r => r.CustomerId == customerId && r.FacilityId == facilityId, ct);
+        var customer = isCustomerHere
+            ? await db.Users.FirstOrDefaultAsync(u => u.UserId == customerId && u.Role.RoleName == AppRoles.Customer, ct)
+            : null;
+        if (customer is null) throw AppException.NotFound("Không tìm thấy khách hàng tại cơ sở này");
+
+        var citizenId = Contact.NormalizeCitizenId(req.CitizenId);
+        if (await db.Users.AnyAsync(u => u.CitizenId == citizenId && u.UserId != customerId, ct))
+            throw AppException.Conflict("Số CCCD đã được đăng ký cho tài khoản khác");
+        var previous = customer.CitizenId;
+        customer.CitizenId = citizenId;
+        customer.UpdatedAt = Now;
+        db.ActivityLogs.Add(new ActivityLog
+        {
+            UserId = staffId,
+            Action = "CustomerCitizenIdUpdated",
+            Details = $"Customer {customerId}: {previous ?? "(trống)"} -> {citizenId}"
+                + (string.IsNullOrWhiteSpace(req.Notes) ? "" : $". {req.Notes.Trim()}"),
+            CreatedAt = Now,
+        });
+        await db.SaveChangesAsync(ct);
+        return new PersonDto(null, customer.FullName, customer.CitizenId, customer.PhoneNumber, "Chủ hợp đồng");
+    }
+
+    /// <summary>
+    /// Contracts with rent or extra charges unpaid for longer than the facility's MaxOverdueDaysBeforeLock:
+    /// the unit stays closed until they are paid.
+    /// </summary>
+    private async Task<HashSet<int>> ContractsWithOverdueBillsAsync(
+        int facilityId, IReadOnlyCollection<int> contractIds, CancellationToken ct)
+    {
+        if (contractIds.Count == 0) return [];
+        var policy = await rentalPolicies.ForFacilityAsync(facilityId, ct);
+        var dueBefore = DateOnly.FromDateTime(Now).AddDays(-policy.MaxOverdueDaysBeforeLock);
+        var ids = await db.Invoices
+            .Where(i => i.ContractId != null && contractIds.Contains(i.ContractId.Value)
+                && (i.Status == "Unpaid" || i.Status == "Overdue")
+                && (i.InvoiceType == "MONTHLY_RENT" || i.InvoiceType == "EXTRA_CHARGE")
+                && i.DueDate < dueBefore)
+            .Select(i => i.ContractId!.Value)
+            .Distinct()
+            .ToListAsync(ct);
+        return ids.ToHashSet();
+    }
+
+    private async Task<List<AccessIssueDto>> FindIssuesAsync(Contract c, CancellationToken ct) =>
+        FindIssues(c, (await ContractsWithOverdueBillsAsync(c.Unit.FacilityId, [c.ContractId], ct)).Count > 0);
+
     /// <summary>Reasons the contract's unit cannot be opened right now; codes match AccessRecords.DenyReason.</summary>
-    private List<AccessIssueDto> FindIssues(Contract c)
+    private List<AccessIssueDto> FindIssues(Contract c, bool hasOverdueBills)
     {
         var today = DateOnly.FromDateTime(Now);
         var issues = new List<AccessIssueDto>();
@@ -371,6 +449,8 @@ public class AccessService(SelfStorageDbContext db, TimeProvider clock)
 
         if (c.Status == ContractStatus.Overdue || c.Unit.Status == UnitStatus.OverdueLocked)
             issues.Add(new("OverdueLocked", "Hợp đồng quá hạn thanh toán, kho đang bị khóa"));
+        else if (hasOverdueBills)
+            issues.Add(new("OverdueLocked", "Còn hóa đơn tiền thuê/phụ thu quá hạn thanh toán; khách cần thanh toán trước khi vào kho"));
         if (c.Unit.Status == UnitStatus.UnderMaintenance)
             issues.Add(new("UnitUnderMaintenance", "Kho đang bảo trì"));
         return issues;

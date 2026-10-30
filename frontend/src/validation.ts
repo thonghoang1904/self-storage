@@ -184,3 +184,54 @@ export function amountError(value: number, label: string, min: number, max = 1_0
   if (value > max) return `${label} tối đa ${max.toLocaleString('vi-VN')}đ`
   return null
 }
+
+// ------------------------------------------------------------------ string-returning helpers ('' = valid)
+// Used by the contract, move-in, renewal, suspension and staff forms. They apply the same rules as above,
+// so every form shows the same messages.
+
+const msg = (e: string | null) => e ?? ''
+
+export const checkCitizenId = (value: string, label = 'Số CCCD') => msg(citizenIdError(value)).replace(/^Số CCCD/, label)
+export const checkPhone = (value: string, label = 'Số điện thoại', optional = false) =>
+  !value.trim() && optional ? '' : msg(phoneError(value)).replace(/^Số điện thoại/, label)
+export const checkEmail = (value: string) => msg(emailError(value))
+export const checkUsername = (value: string) => msg(usernameError(value))
+export const checkPassword = (value: string) => msg(passwordError(value))
+export const checkText = (value: string, label: string, max: number, optional = false, min = 1) => msg(textError(value, label, min, max, optional))
+
+/** Whole VND amount within [min, max]. */
+export function checkMoney(value: number | string, label: string, min = 1, max = 9_999_999_999_999): string {
+  const n = typeof value === 'number' ? value : Number(String(value).replace(/[.,\s]/g, ''))
+  if (!Number.isFinite(n) || String(value).trim() === '') return `Vui lòng nhập ${label.toLowerCase()}`
+  if (!Number.isInteger(n)) return `${label} phải là số tiền nguyên (đồng)`
+  if (n < min) return `${label} phải từ ${min.toLocaleString('vi-VN')}đ trở lên`
+  if (n > max) return `${label} quá lớn`
+  return ''
+}
+
+/** Integer within [min, max]. */
+export function checkInt(value: number | string, label: string, min: number, max: number): string {
+  const n = Number(value)
+  if (String(value).trim() === '' || !Number.isInteger(n)) return `${label} phải là số nguyên`
+  if (n < min || n > max) return `${label} phải từ ${min} đến ${max}`
+  return ''
+}
+
+/** First non-empty message, for chaining several checks. */
+export const firstError = (...messages: string[]) => messages.find(Boolean) ?? ''
+
+/** Today's date (yyyy-mm-dd) on the user's clock, not UTC: toISOString() gives yesterday before 07:00 in Vietnam. */
+export function localToday(offsetDays = 0): string {
+  const d = new Date()
+  d.setDate(d.getDate() + offsetDays)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** Staff code shown in the app for an account's User ID: 4 → "NV0004". */
+export const staffCode = (userId: number) => `NV${String(userId).padStart(4, '0')}`
+/** Reads a staff code typed by a manager: "NV0004", "nv-4" or plain "4" → 4; anything else → null. */
+export function parseStaffCode(value: string): number | null {
+  const m = /^\s*(?:nv\s*-?\s*)?0*(\d{1,9})\s*$/i.exec(value)
+  const n = m ? Number(m[1]) : NaN
+  return Number.isInteger(n) && n > 0 ? n : null
+}

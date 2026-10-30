@@ -6,6 +6,7 @@ import { Badge, Empty, Icon } from '../components/ui'
 import { Roles, type AdminContract, type AdminUser, type Facility, type RoleInfo } from '../types'
 import { Metric } from './FacilityOverview'
 import { Pager } from './AdminStorage'
+import { Select } from '../components/Select'
 
 /**
  * System administrator "Khách Hàng" (Figma "customer-contract-management"): every customer account
@@ -84,7 +85,7 @@ export default function AdminCustomers() {
 
       <div className="stat-grid">
         <Metric icon="users" tone="info" label="Khách hàng đang hoạt động" value={String(active)} note={`${rows.length} tài khoản khách hàng`} />
-        <Metric icon="file" tone="ok" label="Hợp đồng hiệu lực" value={String(liveContracts)} note={renting ? `${(liveContracts / renting).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} hợp đồng / khách đang thuê` : 'chưa có khách đang thuê'} />
+        <Metric icon="file" tone="ok" label="Hợp đồng hiệu lực" value={String(liveContracts)} note={renting ? `${liveContracts} hợp đồng / ${renting} khách đang thuê` : 'chưa có khách đang thuê'} />
         <Metric icon="package" tone="info" label="Khách đang thuê kho" value={String(renting)} note={`${rows.length - renting} khách chưa thuê kho`} />
         <Metric icon="alert" tone={overdue + soon ? 'bad' : 'ok'} label="Cần xử lý" value={String(overdue + soon)} note={`${overdue} quá hạn • ${soon} sắp hết hạn`} />
       </div>
@@ -95,14 +96,14 @@ export default function AdminCustomers() {
             <Icon name="search" size={16} className="input-lead" />
             <input value={search} onChange={filter(setSearch)} placeholder="Tìm tên, email, SĐT, số hợp đồng…" />
           </span>
-          <select value={standing} onChange={filter(setStanding)} aria-label="Tình trạng">
+          <Select value={standing} onChange={filter(setStanding)} aria-label="Tình trạng">
             <option value="">Tình trạng: Tất cả</option>
             {Object.entries(STANDING).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
-          </select>
-          <select value={facilityId} onChange={filter(setFacilityId)} aria-label="Cơ sở">
+          </Select>
+          <Select value={facilityId} onChange={filter(setFacilityId)} aria-label="Cơ sở">
             <option value="">Cơ sở: Tất cả</option>
             {facilities.map((f) => <option key={f.facilityId} value={f.facilityId}>{f.facilityName}</option>)}
-          </select>
+          </Select>
         </div>
         <button className="btn outline" onClick={() => { setSearch(''); setStanding(''); setFacilityId(''); setPage(1) }}>Đặt lại bộ lọc</button>
       </div>

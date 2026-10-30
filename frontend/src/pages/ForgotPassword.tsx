@@ -1,9 +1,9 @@
 import { useState, type FocusEvent, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { confirmError, emailError, passwordError } from '../validation'
 import { api, ApiError, IS_DEMO } from '../api'
 import { Icon } from '../components/ui'
 import { FormField, leavingToSubmit, PasswordChecklist } from '../components/form'
-import { confirmError, emailError, passwordError } from '../validation'
 import { AuthShell, PasswordInput } from './Login'
 
 /**
@@ -19,10 +19,12 @@ function explain(err: unknown, sending: boolean): string {
   if (err instanceof ApiError) {
     if (err.status === 429) return 'Bạn đã thử quá nhiều lần. Vui lòng đợi khoảng 15 phút rồi thử lại.'
     if (err.status === 503 && sending)
-      return `${err.message} Nếu bạn là quản trị viên, hãy kiểm tra cấu hình Gmail SMTP (Gmail gửi và mật khẩu ứng dụng 16 ký tự) rồi khởi động lại backend.`
+      return `${err.message} Vui lòng thử lại sau ít phút hoặc liên hệ cơ sở để được hỗ trợ.`
   }
   return (err as Error).message
 }
+const DEMO_EMAILS = ['customer1@example.com', 'customer2@example.com', 'staff1@example.com']
+
 export default function ForgotPassword() {
   const navigate = useNavigate()
   const [step, setStep] = useState<'email' | 'reset' | 'done'>('email')
@@ -90,6 +92,10 @@ export default function ForgotPassword() {
             <input type="email" maxLength={100} value={email} onChange={(e) => setEmail(e.target.value)} onBlur={show('email')} aria-invalid={!!emailErr || undefined}
               placeholder="user@safekeep.com.vn" autoComplete="email" autoFocus />
           </FormField>
+          {IS_DEMO && (
+            <p className="hint demo-emails"><Icon name="mail" size={15} /> <span>Bản demo không gửi email thật; mã hiện ngay trên màn hình. Chọn email có sẵn hoặc email của tài khoản bạn vừa đăng ký trong demo:{' '}
+              {DEMO_EMAILS.map((e) => <button key={e} type="button" className="link-btn" onClick={() => setEmail(e)}>{e}</button>)}</span></p>
+          )}
           {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
           <button className="btn primary block lg upper" type="submit" disabled={busy}>{busy ? 'Đang gửi…' : 'Gửi mã xác minh'}</button>
         </form>

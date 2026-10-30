@@ -23,7 +23,7 @@ public sealed class PaymentsController(SelfStorageDbContext db, TimeProvider clo
     {
         if (page < 1 || pageSize is < 1 or > 100)
             throw AppException.BadRequest("page phải từ 1 và pageSize phải từ 1 đến 100");
-        if (status is not null && status is not ("Pending" or "Success" or "Failed" or "Refunded"))
+        if (status is not null && status is not ("Pending" or "Success" or "Failed" or "Refunded" or "RefundDue" or "Reversed"))
             throw AppException.BadRequest("Trạng thái giao dịch không hợp lệ");
 
         var me = User.GetUserId();

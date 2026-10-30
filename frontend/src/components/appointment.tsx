@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { api, fmtTime } from '../api'
 import type { Reservation } from '../types'
 import { Icon } from './ui'
+import { Select } from './Select'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const localDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
@@ -28,6 +29,24 @@ export function appointmentSlots(startDate: string, operatingHours?: string, now
   return slots
 }
 
+/** 20:00 on the start date: after that a paid reservation that was not picked up expires (no-show). */
+export const pickupClosesAt = (r: Reservation) => new Date(`${r.expectedStartDate}T20:00:00+07:00`)
+
+/**
+ * When the deposit really has to be paid: 24 hours after booking, but never later than 20:00 on the start date.
+ * A deposit paid after that would confirm a reservation that expires as a no-show straight away.
+ */
+export const depositDueAt = (r: Reservation) => {
+  const due = Math.min(new Date(r.depositDeadline).getTime(), pickupClosesAt(r).getTime())
+  return new Date(due).toISOString()
+}
+
+/** Unpaid and past its deposit time: it can no longer be confirmed, the customer has to book again. */
+export const depositMissed = (r: Reservation, now = new Date()) => r.status === 'PendingDeposit' && new Date(depositDueAt(r)) <= now
+
+/** Paid but not picked up by 20:00 on the start date: the system cancels it and refunds the deposit minus the fee. */
+export const pickupMissed = (r: Reservation, now = new Date()) => r.status === 'Confirmed' && pickupClosesAt(r) <= now
+
 /** True once the appointment time has come, which is when staff may hand the unit over. */
 export const appointmentReached = (r: Reservation, now = new Date()) =>
   !!r.checkInAppointmentAt && new Date(r.checkInAppointmentAt) <= now
@@ -37,15 +56,17 @@ export const appointmentReached = (r: Reservation, now = new Date()) =>
  * Only a confirmed reservation can be booked, on its start date and in the future (PUT /api/reservations/{id}/appointment).
  * Times are sent with the Vietnam offset because every facility is in Vietnam.
  */
-export function AppointmentPicker({ reservation: r, operatingHours, onSaved }: {
+export function AppointmentPicker({ reservation: r, operatingHours, onSaved, defaultOpen = false }: {
   reservation: Reservation
   operatingHours?: string
   onSaved: (updated: Reservation) => void
+  /** Open the time picker straight away (right after the deposit is paid). */
+  defaultOpen?: boolean
 }) {
-  const [open, setOpen] = useState(false)
   const slots = appointmentSlots(r.expectedStartDate, operatingHours)
   const current = r.checkInAppointmentAt ? r.checkInAppointmentAt.slice(11, 16) : ''
-  const [time, setTime] = useState('')
+  const [open, setOpen] = useState(defaultOpen && !r.checkInAppointmentAt && slots.length > 0)
+  const [time, setTime] = useState(open ? slots[0] : '')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -93,10 +114,10 @@ export function AppointmentPicker({ reservation: r, operatingHours, onSaved }: {
     <span className="appt editing">
       <small className="muted">Giờ đến nhận kho ngày {r.expectedStartDate.split('-').reverse().join('/')}</small>
       <span className="row">
-        <select value={time} onChange={(e) => setTime(e.target.value)} aria-label="Giờ nhận kho">
+        <Select value={time} onChange={(e) => setTime(e.target.value)} aria-label="Giờ nhận kho">
           {slots.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <button type="button" className="btn primary sm" disabled={busy} onClick={save}>{busy ? 'Đang lưu…' : 'Xác nhận'}</button>
+        </Select>
+        <button type="button" className="btn primary sm" disabled={busy} onClick={save}>{busy ? 'Đang lưu…' : 'Chốt giờ nhận kho'}</button>
         <button type="button" className="btn ghost sm" onClick={() => { setOpen(false); setError('') }}>Hủy</button>
       </span>
       {error && <small className="bad-text"><Icon name="alert" size={13} /> {error}</small>}

@@ -22,6 +22,10 @@ public sealed class DevelopmentDatabaseBootstrapper(
         "11_unit_type_pricing.sql",
         "12_visit_registrations.sql",
         "13_email_outbox.sql",
+        "14_early_return_requests.sql",
+        "15_normalize_contacts.sql",
+        "16_billing_safety.sql",
+        "17_deposit_payment_hours.sql",
     ];
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)

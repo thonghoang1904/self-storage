@@ -12,7 +12,7 @@ export const Roles = {
 export const GATE_ROLES: string[] = [Roles.Staff, Roles.Manager]
 
 export const homeFor = (role: string) =>
-  role === Roles.Manager ? '/facility' : GATE_ROLES.includes(role) ? '/gate' : role === Roles.Customer ? '/my-units' : role === Roles.Admin ? '/admin/users' : role === Roles.OpsManager ? '/ops/facilities' : '/'
+  role === Roles.Manager ? '/facility' : GATE_ROLES.includes(role) ? '/gate' : role === Roles.Customer ? '/my-units' : role === Roles.Admin ? '/admin' : role === Roles.OpsManager ? '/ops/facilities' : '/'
 
 export const RoleLabels: Record<string, string> = {
   [Roles.Customer]: 'Khách hàng',
@@ -327,6 +327,8 @@ export interface Renewal {
   renewalFee: number
   status: string
   requestedAt: string
+  /** Renewal invoice to pay (RenewalDto.InvoiceId). */
+  invoiceId?: number | null
 }
 
 /** A contract in the staff list of one facility. */
@@ -373,6 +375,49 @@ export interface ReturnUnitResult {
   depositRefundDue: number
   lateFeesStillOwed: number
   returnedAt: string
+  /** Early returns only: the early-return fee. It is included in lateFeesDeducted / lateFeesStillOwed. */
+  earlyReturnFee?: number
+  /** Open rent / extra-charge invoices paid from the deposit at return (payments of method DepositOffset). */
+  unpaidInvoicesOffset?: number
+  /** Open invoices the rest of the deposit could not cover: still owed by the customer. */
+  unpaidInvoicesRemaining?: number
+}
+
+/**
+ * GET /api/contracts/{id}/early-return-quote: what returning before the end date costs, so staff can tell the
+ * customer before completing. Rent already paid is not refunded; the fee comes out of the deposit first.
+ */
+export interface EarlyReturnQuote {
+  contractId: number
+  endDate: string
+  daysEarly: number
+  earlyReturnFee: number
+  lateFees: number
+  depositPaid: number
+  depositDeducted: number
+  depositRefundDue: number
+  amountStillOwed: number
+  /** Unpaid rent invoices for months after the return that will be cancelled. */
+  invoicesCancelled: number
+}
+
+/**
+ * A customer's request to hand the unit back before the end date (POST /api/contracts/{id}/early-return-requests).
+ * Staff complete it at the facility with the early return; the customer can cancel it while it is Pending.
+ */
+export interface EarlyReturnRequest {
+  requestId: number
+  contractId: number
+  contractNumber: string
+  unitCode: string
+  customerName: string
+  /** The day the customer plans to come and empty the unit. */
+  returnDate: string
+  reason: string
+  earlyReturnFee: number
+  /** Pending | Completed | Cancelled */
+  status: string
+  requestedAt: string
 }
 
 export interface SupportRequest {
@@ -387,6 +432,9 @@ export interface SupportRequest {
   status: string
   createdAt: string
   assignedStaffName: string | null
+  /** Admin list only (GET /api/admin/support-requests). */
+  facilityName?: string
+  customerName?: string
 }
 
 export interface SupportUpdate {
@@ -438,6 +486,20 @@ export interface AccessIssue {
 }
 
 /** A contract the visitor may be coming for, found by the staff lookup at the gate. */
+/** GET /api/invoices/facilities/{id}/refund-due: online money that arrived after its invoice was cancelled. */
+export interface RefundDuePayment {
+  paymentId: number
+  invoiceId: number
+  invoiceNumber: string
+  invoiceType: string
+  customerName: string
+  paymentMethod: string
+  gatewayReference: string | null
+  amount: number
+  paymentDate: string
+  notes: string | null
+}
+
 export interface VisitCandidate {
   contractId: number
   contractNumber: string
@@ -453,6 +515,8 @@ export interface VisitCandidate {
   /** Someone on this contract has a staff-approved visit registration covering now. */
   hasApprovedVisitRegistration?: boolean
   canEnter: boolean
+  /** The contract holder's account, for recording the CCCD at the gate. */
+  customerId?: number
 }
 
 export interface AccessRecord {
@@ -481,7 +545,7 @@ export const StatusLabels: Record<string, { label: string; tone: 'ok' | 'warn' |
   Liquidated: { label: 'Đã thanh lý', tone: 'muted' },
   // reservations
   PendingDeposit: { label: 'Chờ đặt cọc', tone: 'warn' },
-  Confirmed: { label: 'Đã nhận cọc', tone: 'info' },
+  Confirmed: { label: 'Chờ bàn giao kho', tone: 'info' },
   CheckedIn: { label: 'Đã bàn giao', tone: 'ok' },
   Cancelled: { label: 'Đã hủy', tone: 'muted' },
   Expired: { label: 'Hết hạn cọc', tone: 'muted' },
@@ -536,7 +600,10 @@ export interface VisitRegistration {
   reviewNotes: string | null
 }
 
-export const VisitPurposes = ['Gửi đồ vào kho', 'Lấy đồ ra', 'Sắp xếp lại đồ', 'Tham quan và kiểm tra kho', 'Khác']
+/** Purposes for "Đăng ký vào kho". Bringing items in is not one of them: it has its own flow ("Đăng ký đưa đồ vào kho"). */
+export const VisitPurposes = ['Lấy đồ ra', 'Kiểm tra đồ trong kho', 'Sắp xếp lại đồ', 'Tham quan kho', 'Khác']
+/** Purpose text of registrations made with "Đăng ký đưa đồ vào kho" starts with this. */
+export const MOVE_IN_PREFIX = 'Gửi đồ vào kho'
 
 // ---- operations manager: rental policies, fee table, promotions (OperationsManagementController)
 
@@ -552,6 +619,8 @@ export interface RentalPolicy {
   maxOverdueDaysBeforeLock: number
   isActive: boolean
   effectiveDate: string
+  /** Hours the customer has to pay the deposit after booking (separate from the free-cancellation window). */
+  depositPaymentHours?: number
 }
 
 export interface FeeConfiguration {
@@ -643,4 +712,68 @@ export interface OperationsReportRow {
   renewedContracts: number
   liquidatedContracts: number
   netRevenue: number
+}
+
+// ---- awaiting backend (spec in docs/API-cho-backend.md): contract suspension and account security
+
+/** Customer asks to pause a contract for a while (no access, holding fee instead of rent, end date pushed back). */
+export interface ContractSuspension {
+  suspensionId: number
+  contractId: number
+  startDate: string
+  endDate: string
+  days: number
+  reason: string
+  notes: string | null
+  /** Pending | Approved | Rejected | Cancelled | Active | Completed */
+  status: string
+  holdingFee: number
+  newEndDate: string
+  requestedAt: string
+  reviewNotes: string | null
+}
+export const SuspensionStatuses: Record<string, { label: string; tone: 'ok' | 'warn' | 'bad' | 'info' | 'muted' }> = {
+  Pending: { label: 'Chờ duyệt', tone: 'warn' },
+  Approved: { label: 'Đã duyệt', tone: 'ok' },
+  Active: { label: 'Đang tạm ngưng', tone: 'info' },
+  Completed: { label: 'Đã kết thúc', tone: 'muted' },
+  Rejected: { label: 'Bị từ chối', tone: 'bad' },
+  Cancelled: { label: 'Đã hủy', tone: 'muted' },
+}
+
+export interface SecuritySettings {
+  accessAlerts: boolean
+  newDeviceAlerts: boolean
+  paymentEmails: boolean
+}
+export interface AccountProfile {
+  userId: number
+  username: string
+  fullName: string
+  email: string
+  phoneNumber: string
+  citizenId: string | null
+  /** GET /api/auth/profile also returns these. */
+  address?: string | null
+  role?: string
+  status?: string
+  createdAt: string
+}
+export interface LoginSession {
+  sessionId: string
+  device: string
+  location: string | null
+  lastActiveAt: string
+  current: boolean
+}
+export interface AccountActivity {
+  logId: number
+  /** Login | Password | Settings | Session | Contract */
+  category: string
+  action: string
+  details: string | null
+  ipAddress: string | null
+  createdAt: string
+  /** Success | Warning | Failed */
+  result: string
 }

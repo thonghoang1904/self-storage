@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { checkText, firstError, localToday, transactionCodeError } from '../validation'
+import { useLocation } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
+import { depositDueAt, depositMissed } from '../components/appointment'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
-import type { Invoice, Reservation, StaffContract } from '../types'
-import { transactionCodeError } from '../validation'
+import type { Invoice, RefundDuePayment, Reservation, StaffContract } from '../types'
+import { Select } from '../components/Select'
 
 /**
  * Staff billing: invoices of the facility (GET /api/invoices/facilities/{id}) and recording a cash or
@@ -23,8 +26,11 @@ export default function StaffBilling() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [contracts, setContracts] = useState<StaffContract[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
-  const [q, setQ] = useState('')
-  const [status, setStatus] = useState<'due' | 'Unpaid' | 'Overdue' | 'Paid' | 'Cancelled' | 'all'>('due')
+  // Opened from another staff page with ?q=<contract / reservation code>: start already filtered.
+  const location = useLocation()
+  const initialQ = new URLSearchParams(location.search).get('q') ?? ''
+  const [q, setQ] = useState(initialQ)
+  const [status, setStatus] = useState<'due' | 'Unpaid' | 'Overdue' | 'Paid' | 'Cancelled' | 'all'>(() => (initialQ ? 'all' : 'due'))
   const [type, setType] = useState('all')
   const [page, setPage] = useState(1)
   const [openId, setOpenId] = useState<number | null>(null)
@@ -73,7 +79,7 @@ export default function StaffBilling() {
   const pageRows = shown.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE)
 
   const due = invoices.filter((i) => i.status === 'Unpaid' || i.status === 'Overdue')
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   const paidToday = invoices.flatMap((i) => i.payments).filter((p) => p.status === 'Success' && p.paymentDate.slice(0, 10) === today)
 
   return (
@@ -99,18 +105,18 @@ export default function StaffBilling() {
             <Icon name="search" size={16} className="input-lead" />
             <input value={q} onChange={(e) => { setQ(e.target.value); setPage(1) }} placeholder="Tìm số hóa đơn, khách hàng, mã HĐ / đơn…" />
           </span>
-          <select value={status} onChange={(e) => { setStatus(e.target.value as typeof status); setPage(1) }}>
+          <Select value={status} onChange={(e) => { setStatus(e.target.value as typeof status); setPage(1) }}>
+            <option value="all">Tất cả trạng thái</option>
             <option value="due">Chờ thanh toán</option>
             <option value="Unpaid">Chưa thanh toán</option>
             <option value="Overdue">Quá hạn</option>
             <option value="Paid">Đã thanh toán</option>
             <option value="Cancelled">Đã hủy</option>
-            <option value="all">Tất cả trạng thái</option>
-          </select>
-          <select value={type} onChange={(e) => { setType(e.target.value); setPage(1) }}>
+          </Select>
+          <Select value={type} onChange={(e) => { setType(e.target.value); setPage(1) }}>
             <option value="all">Mọi loại hóa đơn</option>
             {Object.entries(TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
         </div>
         <button className="btn ghost" onClick={() => { setQ(''); setStatus('due'); setType('all'); setPage(1) }}><Icon name="x" size={15} /> Xóa bộ lọc</button>
       </div>
@@ -118,10 +124,12 @@ export default function StaffBilling() {
       {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
 
+      {facilityId && <RefundDuePanel facilityId={facilityId} onDone={async (msg) => { setNotice(msg); await load() }} />}
+
       <section className="panel">
         <div>
           <h2 className="panel-title">Danh sách hóa đơn</h2>
-          <p className="muted">Chỉ ghi nhận khi đã nhận đủ tiền thực tế. Hóa đơn đang có giao dịch VNPay/MoMo chờ xác nhận sẽ bị từ chối ghi nhận.</p>
+          <p className="muted">Chỉ ghi nhận khi đã nhận đủ tiền thực tế. Hóa đơn đang có giao dịch trực tuyến chờ xác nhận sẽ bị từ chối ghi nhận.</p>
         </div>
         <div className="table-scroll">
           <table>
@@ -129,20 +137,23 @@ export default function StaffBilling() {
             <tbody>
               {pageRows.map((inv) => {
                 const r = ref(inv)
-                const payable = inv.status === 'Unpaid' || inv.status === 'Overdue'
+                // A deposit can no longer be taken once its reservation is past the deposit time (the API refuses).
+                const reservation = inv.invoiceType === 'DEPOSIT' && inv.reservationId ? reservations.find((x) => x.reservationId === inv.reservationId) : undefined
+                const lateDeposit = !!reservation && depositMissed(reservation)
+                const payable = (inv.status === 'Unpaid' || inv.status === 'Overdue') && !lateDeposit
                 const paid = inv.payments.find((p) => p.status === 'Success')
                 return (
                   <tr key={inv.invoiceId}>
                     <td className="code">{inv.invoiceNumber}<br /><small className="muted">{typeLabel(inv.invoiceType)}</small></td>
                     <td><b>{r.customer}</b>{r.phone && <><br /><small className="muted">{r.phone}</small></>}</td>
                     <td>{inv.details[0]?.description ?? '—'}{r.target && <><br /><small className="muted">{r.target}</small></>}</td>
-                    <td>{fmtDate(inv.dueDate)}</td>
+                    <td>{reservation && reservation.status === 'PendingDeposit' ? fmtTime(depositDueAt(reservation)) : fmtDate(inv.dueDate)}</td>
                     <td className="money">{fmtMoney(inv.totalAmount)}</td>
                     <td><StatusBadge status={inv.status} />{paid && <><br /><small className="muted">{paid.paymentMethod === 'Cash' ? 'Tiền mặt' : paid.paymentMethod} · {fmtTime(paid.paymentDate)}</small></>}</td>
                     <td className="right">
                       {payable
                         ? <button className="btn primary sm" onClick={() => setOpenId(openId === inv.invoiceId ? null : inv.invoiceId)}><Icon name="wallet" size={14} /> Ghi nhận thu tiền</button>
-                        : <small className="muted">—</small>}
+                        : lateDeposit ? <small className="danger-text">Quá hạn cọc, khách cần đặt lại</small> : <small className="muted">—</small>}
                     </td>
                   </tr>
                 )
@@ -171,7 +182,7 @@ export default function StaffBilling() {
       <div className="panel collection-note">
         <div>
           <b>Sau khi ghi nhận</b>
-          <p className="muted">Hóa đơn cọc đã thu → đơn đặt kho chuyển "Đã nhận cọc", sẵn sàng bàn giao. Hóa đơn gia hạn đã thu → hợp đồng tự gia hạn đến ngày mới.</p>
+          <p className="muted">Hóa đơn cọc đã thu → đơn đặt kho chuyển "Chờ bàn giao kho". Hóa đơn gia hạn đã thu → hợp đồng tự gia hạn đến ngày mới.</p>
         </div>
       </div>
     </div>
@@ -198,6 +209,11 @@ function PaymentForm({ invoice: inv, customer, onCancel, onDone }: { invoice: In
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    const problem = firstError(
+      checkText(notes, 'Ghi chú', 255, true),
+      confirmed ? '' : `Vui lòng xác nhận đã nhận đủ ${fmtMoney(inv.totalAmount)}`,
+    )
+    if (problem) return setError(problem)
     setError('')
     // A bank transfer needs its reference to reconcile; cash may carry an optional receipt number.
     const invalid = method === 'BankTransfer' || code.trim() ? transactionCodeError(code) : null
@@ -221,10 +237,10 @@ function PaymentForm({ invoice: inv, customer, onCancel, onDone }: { invoice: In
       <p className="muted">Khách {customer} · {inv.details[0]?.description} · Số tiền phải thu đúng <b>{fmtMoney(inv.totalAmount)}</b>.</p>
       <div className="form-grid">
         <label className="field"><span>Hình thức</span>
-          <select value={method} onChange={(e) => setMethod(e.target.value as typeof method)}>
+          <Select value={method} onChange={(e) => setMethod(e.target.value as typeof method)}>
             <option value="Cash">Tiền mặt tại quầy</option>
             <option value="BankTransfer">Chuyển khoản</option>
-          </select>
+          </Select>
         </label>
         <label className="field"><span>Mã giao dịch {method === 'BankTransfer' ? '' : '(không bắt buộc)'}</span>
           <input value={code} onChange={(e) => setCode(e.target.value.replace(/[^A-Za-z0-9-]/g, '').slice(0, 50))} required={method === 'BankTransfer'} placeholder={method === 'BankTransfer' ? 'Mã chuyển khoản ngân hàng' : ''} />
@@ -235,6 +251,89 @@ function PaymentForm({ invoice: inv, customer, onCancel, onDone }: { invoice: In
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
       <div className="row">
         <button className="btn primary sm" type="submit" disabled={busy || !confirmed}>{busy ? 'Đang ghi nhận…' : 'Xác nhận đã thu'}</button>
+        <button className="btn ghost sm" type="button" onClick={onCancel}>Hủy</button>
+      </div>
+    </form>
+  )
+}
+
+/**
+ * Online payments that reached an invoice already cancelled (GET /api/invoices/facilities/{id}/refund-due): the
+ * money has to go back to the customer. Staff pay it back in cash or by transfer and record it
+ * (POST /api/invoices/payments/{paymentId}/refund); the payment then becomes Reversed and leaves this list.
+ */
+function RefundDuePanel({ facilityId, onDone }: { facilityId: number; onDone: (msg: string) => Promise<void> }) {
+  const [rows, setRows] = useState<RefundDuePayment[]>([])
+  const [openId, setOpenId] = useState<number | null>(null)
+  const load = useCallback(() => api<RefundDuePayment[]>(`/api/invoices/facilities/${facilityId}/refund-due`).then(setRows).catch(() => setRows([])), [facilityId])
+  useEffect(() => { void load() }, [load])
+  if (rows.length === 0) return null
+  const total = rows.reduce((s, r) => s + r.amount, 0)
+  return (
+    <section className="panel stack">
+      <div>
+        <h2 className="panel-title"><Icon name="alert" size={18} className="cyan" /> Tiền cần hoàn cho khách ({rows.length})</h2>
+        <p className="muted">Khách đã thanh toán trực tuyến sau khi hóa đơn bị hủy. Tổng {fmtMoney(total)} cần trả lại khách; hoàn xong thì ghi nhận tại đây.</p>
+      </div>
+      {rows.map((r) => (
+        <div key={r.paymentId} className="stack-sm">
+          <div className="row between wrap">
+            <div>
+              <b>{r.customerName}</b> · {r.invoiceNumber} ({typeLabel(r.invoiceType).toLowerCase()})
+              <small className="muted block">Nhận {fmtMoney(r.amount)} qua {r.paymentMethod} lúc {fmtTime(r.paymentDate)}{r.gatewayReference ? ` · mã ${r.gatewayReference}` : ''}</small>
+            </div>
+            {openId !== r.paymentId && <button className="btn outline sm" onClick={() => setOpenId(r.paymentId)}>Ghi nhận đã hoàn</button>}
+          </div>
+          {openId === r.paymentId && (
+            <RefundForm payment={r} onCancel={() => setOpenId(null)} onDone={async (msg) => { setOpenId(null); await load(); await onDone(msg) }} />
+          )}
+        </div>
+      ))}
+    </section>
+  )
+}
+
+function RefundForm({ payment: p, onCancel, onDone }: { payment: RefundDuePayment; onCancel: () => void; onDone: (msg: string) => Promise<void> }) {
+  const [method, setMethod] = useState<'Cash' | 'BankTransfer'>('BankTransfer')
+  const [code, setCode] = useState('')
+  const [notes, setNotes] = useState('')
+  const [confirmed, setConfirmed] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (busy) return
+    const invalid = method === 'BankTransfer' || code.trim() ? transactionCodeError(code) : null
+    const problem = firstError(invalid ?? '', checkText(notes, 'Ghi chú', 150, true), confirmed ? '' : `Vui lòng xác nhận đã trả lại ${fmtMoney(p.amount)} cho khách`)
+    if (problem) return setError(problem)
+    setError(''); setBusy(true)
+    try {
+      await api(`/api/invoices/payments/${p.paymentId}/refund`, { body: { paymentMethod: method, transactionCode: code.trim() || null, notes: notes.trim() || null } })
+      await onDone(`Đã ghi nhận hoàn ${fmtMoney(p.amount)} cho ${p.customerName} (${p.invoiceNumber}).`)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <form className="add-person" onSubmit={submit}>
+      <div className="form-grid">
+        <label className="field"><span>Hình thức hoàn</span>
+          <Select value={method} onChange={(e) => setMethod(e.target.value as typeof method)}>
+            <option value="BankTransfer">Chuyển khoản</option>
+            <option value="Cash">Tiền mặt tại quầy</option>
+          </Select>
+        </label>
+        <label className="field"><span>Mã giao dịch {method === 'BankTransfer' ? '' : '(không bắt buộc)'}</span>
+          <input value={code} onChange={(e) => setCode(e.target.value.replace(/[^A-Za-z0-9-]/g, '').slice(0, 50))} placeholder={method === 'BankTransfer' ? 'Mã chuyển khoản hoàn tiền' : 'Số phiếu chi (nếu có)'} />
+        </label>
+      </div>
+      <label className="field"><span>Ghi chú</span><input value={notes} maxLength={150} onChange={(e) => setNotes(e.target.value)} placeholder="Không bắt buộc" /></label>
+      <label className="check-row"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> Tôi đã trả lại đủ {fmtMoney(p.amount)} cho khách</label>
+      {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+      <div className="row">
+        <button className="btn primary sm" type="submit" disabled={busy || !confirmed}>{busy ? 'Đang lưu…' : 'Xác nhận đã hoàn'}</button>
         <button className="btn ghost sm" type="button" onClick={onCancel}>Hủy</button>
       </div>
     </form>

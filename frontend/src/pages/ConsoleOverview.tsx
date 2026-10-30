@@ -6,6 +6,7 @@ import { daysUntil, fetchContracts, monthRange, timeAgo } from '../consoleData'
 import { Badge, Empty, Icon, splitTypeName, StatusBadge } from '../components/ui'
 import type { AdminContract, OperationsReport, OperationsReportRow } from '../types'
 import { Metric } from './FacilityOverview'
+import { AdminSystemPanels } from './AdminOverview'
 
 /**
  * "Tổng Quan" of the system administrator (/admin) and the operations manager (/ops), Figma "admin-dashboard".
@@ -42,7 +43,9 @@ export default function ConsoleOverview({ admin }: { admin: boolean }) {
   const previous = trend?.[MONTHS - 2].report
   const change = current && previous?.netRevenue ? ((current.netRevenue - previous.netRevenue) / previous.netRevenue) * 100 : null
   const occupied = current ? current.rentedUnits + current.overdueLockedUnits : 0
-  const occupancy = current?.totalUnits ? (occupied / current.totalUnits) * 100 : 0
+  const locked = current?.overdueLockedUnits ?? 0
+  const overdueContracts = current?.overdueContracts ?? 0
+  const openTickets = current?.openSupportRequests ?? 0
   const customers = contracts ? new Set(contracts.map((c) => c.customerId)).size : 0
   const today = new Date()
 
@@ -59,16 +62,18 @@ export default function ConsoleOverview({ admin }: { admin: boolean }) {
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
 
       <div className="stat-grid">
-        <Metric icon="wallet" tone="ok" label="Doanh thu tháng này" value={fmtMoney(current?.netRevenue ?? 0)}
-          note={change === null ? 'đã trừ tiền hoàn' : `${change >= 0 ? '+' : ''}${change.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}% so với tháng trước`} />
-        <Metric icon="package" tone="info" label="Kho đang sử dụng" value={current ? `${occupied} / ${current.totalUnits}` : '—'}
-          note={`${occupancy.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}% kho đang có khách`} />
+        <Metric icon="wallet" tone={change !== null && change < 0 ? 'warn' : 'ok'} label="Doanh thu tháng này" value={fmtMoney(current?.netRevenue ?? 0)}
+          note={change === null ? 'Tính đến hôm nay, đã trừ tiền hoàn'
+            : `${change >= 0 ? '+' : ''}${change.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}% so với cả tháng trước`} />
+        <Metric icon="package" tone={locked ? 'bad' : 'info'} label="Kho đang sử dụng" value={current ? `${occupied} / ${current.totalUnits}` : '—'}
+          note={current ? `Còn ${current.availableUnits} kho trống · ${current.maintenanceUnits} bảo trì${locked ? ` · ${locked} khóa quá hạn` : ''}` : ''} />
         {admin
-          ? <Metric icon="users" tone="info" label="Khách hàng đang thuê" value={contracts ? String(customers) : '—'} note={`${current?.activeContracts ?? 0} hợp đồng hiệu lực`} />
+          ? <Metric icon="users" tone={overdueContracts ? 'bad' : 'info'} label="Khách hàng đang thuê" value={contracts ? String(customers) : '—'}
+            note={`${current?.activeContracts ?? 0} hợp đồng hiệu lực${overdueContracts ? ` · ${overdueContracts} quá hạn` : ''}`} />
           : <Metric icon="clipboard" tone={current?.overdueContracts ? 'bad' : 'ok'} label="Hợp đồng hiệu lực" value={String(current?.activeContracts ?? 0)}
             note={current?.overdueContracts ? `${current.overdueContracts} hợp đồng quá hạn` : 'không có hợp đồng quá hạn'} />}
-        <Metric icon="phone" tone={current?.openSupportRequests ? 'warn' : 'ok'} label="Yêu cầu hỗ trợ" value={String(current?.openSupportRequests ?? 0)}
-          note={current?.openSupportRequests ? 'ticket đang chờ xử lý' : 'không có ticket đang mở'} />
+        <Metric icon="phone" tone={openTickets ? 'warn' : 'ok'} label="Yêu cầu hỗ trợ" value={String(openTickets)}
+          note={openTickets ? `${openTickets} yêu cầu chờ xử lý` : 'Không có yêu cầu nào chờ xử lý'} />
       </div>
 
       <section className="panel">
@@ -93,6 +98,7 @@ export default function ConsoleOverview({ admin }: { admin: boolean }) {
       </div>
 
       {admin && <ExpiringContracts contracts={contracts} />}
+      {admin && <AdminSystemPanels />}
     </div>
   )
 }
@@ -191,7 +197,7 @@ function FacilityHealth({ report }: { report?: OperationsReport }) {
             <li key={f.facilityId}>
               <span className="grow"><b>{f.facilityName}</b><small>{f.totalUnits} kho · lấp đầy {occ}% · {f.maintenanceUnits} bảo trì</small></span>
               {f.overdueContracts > 0 && <Badge tone="bad">{f.overdueContracts} quá hạn</Badge>}
-              <Badge tone={f.openSupportRequests ? 'warn' : 'ok'}>{f.openSupportRequests} ticket</Badge>
+              <Badge tone={f.openSupportRequests ? 'warn' : 'ok'}>{f.openSupportRequests} yêu cầu hỗ trợ</Badge>
             </li>
           )
         })}

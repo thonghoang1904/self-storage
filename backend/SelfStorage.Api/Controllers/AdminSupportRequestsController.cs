@@ -170,15 +170,16 @@ public sealed class AdminSupportRequestsController(SelfStorageDbContext db, Time
             throw AppException.Conflict("Chỉ được cập nhật checklist khi ticket đang được xử lý");
 
         var adminId = User.GetUserId();
-        item.IsCompleted = req.IsCompleted;
-        item.CompletedByStaffId = req.IsCompleted ? adminId : null;
-        item.CompletedAt = req.IsCompleted ? clock.GetLocalNow().DateTime : null;
+        var completed = req.IsCompleted == true;
+        item.IsCompleted = completed;
+        item.CompletedByStaffId = completed ? adminId : null;
+        item.CompletedAt = completed ? clock.GetLocalNow().DateTime : null;
         item.Notes = string.IsNullOrWhiteSpace(req.Notes) ? null : req.Notes.Trim();
         db.SupportUpdates.Add(new SupportUpdate
         {
             RequestId = requestId,
             UpdatedByUserId = adminId,
-            ActionMessage = $"Checklist {(req.IsCompleted ? "hoàn tất" : "bỏ hoàn tất")}: {item.Description}"
+            ActionMessage = $"Checklist {(completed ? "hoàn tất" : "bỏ hoàn tất")}: {item.Description}"
                 + (item.Notes is null ? "" : $". Ghi chú: {item.Notes}"),
             PreviousStatus = item.Request.Status,
             NewStatus = item.Request.Status,

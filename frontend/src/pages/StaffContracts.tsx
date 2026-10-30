@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, fmtDate, fmtMoney } from '../api'
+import { localToday } from '../validation'
+import { api, billingLink, fmtDate, fmtMoney } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
-import type { OverdueSummary, Renewal, StaffContract } from '../types'
+import type { Invoice, OverdueSummary, Renewal, StaffContract } from '../types'
+import { Select } from '../components/Select'
 
 /** Figma "renewals-overdue": metrics, filters, one table of contracts to renew or collect, collection rule. */
 
-type Kind = 'renewal' | 'ending' | 'overdue' | 'active' | 'ended'
+type Kind = 'renewal' | 'ending' | 'overdue' | 'unpaid' | 'active' | 'ended'
 interface Row {
   contract: StaffContract
   kind: Kind
@@ -15,7 +17,11 @@ interface Row {
   amountDue: number
   renewal?: Renewal
   overdue?: OverdueSummary
+  /** Rent / extra-charge / fine invoices still open on the contract (what the billing page can collect). */
+  bills: Invoice[]
 }
+const BILL_TYPES = ['MONTHLY_RENT', 'EXTRA_CHARGE', 'OVERDUE_FINE']
+const ORDER: Kind[] = ['overdue', 'unpaid', 'renewal', 'ending', 'active', 'ended']
 
 const DAY = 86400000
 const asLocal = (iso: string) => new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T00:00:00` : iso)
@@ -24,6 +30,7 @@ const KIND_LABEL: Record<Kind, { label: string; tone: 'ok' | 'warn' | 'bad' | 'i
   renewal: { label: 'Chờ thu phí gia hạn', tone: 'warn' },
   ending: { label: 'Sắp hết hạn', tone: 'info' },
   overdue: { label: 'Quá hạn · khóa kho', tone: 'bad' },
+  unpaid: { label: 'Nợ hóa đơn · bị chặn ở cổng', tone: 'bad' },
   active: { label: 'Đang thuê', tone: 'ok' },
   ended: { label: 'Đã kết thúc', tone: 'muted' },
 }
@@ -34,8 +41,9 @@ export default function StaffContracts() {
   const [contracts, setContracts] = useState<StaffContract[]>([])
   const [renewals, setRenewals] = useState<Renewal[]>([])
   const [overdue, setOverdue] = useState<OverdueSummary[]>([])
+  const [invoices, setInvoices] = useState<Invoice[]>([])
   const [q, setQ] = useState('')
-  const [kind, setKind] = useState<'open' | Kind | 'all'>('open')
+  const [kind, setKind] = useState<'open' | Kind | 'all'>('all')
   const [within, setWithin] = useState<'all' | '7' | '30'>('all')
   const [page, setPage] = useState(1)
   const [error, setError] = useState('')
@@ -53,6 +61,7 @@ export default function StaffContracts() {
       setContracts(c)
       setRenewals(r)
       setOverdue(o)
+      setInvoices(await api<Invoice[]>(`/api/invoices/facilities/${facilityId}`).catch(() => []))
     } catch (e) {
       setError((e as Error).message)
     }
@@ -63,13 +72,21 @@ export default function StaffContracts() {
     const renewal = renewals.find((r) => r.contractId === c.contractId)
     const od = overdue.find((o) => o.contractId === c.contractId)
     const daysLeft = daysUntil(c.endDate)
+    const today = localToday()
+    const bills = invoices.filter((i) => i.contractId === c.contractId && BILL_TYPES.includes(i.invoiceType)
+      && (i.status === 'Unpaid' || i.status === 'Overdue'))
+    // Past their due date these block the gate (AccessService: "Còn hóa đơn … quá hạn").
+    const lateBills = bills.filter((i) => i.status === 'Overdue' || i.dueDate < today)
     const kind: Kind = c.status === 'Terminated' || c.status === 'Liquidated' ? 'ended'
       : od || c.status === 'Overdue' ? 'overdue'
+      : lateBills.length ? 'unpaid'
       : renewal ? 'renewal'
       : daysLeft <= 7 ? 'ending' : 'active'
-    const amountDue = renewal ? renewal.renewalFee : od ? od.accumulatedLateFee : 0
-    return { contract: c, kind, daysLeft, amountDue, renewal, overdue: od }
-  }), [contracts, renewals, overdue])
+    const billsDue = bills.reduce((n, i) => n + i.totalAmount, 0)
+    // The late fee is not an invoice yet: it is billed (or taken from the deposit) when the unit is returned.
+    const amountDue = (renewal ? renewal.renewalFee : 0) + billsDue + (od ? od.accumulatedLateFee : 0)
+    return { contract: c, kind, daysLeft, amountDue, renewal, overdue: od, bills }
+  }), [contracts, renewals, overdue, invoices])
 
   const shown = rows
     .filter((r) => kind === 'all' ? true : kind === 'open' ? r.kind !== 'active' && r.kind !== 'ended' : r.kind === kind)
@@ -80,7 +97,7 @@ export default function StaffContracts() {
       const c = r.contract
       return [c.contractNumber, c.customerName, c.customerPhone, c.unitCode].some((v) => v.toLowerCase().includes(s))
     })
-    .sort((a, b) => ['overdue', 'renewal', 'ending', 'active', 'ended'].indexOf(a.kind) - ['overdue', 'renewal', 'ending', 'active', 'ended'].indexOf(b.kind) || a.daysLeft - b.daysLeft)
+    .sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind) || a.daysLeft - b.daysLeft)
   const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE))
   const current = Math.min(page, pages)
   const pageRows = shown.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE)
@@ -107,7 +124,7 @@ export default function StaffContracts() {
     const csv = '﻿' + [head, ...lines].map((l) => l.map((v) => `"${v.replaceAll('"', '""')}"`).join(',')).join('\r\n')
     const a = document.createElement('a')
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
-    a.download = `gia-han-qua-han-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `gia-han-qua-han-${localToday()}.csv`
     a.click()
     URL.revokeObjectURL(a.href)
   }
@@ -138,22 +155,23 @@ export default function StaffContracts() {
             <Icon name="search" size={16} className="input-lead" />
             <input value={q} onChange={(e) => { setQ(e.target.value); setPage(1) }} placeholder="Tìm mã HĐ, khách hàng, SĐT, kho…" />
           </span>
-          <select value={kind} onChange={(e) => { setKind(e.target.value as typeof kind); setPage(1) }}>
+          <Select value={kind} onChange={(e) => { setKind(e.target.value as typeof kind); setPage(1) }}>
+            <option value="all">Tất cả trạng thái</option>
             <option value="open">Cần xử lý</option>
             <option value="renewal">Chờ thu phí gia hạn</option>
             <option value="ending">Sắp hết hạn</option>
             <option value="overdue">Quá hạn</option>
+            <option value="unpaid">Nợ hóa đơn</option>
             <option value="active">Đang thuê</option>
             <option value="ended">Đã kết thúc</option>
-            <option value="all">Tất cả trạng thái</option>
-          </select>
-          <select value={within} onChange={(e) => { setWithin(e.target.value as typeof within); setPage(1) }}>
+          </Select>
+          <Select value={within} onChange={(e) => { setWithin(e.target.value as typeof within); setPage(1) }}>
             <option value="all">Mọi thời hạn</option>
             <option value="7">Hết hạn ≤ 7 ngày</option>
             <option value="30">Hết hạn ≤ 30 ngày</option>
-          </select>
+          </Select>
         </div>
-        <button className="btn ghost" onClick={() => { setQ(''); setKind('open'); setWithin('all'); setPage(1) }}>Xóa bộ lọc</button>
+        <button className="btn ghost" onClick={() => { setQ(''); setKind('all'); setWithin('all'); setPage(1) }}>Xóa bộ lọc</button>
       </div>
 
       {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
@@ -185,6 +203,8 @@ export default function StaffContracts() {
                       : <span className={r.daysLeft <= 7 ? 'warn-text' : ''}>Còn {r.daysLeft} ngày</span>}</td>
                     <td className="money">{r.amountDue > 0 ? fmtMoney(r.amountDue) : '—'}
                       {r.renewal && <><br /><small className="muted">Gia hạn {r.renewal.extensionMonths} tháng</small></>}
+                      {r.bills.length > 0 && <><br /><small className="muted">{r.bills.length} hóa đơn chưa trả</small></>}
+                      {r.overdue && <><br /><small className="muted">Phí quá hạn {fmtMoney(r.overdue.accumulatedLateFee)} · thu khi trả kho</small></>}
                       {r.overdue && <><br /><small className="muted">Cọc còn {fmtMoney(r.overdue.depositBalance)}</small></>}</td>
                     <td><span className={`badge ${k.tone}`}>{k.label}</span></td>
                     <td className="right">
@@ -192,18 +212,34 @@ export default function StaffContracts() {
                         {r.renewal && (
                           <>
                             <button className="btn primary sm" disabled={busyId !== null}
-                              onClick={() => act(c.contractId, () => api(`/api/contracts/renewals/${r.renewal!.renewalId}/confirm-payment`, { method: 'POST' }), `Đã gia hạn ${c.contractNumber} đến ${fmtDate(r.renewal!.newEndDate)}.`)}>
-                              Đã thu phí
+                              onClick={() => {
+                                // The API records this as a cash payment; bank transfers go through the billing page with their code.
+                                if (!window.confirm(`Xác nhận đã thu ${fmtMoney(r.amountDue)} TIỀN MẶT phí gia hạn ${c.contractNumber}?\nNếu khách chuyển khoản, hãy ghi nhận ở trang Hóa đơn & thu tiền để nhập mã giao dịch.`)) return
+                                act(c.contractId, () => api(`/api/contracts/renewals/${r.renewal!.renewalId}/confirm-payment`, { method: 'POST' }), `Đã gia hạn ${c.contractNumber} đến ${fmtDate(r.renewal!.newEndDate)}.`)
+                              }}>
+                              Đã thu tiền mặt
                             </button>
                             <button className="btn ghost sm danger-text" disabled={busyId !== null}
-                              onClick={() => act(c.contractId, () => api(`/api/contracts/renewals/${r.renewal!.renewalId}/reject`, { method: 'POST' }), `Đã từ chối yêu cầu gia hạn ${c.contractNumber}.`)}>
+                              onClick={() => {
+                                if (!window.confirm(`Từ chối yêu cầu gia hạn ${c.contractNumber}? Hóa đơn gia hạn chưa thanh toán sẽ bị hủy.`)) return
+                                act(c.contractId, () => api(`/api/contracts/renewals/${r.renewal!.renewalId}/reject`, { method: 'POST' }), `Đã từ chối yêu cầu gia hạn ${c.contractNumber}.`)
+                              }}>
                               Từ chối
                             </button>
+                            <Link to={billingLink(c.contractNumber)} className="btn ghost sm" title="Khách chuyển khoản: ghi nhận kèm mã giao dịch">Thu chuyển khoản</Link>
                           </>
                         )}
-                        {canReturn && <Link to={`/staff-return?contract=${c.contractId}`} className="btn outline sm"><Icon name="door" size={14} /> Trả kho</Link>}
+                        {/* Only when there is an open invoice to collect: the late fee itself is billed at return. */}
+                        {r.bills.length > 0 && <Link to={billingLink(c.contractNumber)} className="btn primary sm"><Icon name="wallet" size={14} /> Thu tiền</Link>}
+                        {/* Opens the return page with this contract already picked, so staff never copy the code across. */}
+                        {canReturn && <Link to={`/staff-return?contract=${c.contractId}`} className="btn outline sm"><Icon name="door" size={14} /> Trả kho & hoàn cọc</Link>}
+                        {!canReturn && (c.status === 'Active' || c.status === 'Overdue') && (
+                          <>
+                            {!r.renewal && !r.bills.length && <small className="muted">Chưa cần xử lý</small>}
+                            <Link to={`/staff-return?contract=${c.contractId}`} className="btn ghost sm" title="Khách muốn trả trước hạn">Trả kho sớm</Link>
+                          </>
+                        )}
                         {c.status === 'Terminated' && <Link to={`/staff-return?contract=${c.contractId}`} className="btn ghost sm">Hoàn cọc</Link>}
-                        {!r.renewal && !canReturn && c.status !== 'Terminated' && <small className="muted">Chưa cần xử lý</small>}
                       </span>
                     </td>
                   </tr>

@@ -8,11 +8,24 @@ public sealed record EffectiveRentalPolicy(
     int CancellationGraceHours,
     decimal CancellationFeePercent,
     int RenewalNoticeDays,
-    int MaxOverdueDaysBeforeLock);
+    int MaxOverdueDaysBeforeLock,
+    int DepositPaymentHours)
+{
+    /// <summary>
+    /// Deposit returned when the customer cancels a paid reservation: in full within CancellationGraceHours of
+    /// booking, otherwise minus CancellationFeePercent.
+    /// </summary>
+    public decimal CancellationRefund(decimal paidDeposit, DateTime bookedAt, DateTime cancelledAt)
+    {
+        if (cancelledAt <= bookedAt.AddHours(CancellationGraceHours)) return paidDeposit;
+        var fee = decimal.Round(paidDeposit * CancellationFeePercent / 100m, 2, MidpointRounding.AwayFromZero);
+        return Math.Max(0m, paidDeposit - fee);
+    }
+}
 
 public sealed class RentalPolicyService(SelfStorageDbContext db, TimeProvider clock)
 {
-    private static readonly EffectiveRentalPolicy Defaults = new(100m, 24, 10m, 7, 1);
+    private static readonly EffectiveRentalPolicy Defaults = new(100m, 24, 10m, 7, 1, 24);
 
     public async Task<EffectiveRentalPolicy> ForFacilityAsync(int facilityId, CancellationToken ct)
     {
@@ -30,6 +43,7 @@ public sealed class RentalPolicyService(SelfStorageDbContext db, TimeProvider cl
                 policy.CancellationGraceHours,
                 policy.CancellationFeePercent,
                 policy.RenewalNoticeDays,
-                policy.MaxOverdueDaysBeforeLock);
+                policy.MaxOverdueDaysBeforeLock,
+                policy.DepositPaymentHours);
     }
 }

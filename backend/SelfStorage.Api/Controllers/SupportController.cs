@@ -81,7 +81,7 @@ public class SupportController(SelfStorageDbContext db, AccessService access, Ti
 
         var request = new SupportRequest
         {
-            RequestCode = $"SUP-{clock.GetLocalNow():yyyyMMdd}-{Random.Shared.Next(100000, 999999)}",
+            RequestCode = BusinessCodes.New("SUP", clock.GetLocalNow().DateTime),
             CustomerId = contract.CustomerId,
             ContractId = contract.ContractId,
             UnitId = contract.UnitId,
@@ -206,15 +206,16 @@ public class SupportController(SelfStorageDbContext db, AccessService access, Ti
             throw AppException.Conflict("Yêu cầu đã được nhân viên khác tiếp nhận");
 
         item.Request.AssignedStaffId = staffId;
-        item.IsCompleted = req.IsCompleted;
-        item.CompletedByStaffId = req.IsCompleted ? staffId : null;
-        item.CompletedAt = req.IsCompleted ? clock.GetLocalNow().DateTime : null;
+        var completed = req.IsCompleted == true;
+        item.IsCompleted = completed;
+        item.CompletedByStaffId = completed ? staffId : null;
+        item.CompletedAt = completed ? clock.GetLocalNow().DateTime : null;
         item.Notes = string.IsNullOrWhiteSpace(req.Notes) ? null : req.Notes.Trim();
         db.SupportUpdates.Add(new SupportUpdate
         {
             RequestId = requestId,
             UpdatedByUserId = staffId,
-            ActionMessage = $"Checklist {(req.IsCompleted ? "hoàn tất" : "bỏ hoàn tất")}: {item.Description}"
+            ActionMessage = $"Checklist {(completed ? "hoàn tất" : "bỏ hoàn tất")}: {item.Description}"
                 + (item.Notes is null ? "" : $". Ghi chú: {item.Notes}"),
             PreviousStatus = item.Request.Status,
             NewStatus = item.Request.Status,

@@ -9,6 +9,8 @@ interface AuthState {
   /** Signs in with a Google ID token (POST /api/auth/google); only works for an existing account with that email. */
   loginWithGoogle: (idToken: string) => Promise<UserDto>
   logout: () => void
+  /** Re-reads GET /api/auth/me, e.g. after the user renamed themselves. */
+  refresh: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthState | null>(null)
@@ -44,7 +46,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
-  return <AuthContext.Provider value={{ user, loading, login, loginWithGoogle, logout }}>{children}</AuthContext.Provider>
+  const refresh = async () => { if (tokenStore.get()) setUser(await api<UserDto>('/api/auth/me')) }
+
+  return <AuthContext.Provider value={{ user, loading, login, loginWithGoogle, logout, refresh }}>{children}</AuthContext.Provider>
 }
 
 export function useAuth() {

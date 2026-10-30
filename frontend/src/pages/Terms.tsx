@@ -1,4 +1,5 @@
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
 import { Icon } from '../components/ui'
 
@@ -9,13 +10,30 @@ import { Icon } from '../components/ui'
  */
 export const TERMS_VERSION = '2026-10'
 
+/**
+ * Link to /terms that remembers the step the customer is in, so the page offers a way straight back to it.
+ * `back`/`label`: where "Quay lại" goes. `next`/`nextLabel`: the step to continue (e.g. the renewal).
+ * `newTab`: the step has a half-filled form; the terms open in a new tab and the button closes it.
+ */
+export function termsHref(o: { back?: string; label?: string; next?: string; nextLabel?: string; newTab?: boolean } = {}) {
+  const q = new URLSearchParams()
+  if (o.newTab) q.set('tab', '1')
+  if (o.back) q.set('back', o.back)
+  if (o.label) q.set('label', o.label)
+  if (o.next) q.set('next', o.next)
+  if (o.nextLabel) q.set('nextLabel', o.nextLabel)
+  const s = q.toString()
+  return s ? `/terms?${s}` : '/terms'
+}
+
+
 export const TERMS: { title: string; icon: string; items: string[] }[] = [
   {
     title: 'Đặt chỗ & tiền cọc',
     icon: 'card',
     items: [
       'Đơn đặt kho được giữ trong thời gian giữ chỗ (mặc định 24 giờ). Quá hạn mà chưa đặt cọc, đơn tự hết hiệu lực.',
-      'Tiền cọc tính theo chính sách thuê của cơ sở (mặc định bằng 1 tháng tiền thuê), thanh toán online qua VNPay/MoMo hoặc tại quầy.',
+      'Tiền cọc tính theo chính sách thuê của cơ sở (mặc định bằng 1 tháng tiền thuê), thanh toán trực tuyến qua VNPay hoặc tại quầy.',
       'Mã khuyến mãi chỉ áp dụng cho lần thuê đầu tiên, đúng thời gian và số tháng tối thiểu của chương trình; mức giảm trừ vào tiền thuê tháng đầu.',
     ],
   },
@@ -23,7 +41,7 @@ export const TERMS: { title: string; icon: string; items: string[] }[] = [
     title: 'Nhận kho & thanh toán hằng tháng',
     icon: 'key',
     items: [
-      'Sau khi cọc được xác nhận, khách đặt lịch nhận kho trước 20:00 ngày bắt đầu. Nhân viên chỉ bàn giao kho từ giờ hẹn.',
+      'Sau khi cọc được xác nhận, khách đặt lịch nhận kho trước 20:00 ngày bắt đầu. Khách đến sớm hơn giờ hẹn vẫn được bàn giao nếu kho đã sẵn sàng; hợp đồng tính từ ngày bàn giao.',
       'Hợp đồng được lập khi bàn giao kho. Tiền thuê phát hành hóa đơn theo từng kỳ một tháng kể từ ngày bắt đầu.',
     ],
   },
@@ -39,7 +57,7 @@ export const TERMS: { title: string; icon: string; items: string[] }[] = [
     title: 'Gia hạn, trả kho & quá hạn',
     icon: 'calendar',
     items: [
-      'Gửi yêu cầu gia hạn trong 7 ngày trước ngày hết hạn; hợp đồng được gia hạn sau khi thanh toán phí gia hạn.',
+      'Có thể gia hạn sớm bất cứ lúc nào khi hợp đồng còn hiệu lực (chậm nhất 20:00 ngày hết hạn); thời hạn mới cộng tiếp từ ngày hết hạn hiện tại và có hiệu lực sau khi thanh toán phí gia hạn.',
       'Trả kho trước 20:00 ngày hết hạn. Nhân viên kiểm tra kho, đối soát phí và hoàn lại phần cọc còn lại.',
       'Quá 24 giờ kể từ 20:00 ngày hết hạn, kho bị khóa và tính phí mỗi ngày bằng phí tháng / 30, cấn trừ vào tiền cọc. Phần vượt cọc lập thành hóa đơn.',
     ],
@@ -49,7 +67,7 @@ export const TERMS: { title: string; icon: string; items: string[] }[] = [
     icon: 'door',
     items: [
       'Mỗi lượt vào kho phải đăng ký lịch trước và được nhân viên duyệt; tại cổng, nhân viên đối chiếu CCCD.',
-      'Chỉ chủ hợp đồng hoặc người được ủy quyền (dùng CCCD của chính họ) được vào kho. Không dùng mã PIN.',
+      'Chỉ chủ hợp đồng hoặc người được ủy quyền (dùng CCCD của chính họ) được vào kho. Chủ hợp đồng có thể ủy quyền cho bất kỳ ai, không bắt buộc là người nhà. Không dùng mã PIN.',
       'Kho bị khóa do quá hạn hoặc đang bảo trì thì không được vào cho đến khi xử lý xong.',
     ],
   },
@@ -64,16 +82,47 @@ export const TERMS: { title: string; icon: string; items: string[] }[] = [
 ]
 
 export default function TermsPage() {
+  const q = new URLSearchParams(useLocation().search)
+  const navigate = useNavigate()
+  const { user } = useAuth()
+  const inTab = q.get('tab') === '1'
+  // Only in-app paths, never a full URL from the query string.
+  const safe = (v: string | null) => (v && v.startsWith('/') && !v.startsWith('//') ? v : null)
+  const back = safe(q.get('back'))
+  const next = safe(q.get('next'))
+  const backLabel = q.get('label') || 'Quay lại'
+  const nextLabel = q.get('nextLabel') || 'Tiếp tục'
+  const canGoBack = typeof window !== 'undefined' && window.history.length > 1
+
+  const actions = inTab ? (
+    <button type="button" className="btn primary" onClick={() => { window.close(); if (back) navigate(back) }}>
+      <Icon name="arrowRight" size={15} className="flip" /> {backLabel}
+    </button>
+  ) : (
+    <>
+      {back ? <Link to={back} className={`btn ${next ? 'outline' : 'primary'}`}><Icon name="arrowRight" size={15} className="flip" /> {backLabel}</Link>
+        : canGoBack && <button type="button" className={`btn ${user ? 'primary' : 'outline'}`} onClick={() => window.history.back()}><Icon name="arrowRight" size={15} className="flip" /> Quay lại trang trước</button>}
+      {next && <Link to={next} className="btn primary">{nextLabel} <Icon name="arrowRight" size={15} /></Link>}
+      {!back && !next && !user && <Link to="/rent" className="btn primary">Đặt kho ngay <Icon name="arrowRight" size={15} /></Link>}
+    </>
+  )
+
   return (
     <>
       <PageHero center eyebrow={`Phiên bản ${TERMS_VERSION}`} title="Điều Khoản & Chính Sách Hợp Đồng">
         Những quy định áp dụng cho mọi hợp đồng thuê kho SafeKeep. Khách đồng ý các điều khoản này trước khi giữ chỗ và thanh toán cọc.
       </PageHero>
       <div className="container page-body terms-page">
+        {(back || next || inTab) && (
+          <div className="panel terms-return">
+            <span className="muted grow">{inTab ? 'Đọc xong, đóng trang này để quay lại bước đang làm (thông tin đã nhập vẫn còn).' : 'Đọc xong, quay lại để tiếp tục bước đang làm.'}</span>
+            <div className="row wrap">{actions}</div>
+          </div>
+        )}
         <TermsList />
         <div className="panel row between wrap">
           <span className="muted">Mức cọc, thời gian giữ chỗ và phí hủy cụ thể theo chính sách thuê của từng cơ sở tại thời điểm đặt kho.</span>
-          <Link to="/rent" className="btn primary">Đặt kho ngay <Icon name="arrowRight" size={15} /></Link>
+          <div className="row wrap">{actions}</div>
         </div>
       </div>
     </>

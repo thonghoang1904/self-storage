@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { CITIZEN_ID_FILTER, citizenIdError, digitsOnly, emailError, fullNameError, NAME_FILTER, normalizePhone, passwordError, PHONE_FILTER, phoneError, USERNAME_FILTER, usernameError } from '../validation'
 import { api, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { Badge, Empty, Icon } from '../components/ui'
 import { roleLabel, Roles, type ActivityLog, type AdminUser, type Facility, type RoleInfo } from '../types'
+import { staffCode } from '../validation'
 import { FormField, PasswordChecklist, useValidatedForm } from '../components/form'
-import { CITIZEN_ID_FILTER, citizenIdError, digitsOnly, emailError, fullNameError, NAME_FILTER, normalizePhone, passwordError, PHONE_FILTER, phoneError, USERNAME_FILTER, usernameError } from '../validation'
+import { Select } from '../components/Select'
 
 /**
  * #45 System Admin, Figma "staff-management": the system's staff accounts (GET /api/admin/users), adding
@@ -14,16 +16,20 @@ import { CITIZEN_ID_FILTER, citizenIdError, digitsOnly, emailError, fullNameErro
  * The API refuses changing your own role/status and leaving no active administrator; its message is shown.
  */
 
-// Figma: "Đang Làm" green, "Nghỉ Phép" amber, "Đã Nghỉ" red.
+// Figma: "Đang Làm" green, "Đã Nghỉ" red.
 const STATUS: Record<string, { label: string; tone: 'ok' | 'warn' | 'bad' }> = {
   Active: { label: 'Đang Làm', tone: 'ok' },
   Suspended: { label: 'Tạm Khóa', tone: 'warn' },
   Inactive: { label: 'Đã Nghỉ', tone: 'bad' },
 }
+/** Staff accounts have two states: still working or left. Suspended only shows up on old data. */
+const STAFF_STATUSES = ['Active', 'Inactive'] as const
 const statusOfAccount = (s: string) => STATUS[s] ?? { label: s, tone: 'warn' as const }
 
 /** Only facility staff and facility managers are assigned to facilities. */
 const FACILITY_ROLES: string[] = [Roles.Staff, Roles.Manager]
+/** Staff roles an admin can pick. Customers are managed on the customer page, never turned into staff here. */
+const PICKABLE_ROLES: string[] = [Roles.Staff, Roles.Admin]
 const isStaffAccount = (u: AdminUser) => u.roleName !== Roles.Customer
 const PAGE_SIZE = 6
 
@@ -61,12 +67,12 @@ export default function AdminUsers() {
   useEffect(() => { void load() }, [load])
 
   const shown = useMemo(() => users
-    .filter((u) => roleFilter === 'all' || (roleFilter === 'staff' ? isStaffAccount(u) : u.roleId === Number(roleFilter)))
+    .filter((u) => isStaffAccount(u) && (roleFilter === 'staff' || u.roleId === Number(roleFilter)))
     .filter((u) => status === 'all' || u.status === status)
     .filter((u) => {
       const s = q.trim().toLowerCase()
       if (!s) return true
-      return [u.username, u.fullName, u.email, u.phoneNumber, u.citizenId ?? ''].some((v) => v.toLowerCase().includes(s))
+      return [staffCode(u.userId), String(u.userId), u.username, u.fullName, u.email, u.phoneNumber, u.citizenId ?? ''].some((v) => v.toLowerCase().includes(s))
     }), [users, roleFilter, status, q])
   const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE))
   const current = Math.min(page, pages)
@@ -103,15 +109,14 @@ export default function AdminUsers() {
             <Icon name="search" size={16} className="input-lead" />
             <input value={q} onChange={(e) => { setQ(e.target.value); setPage(1) }} placeholder="Tìm theo tên, email..." />
           </span>
-          <select value={roleFilter} onChange={(e) => { setRoleFilter(e.target.value); setPage(1) }} aria-label="Vai trò">
+          <Select value={roleFilter} onChange={(e) => { setRoleFilter(e.target.value); setPage(1) }} aria-label="Vai trò">
             <option value="staff">Vai Trò: Tất Cả Nhân Sự</option>
-            {roles.map((r) => <option key={r.roleId} value={r.roleId}>Vai Trò: {roleLabel(r.roleName)}</option>)}
-            <option value="all">Mọi tài khoản (kể cả khách)</option>
-          </select>
-          <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }} aria-label="Trạng thái">
+            {roles.filter((r) => PICKABLE_ROLES.includes(r.roleName)).map((r) => <option key={r.roleId} value={r.roleId}>Vai Trò: {roleLabel(r.roleName)}</option>)}
+          </Select>
+          <Select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }} aria-label="Trạng thái">
             <option value="all">Trạng Thái: Tất Cả</option>
-            {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>Trạng Thái: {v.label}</option>)}
-          </select>
+            {STAFF_STATUSES.map((k) => <option key={k} value={k}>Trạng Thái: {STATUS[k].label}</option>)}
+          </Select>
         </div>
         <button className="btn ghost" onClick={() => { setQ(''); setRoleFilter('staff'); setStatus('all'); setPage(1) }}>Đặt lại bộ lọc</button>
       </div>
@@ -124,7 +129,7 @@ export default function AdminUsers() {
       <section className="panel">
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Avatar</th><th>Họ Tên</th><th>Email</th><th>Vai Trò</th><th>Số Điện Thoại</th><th>Trạng Thái</th><th className="right">Hành Động</th></tr></thead>
+            <thead><tr><th>Avatar</th><th>Mã NV</th><th>Họ Tên</th><th>Email</th><th>Vai Trò</th><th>Số Điện Thoại</th><th>Trạng Thái</th><th className="right">Hành Động</th></tr></thead>
             <tbody>
               {pageRows.map((u) => {
                 const st = statusOfAccount(u.status)
@@ -132,6 +137,7 @@ export default function AdminUsers() {
                 return (
                   <tr key={u.userId}>
                     <td><span className="avatar sm">{initials(u.fullName)}</span></td>
+                    <td><span className="code-chip" title={`User ID ${u.userId}`}>{staffCode(u.userId)}</span></td>
                     <td><b>{u.fullName}</b>{isMe && <small className="muted"> (bạn)</small>}<br /><small className="muted">{u.username}</small></td>
                     <td className="muted">{u.email}</td>
                     <td><b>{roleLabel(u.roleName)}</b></td>
@@ -171,7 +177,7 @@ export default function AdminUsers() {
 }
 
 function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleInfo[]; facilities: Facility[]; onCancel: () => void; onDone: (msg: string) => Promise<void> }) {
-  const staffRoles = roles.filter((r) => r.roleName !== Roles.Customer)
+  const staffRoles = roles.filter((r) => PICKABLE_ROLES.includes(r.roleName))
   const form = useValidatedForm(
     { fullName: '', email: '', username: '', password: '', phoneNumber: '', citizenId: '' },
     { fullName: fullNameError, email: emailError, username: usernameError, password: passwordError, phoneNumber: phoneError, citizenId: (v) => citizenIdError(v, true) },
@@ -190,7 +196,7 @@ function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleIn
     e.preventDefault()
     setError('')
     const valid = form.validateAll()
-    if (needsFacility && facilityIds.length === 0) { setError('Hãy chọn ít nhất một cơ sở cho nhân viên / quản lý cơ sở.'); return }
+    if (needsFacility && facilityIds.length === 0) { setError('Hãy chọn ít nhất một cơ sở cho nhân viên.'); return }
     if (!valid) return
     setBusy(true)
     try {
@@ -207,7 +213,7 @@ function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleIn
           facilityIds: needsFacility ? facilityIds : undefined,
         },
       })
-      await onDone(`Đã thêm nhân viên ${created.fullName} (${roleLabel(created.roleName)}).`)
+      await onDone(`Đã thêm nhân viên ${created.fullName} (${roleLabel(created.roleName)}), mã nhân viên ${staffCode(created.userId)}.`)
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -229,9 +235,9 @@ function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleIn
         <FormField label="Số điện thoại" error={form.error('phoneNumber')}><input {...form.field('phoneNumber')} inputMode="tel" placeholder="0901234567" /></FormField>
         <FormField label="CCCD (không bắt buộc)" error={form.error('citizenId')}><input {...form.field('citizenId')} inputMode="numeric" placeholder="12 chữ số" /></FormField>
         <label className="field"><span>Vai trò</span>
-          <select value={roleId} onChange={(e) => setRoleId(Number(e.target.value))}>
+          <Select value={roleId} onChange={(e) => setRoleId(Number(e.target.value))}>
             {staffRoles.map((r) => <option key={r.roleId} value={r.roleId}>{roleLabel(r.roleName)}</option>)}
-          </select>
+          </Select>
         </label>
       </div>
       {needsFacility && (
@@ -268,6 +274,8 @@ function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser
 
   const newRoleName = roles.find((r) => r.roleId === roleId)?.roleName ?? ''
   const losesFacilities = FACILITY_ROLES.includes(user.roleName) && !FACILITY_ROLES.includes(newRoleName)
+  // The edit form cannot assign facilities: a new facility staff account starts with none.
+  const noFacility = !FACILITY_ROLES.includes(user.roleName) && FACILITY_ROLES.includes(newRoleName)
   const profileChanged = profile.fullName.trim() !== user.fullName || profile.email.trim() !== user.email
     || profile.phoneNumber.trim() !== user.phoneNumber || profile.citizenId.trim() !== (user.citizenId ?? '')
   const changed = roleId !== user.roleId || status !== user.status || profileChanged
@@ -296,7 +304,7 @@ function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser
   return (
     <div className="add-person">
       <div className="row between">
-        <h3 className="panel-title"><Icon name="edit" size={18} className="cyan" /> {user.fullName}</h3>
+        <h3 className="panel-title"><Icon name="edit" size={18} className="cyan" /> {user.fullName} <span className="code-chip">{staffCode(user.userId)}</span></h3>
         <button className="icon-btn" aria-label="Đóng" onClick={onCancel}><Icon name="x" /></button>
       </div>
       <form className="stack" onSubmit={submit} noValidate>
@@ -309,17 +317,18 @@ function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser
         {isMe && <p className="muted">Bạn không thể tự đổi vai trò hay trạng thái của chính mình.</p>}
         <div className="form-grid">
           <label className="field"><span>Vai trò</span>
-            <select value={roleId} disabled={isMe} onChange={(e) => setRoleId(Number(e.target.value))}>
-              {roles.map((r) => <option key={r.roleId} value={r.roleId}>{roleLabel(r.roleName)}</option>)}
-            </select>
+            <Select value={roleId} disabled={isMe} onChange={(e) => setRoleId(Number(e.target.value))}>
+              {roles.filter((r) => PICKABLE_ROLES.includes(r.roleName) || r.roleId === user.roleId).map((r) => <option key={r.roleId} value={r.roleId}>{roleLabel(r.roleName)}</option>)}
+            </Select>
           </label>
           <label className="field"><span>Trạng thái</span>
-            <select value={status} disabled={isMe} onChange={(e) => setStatus(e.target.value)}>
-              {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-            </select>
+            <Select value={status} disabled={isMe} onChange={(e) => setStatus(e.target.value)}>
+              {[...STAFF_STATUSES, ...(STAFF_STATUSES.includes(status as never) ? [] : [status])].map((k) => <option key={k} value={k}>{statusOfAccount(k).label}</option>)}
+            </Select>
           </label>
         </div>
         {losesFacilities && <p className="alert bad"><Icon name="alert" size={16} />Đổi sang vai trò này sẽ kết thúc mọi phân công cơ sở hiện tại của tài khoản.</p>}
+        {noFacility && <p className="alert warn"><Icon name="alert" size={16} />Tài khoản sẽ chưa được phân công cơ sở nào nên chưa làm việc được ở cơ sở. Muốn có nhân viên cho một cơ sở, hãy dùng Thêm Nhân Viên và chọn cơ sở.</p>}
         {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
         <div className="row">
           <button className="btn primary sm" type="submit" disabled={busy || !changed}>{busy ? 'Đang lưu…' : 'Lưu thay đổi'}</button>

@@ -4,6 +4,8 @@ import { api, IS_DEMO } from '../api'
 import { useAuth } from '../auth'
 import { GATE_ROLES, roleLabel, Roles, type Facility } from '../types'
 import { Icon, Logo } from './ui'
+import { Select } from './Select'
+import { ActionBanner } from './ActionBanner'
 
 // ------------------------------------------------------------------ demo bar
 
@@ -52,6 +54,7 @@ export function PortalHeader() {
               <NavLink to="/invoices">Thanh Toán</NavLink>
               <NavLink to="/support">Hỗ Trợ</NavLink>
               <NavLink to="/rent">Thuê Kho</NavLink>
+              <NavLink to="/visit">Đăng Ký Vào Kho</NavLink>
             </>
           ) : (
             <>
@@ -61,15 +64,15 @@ export function PortalHeader() {
             </>
           )}
           {isStaff && <NavLink to={user.role === Roles.Manager ? '/facility' : '/gate'}>{user.role === Roles.Manager ? 'Màn hình quản lý' : 'Màn hình nhân viên'}</NavLink>}
-          {user?.role === Roles.Admin && <NavLink to="/admin/users">Màn hình quản trị</NavLink>}
+          {user?.role === Roles.Admin && <NavLink to="/admin">Màn hình quản trị</NavLink>}
           {user?.role === Roles.OpsManager && <NavLink to="/ops/facilities">Màn hình vận hành</NavLink>}
           <div className="portal-nav-actions">
             {user ? (
               <>
-                <span className="user-chip">
+                <Link to="/account/profile" className="user-chip" title="Sửa thông tin tài khoản">
                   <span className="avatar">{initials(user.fullName)}</span>
                   <span className="user-chip-text"><b>{user.fullName}</b><small>{user.username}</small></span>
-                </span>
+                </Link>
                 <button className="btn outline sm" onClick={() => { logout(); navigate('/') }}>Đăng Xuất</button>
               </>
             ) : (
@@ -127,6 +130,7 @@ export function PortalLayout() {
     <div className="portal">
       <DemoBar />
       <PortalHeader />
+      <ActionBanner />
       <main className="portal-main"><Outlet /></main>
       <Footer />
     </div>
@@ -221,12 +225,14 @@ export function StaffLayout() {
           </nav>
           {user && (
             <div className="sidebar-user">
-              <span className="avatar">{initials(user.fullName)}</span>
+              <Link to="/account/profile" className="sidebar-user-link" title="Sửa thông tin tài khoản">
+                <span className="avatar">{initials(user.fullName)}</span>
               <span className="grow">
                 <b>{user.fullName}</b>
                 <small>{roleLabel(user.role)}</small>
               </span>
-              <button className="icon-btn" title="Đăng xuất" onClick={() => { logout(); navigate('/login') }}><Icon name="logout" /></button>
+              </Link>
+              <button type="button" className="sidebar-logout" title="Đăng xuất" onClick={() => { logout(); navigate('/login') }}><Icon name="logout" size={16} /> <span>Đăng xuất</span></button>
             </div>
           )}
         </aside>
@@ -240,9 +246,9 @@ export function StaffLayout() {
             {facilities.length > 0 && (
               <label className="facility-select">
                 <Icon name="building" size={16} />
-                <select value={facilityId ?? ''} onChange={(e) => setFacilityId(Number(e.target.value))}>
+                <Select value={facilityId ?? ''} onChange={(e) => setFacilityId(Number(e.target.value))}>
                   {facilities.map((f) => <option key={f.facilityId} value={f.facilityId}>{f.facilityName}</option>)}
-                </select>
+                </Select>
               </label>
             )}
           </header>
@@ -258,13 +264,14 @@ export function StaffLayout() {
 /** A sidebar entry: a built screen has a route, the rest of the Figma menu shows greyed out. */
 interface ConsoleNavItem { icon: string; label: string; to?: string; end?: boolean }
 
-function ConsoleLayout({ area, nav, titles }: { area: string; nav: ConsoleNavItem[]; titles: Record<string, string> }) {
+function ConsoleLayout({ area, nav, titles, customerLink = true }: { area: string; nav: ConsoleNavItem[]; titles: Record<string, string>; customerLink?: boolean }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
   useEffect(() => setMenuOpen(false), [pathname])
-  const title = Object.entries(titles).find(([path]) => pathname.startsWith(path))?.[1] ?? ''
+  // Longest matching prefix, so /admin/units is not titled by /admin.
+  const title = Object.entries(titles).filter(([path]) => pathname === path || pathname.startsWith(`${path}/`)).sort((a, b) => b[0].length - a[0].length)[0]?.[1] ?? ''
 
   return (
     <div className="staff">
@@ -274,16 +281,18 @@ function ConsoleLayout({ area, nav, titles }: { area: string; nav: ConsoleNavIte
           {nav.map((n) => n.to
             ? <NavLink key={n.label} to={n.to} end={n.end}><Icon name={n.icon} /> {n.label}</NavLink>
             : <span key={n.label} className="soon" title="Chưa có màn hình"><Icon name={n.icon} /> {n.label}</span>)}
-          <Link to="/"><Icon name="arrowRight" className="flip" /> Trang khách hàng</Link>
+          {customerLink && <Link to="/"><Icon name="arrowRight" className="flip" /> Trang khách hàng</Link>}
         </nav>
         {user && (
           <div className="sidebar-user">
-            <span className="avatar">{initials(user.fullName)}</span>
+            <Link to="/account/profile" className="sidebar-user-link" title="Sửa thông tin tài khoản">
+              <span className="avatar">{initials(user.fullName)}</span>
             <span className="grow">
               <b>{user.fullName}</b>
               <small>{roleLabel(user.role)}</small>
             </span>
-            <button className="icon-btn" title="Đăng xuất" onClick={() => { logout(); navigate('/login') }}><Icon name="logout" /></button>
+            </Link>
+            <button type="button" className="sidebar-logout" title="Đăng xuất" onClick={() => { logout(); navigate('/login') }}><Icon name="logout" size={16} /> <span>Đăng xuất</span></button>
           </div>
         )}
       </aside>
@@ -305,8 +314,10 @@ export function AdminLayout() {
   return (
     <ConsoleLayout
       area="Admin"
-      titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu',
-        '/admin/storage': 'Kho Lưu Trữ Hệ Thống', '/admin/customers': 'Khách Hàng & Hợp Đồng', '/admin/settings': 'Cài Đặt', '/admin': 'Tổng Quan Quản Lý' }}
+      customerLink={false}
+      titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu & Thống Kê', '/admin/reports': 'Báo Cáo', '/admin/support': 'Hỗ Trợ Khách Hàng', '/admin/system': 'Giao Dịch & Nhật Ký',
+        '/admin/storage': 'Kho Lưu Trữ Hệ Thống', '/admin/facilities': 'Quản Lý Cơ Sở', '/admin/customers': 'Khách Hàng & Hợp Đồng',
+        '/admin/policies': 'Giá & Chính Sách', '/admin/settings': 'Cài Đặt', '/admin': 'Tổng Quan Quản Lý' }}
       nav={[
         { icon: 'grid', label: 'Tổng Quan', to: '/admin', end: true },
         { icon: 'building', label: 'Kho Lưu Trữ', to: '/admin/storage' },
@@ -314,7 +325,7 @@ export function AdminLayout() {
         { icon: 'user', label: 'Nhân Viên', to: '/admin/users' },
         { icon: 'file', label: 'Hợp Đồng', to: '/admin/contracts' },
         { icon: 'chart', label: 'Doanh Thu', to: '/admin/revenue' },
-        { icon: 'mail', label: 'Email Hệ Thống', to: '/admin/emails' },
+        { icon: 'file', label: 'Báo Cáo', to: '/admin/reports' },
         { icon: 'settings', label: 'Cài Đặt', to: '/admin/settings' },
       ]}
     />
@@ -331,8 +342,6 @@ export function OpsLayout() {
       nav={[
         { icon: 'grid', label: 'Tổng Quan', to: '/ops', end: true },
         { icon: 'package', label: 'Vận Hành Kho', to: '/ops/storage' },
-        { icon: 'users', label: 'Khách Hàng' },
-        { icon: 'phone', label: 'Hỗ Trợ' },
         { icon: 'building', label: 'Cơ Sở', to: '/ops/facilities' },
         { icon: 'chart', label: 'Doanh Thu', to: '/ops/revenue' },
         { icon: 'file', label: 'Chính Sách', to: '/ops/policies' },
