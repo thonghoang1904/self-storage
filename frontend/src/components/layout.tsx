@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type MouseEvent, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { api, IS_DEMO } from '../api'
 import { useAuth } from '../auth'
@@ -31,6 +31,14 @@ export function DemoBar() {
 
 const initials = (name: string) => name.split(' ').filter(Boolean).slice(-2).map((w) => w[0]).join('').toUpperCase()
 
+/** The portal logo opens the home page with a full reload, so every count and notice is fetched again. */
+function goHomeFresh(e: MouseEvent<HTMLAnchorElement>) {
+  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+  e.preventDefault()
+  if (IS_DEMO) { window.location.hash = '#/'; window.location.reload() }
+  else window.location.assign(import.meta.env.BASE_URL)
+}
+
 export function PortalHeader() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
@@ -44,7 +52,7 @@ export function PortalHeader() {
   return (
     <header className="portal-header">
       <div className="container portal-header-inner">
-        <Link to="/" className="brand-link"><Logo /></Link>
+        <a href={IS_DEMO ? '#/' : import.meta.env.BASE_URL} className="brand-link" onClick={goHomeFresh}><Logo /></a>
         <button className="icon-btn menu-toggle" aria-label="Mở menu" onClick={() => setOpen(!open)}><Icon name={open ? 'x' : 'menu'} /></button>
         <nav className={`portal-nav ${open ? 'open' : ''}`}>
           <NavLink to="/" end>Trang Chủ</NavLink>
