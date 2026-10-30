@@ -73,7 +73,7 @@ export default function AccountProfile({ mode = 'view' }: { mode?: Mode }) {
                 <div className="info-row"><span className="muted">Số CCCD</span><b>{mask(profile.citizenId, 4)}</b></div>
                 <div className="info-row"><span className="muted">Ngày tạo</span><b>{fmtDate(profile.createdAt)}</b></div>
                 <small className="muted">Tên đăng nhập và số CCCD không tự sửa được; cần đổi CCCD vui lòng liên hệ cơ sở.</small>
-                {user.role === Roles.Customer && <Link to="/account/security" className="btn outline block"><Icon name="shield" size={15} /> Bảo mật & nhật ký</Link>}
+                {user.role === Roles.Customer && <Link to="/account/security" className="btn outline block"><Icon name="history" size={15} /> Nhật ký</Link>}
               </section>
             </aside>
           </div>
