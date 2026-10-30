@@ -7,8 +7,7 @@ import { AppointmentPicker, depositDueAt, depositMissed, pickupMissed } from '..
 import { Empty, Icon, splitTypeName, StatusBadge, UnitArt } from '../components/ui'
 import { TermsList, TERMS_VERSION } from './Terms'
 import { CancellationStatuses, type Availability, type CancellationRequest, type Facility, type Reservation, type UnitType } from '../types'
-import { CODE_FILTER, localToday, promoCodeError, textError } from '../validation'
-import { FieldNote, useInputFilter } from '../components/form'
+import { localToday, textError } from '../validation'
 
 const DURATIONS = [1, 3, 6, 12]
 const SIGN_KEY = 'ss_signed_contracts'
@@ -40,8 +39,6 @@ export default function Rent() {
   const [months, setMonths] = useState(6)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [promoCode, setPromoCode] = useState('')
-  const promo = useInputFilter(CODE_FILTER)
   /** Latest cancellation request of each reservation that can still have one. */
   const [cancellations, setCancellations] = useState<Record<number, CancellationRequest | undefined>>({})
   const [cancelling, setCancelling] = useState<number | null>(null)
@@ -109,7 +106,6 @@ export default function Rent() {
     const invalid = (!startDate && 'Vui lòng chọn ngày bắt đầu thuê')
       || (startDate < todayIso() && 'Ngày bắt đầu thuê không được ở quá khứ')
       || ((months < 1 || months > 60) && 'Số tháng thuê phải từ 1 đến 60')
-      || promoCodeError(promoCode)
     if (invalid) { setError(invalid); return }
     setError('')
     setSigning(true)
@@ -120,14 +116,12 @@ export default function Rent() {
     if (!facilityId || !selected) return
     const dateProblem = checkStartDate(startDate)
     if (dateProblem) { setError(dateProblem); return }
-    const promoProblem = promoCodeError(promoCode)
-    if (promoProblem) { setError(promoProblem); return }
     if (signError) { setError(signError); return }
     setError('')
     setBusy(true)
     try {
       const r = await api<Reservation>('/api/reservations', {
-        body: { facilityId, unitTypeId: selected.unitTypeId, expectedStartDate: startDate, durationMonths: months, promoCode: promoCode.trim() || null },
+        body: { facilityId, unitTypeId: selected.unitTypeId, expectedStartDate: startDate, durationMonths: months, promoCode: null },
       })
       saveSigned(r.reservationCode, { at: new Date().toISOString(), version: TERMS_VERSION })
       // Agreed and reserved: go straight to paying the deposit.
@@ -250,13 +244,7 @@ export default function Rent() {
               <div><dt>Bắt đầu từ</dt><dd>{fmtDate(startDate)}</dd></div>
               <div><dt>Tiền cọc (1 tháng)</dt><dd>{selected ? fmtMoney(selected.baseMonthlyRate) : '—'}</dd></div>
             </dl>
-            <label className="field compact promo-field">
-              <span>Mã khuyến mãi (nếu có)</span>
-              <input value={promoCode} onChange={(e) => setPromoCode(promo.keep(e.target.value))} placeholder="vd: WELCOME10" maxLength={30} />
-              <FieldNote text={promo.hint} />
-            </label>
             <div className="summary-total"><span>Tạm Tính</span><b>{fmtMoney(total)}</b></div>
-            {promoCode.trim() && <p className="fine-print">Mã chỉ dành cho lần thuê đầu tiên; mức giảm được trừ vào tiền thuê tháng đầu và hiện sau khi giữ chỗ.</p>}
             {error && !signing && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
             <button className="btn primary block lg" disabled={!selected || busy || signing} onClick={openSigning}>
               {signing ? 'Xem điều khoản bên dưới ↓' : 'Tiếp Tục: Điều Khoản Hợp Đồng'}
@@ -285,7 +273,6 @@ export default function Rent() {
                   <div><dt>Thời hạn</dt><dd>{months} tháng</dd></div>
                   <div><dt>Giá thuê</dt><dd>{fmtMoney(selected.baseMonthlyRate)}/tháng</dd></div>
                   <div><dt>Tiền cọc dự kiến</dt><dd>{fmtMoney(selected.baseMonthlyRate)}</dd></div>
-                  {promoCode.trim() && <div><dt>Mã khuyến mãi</dt><dd>{promoCode.trim()}</dd></div>}
                 </dl>
                 <div id="rent-terms" className={`terms-box ${termsOpen ? 'open' : ''}`} tabIndex={0} aria-label="Điều khoản hợp đồng">
                   <TermsList compact />
