@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react'
-import { BrowserRouter, HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { useEffect, type ReactNode } from 'react'
+import { BrowserRouter, HashRouter, Navigate, Route, Routes, useLocation, useNavigationType } from 'react-router-dom'
 import { IS_DEMO } from './api'
 import { AuthProvider, useAuth } from './auth'
 import { AdminLayout, OpsLayout, PortalLayout, StaffLayout } from './components/layout'
@@ -53,6 +53,14 @@ import { GATE_ROLES, homeFor, Roles } from './types'
 // The demo build is served as a static page, so it keeps the route in the URL hash.
 const Router = IS_DEMO ? HashRouter : BrowserRouter
 
+/** Opening another page starts at its top; Back keeps where the browser was. */
+function ScrollToTop() {
+  const { pathname } = useLocation()
+  const type = useNavigationType()
+  useEffect(() => { if (type !== 'POP') window.scrollTo(0, 0) }, [pathname])
+  return null
+}
+
 function RequireRole({ roles, children }: { roles: string[]; children: ReactNode }) {
   const { user, loading } = useAuth()
   if (loading) return null
@@ -65,6 +73,7 @@ export default function App() {
   return (
     <AuthProvider>
       <Router>
+        <ScrollToTop />
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
