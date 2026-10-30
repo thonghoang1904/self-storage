@@ -28,8 +28,8 @@ const statusOfAccount = (s: string) => STATUS[s] ?? { label: s, tone: 'warn' as 
 
 /** Only facility staff and facility managers are assigned to facilities. */
 const FACILITY_ROLES: string[] = [Roles.Staff, Roles.Manager]
-/** Roles an admin can pick: customer, facility staff, administrator. Existing manager/ops accounts keep theirs. */
-const PICKABLE_ROLES: string[] = [Roles.Customer, Roles.Staff, Roles.Admin]
+/** Staff roles an admin can pick. Customers are managed on the customer page, never turned into staff here. */
+const PICKABLE_ROLES: string[] = [Roles.Staff, Roles.Admin]
 const isStaffAccount = (u: AdminUser) => u.roleName !== Roles.Customer
 const PAGE_SIZE = 6
 
@@ -67,7 +67,7 @@ export default function AdminUsers() {
   useEffect(() => { void load() }, [load])
 
   const shown = useMemo(() => users
-    .filter((u) => roleFilter === 'all' || (roleFilter === 'staff' ? isStaffAccount(u) : u.roleId === Number(roleFilter)))
+    .filter((u) => isStaffAccount(u) && (roleFilter === 'staff' || u.roleId === Number(roleFilter)))
     .filter((u) => status === 'all' || u.status === status)
     .filter((u) => {
       const s = q.trim().toLowerCase()
@@ -112,7 +112,6 @@ export default function AdminUsers() {
           <Select value={roleFilter} onChange={(e) => { setRoleFilter(e.target.value); setPage(1) }} aria-label="Vai trò">
             <option value="staff">Vai Trò: Tất Cả Nhân Sự</option>
             {roles.filter((r) => PICKABLE_ROLES.includes(r.roleName)).map((r) => <option key={r.roleId} value={r.roleId}>Vai Trò: {roleLabel(r.roleName)}</option>)}
-            <option value="all">Mọi tài khoản (kể cả khách)</option>
           </Select>
           <Select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }} aria-label="Trạng thái">
             <option value="all">Trạng Thái: Tất Cả</option>
@@ -178,7 +177,7 @@ export default function AdminUsers() {
 }
 
 function CreateUserForm({ roles, facilities, onCancel, onDone }: { roles: RoleInfo[]; facilities: Facility[]; onCancel: () => void; onDone: (msg: string) => Promise<void> }) {
-  const staffRoles = roles.filter((r) => r.roleName !== Roles.Customer && PICKABLE_ROLES.includes(r.roleName))
+  const staffRoles = roles.filter((r) => PICKABLE_ROLES.includes(r.roleName))
   const form = useValidatedForm(
     { fullName: '', email: '', username: '', password: '', phoneNumber: '', citizenId: '' },
     { fullName: fullNameError, email: emailError, username: usernameError, password: passwordError, phoneNumber: phoneError, citizenId: (v) => citizenIdError(v, true) },
@@ -275,6 +274,8 @@ function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser
 
   const newRoleName = roles.find((r) => r.roleId === roleId)?.roleName ?? ''
   const losesFacilities = FACILITY_ROLES.includes(user.roleName) && !FACILITY_ROLES.includes(newRoleName)
+  // The edit form cannot assign facilities: a new facility staff account starts with none.
+  const noFacility = !FACILITY_ROLES.includes(user.roleName) && FACILITY_ROLES.includes(newRoleName)
   const profileChanged = profile.fullName.trim() !== user.fullName || profile.email.trim() !== user.email
     || profile.phoneNumber.trim() !== user.phoneNumber || profile.citizenId.trim() !== (user.citizenId ?? '')
   const changed = roleId !== user.roleId || status !== user.status || profileChanged
@@ -327,6 +328,7 @@ function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser
           </label>
         </div>
         {losesFacilities && <p className="alert bad"><Icon name="alert" size={16} />Đổi sang vai trò này sẽ kết thúc mọi phân công cơ sở hiện tại của tài khoản.</p>}
+        {noFacility && <p className="alert warn"><Icon name="alert" size={16} />Tài khoản sẽ chưa được phân công cơ sở nào nên chưa làm việc được ở cơ sở. Muốn có nhân viên cho một cơ sở, hãy dùng Thêm Nhân Viên và chọn cơ sở.</p>}
         {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
         <div className="row">
           <button className="btn primary sm" type="submit" disabled={busy || !changed}>{busy ? 'Đang lưu…' : 'Lưu thay đổi'}</button>
