@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { BrowserRouter, HashRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { IS_DEMO } from './api'
 import { AuthProvider, useAuth } from './auth'
 import { AdminLayout, OpsLayout, PortalLayout, StaffLayout } from './components/layout'
@@ -32,7 +32,6 @@ import ContractEarlyReturn from './pages/ContractEarlyReturn'
 import ContractSuspend from './pages/ContractSuspend'
 import AccountSecurity from './pages/AccountSecurity'
 import AccountProfile from './pages/AccountProfile'
-import AdminUnits from './pages/AdminUnits'
 import { AdminSupport } from './pages/StaffSupport'
 import AdminSystem from './pages/AdminSystem'
 import AdminRevenue from './pages/AdminRevenue'
@@ -110,7 +109,8 @@ export default function App() {
           <Route element={<RequireRole roles={[Roles.Admin]}><AdminLayout /></RequireRole>}>
             <Route path="/admin" element={<ConsoleOverview admin />} />
             <Route path="/admin/storage" element={<AdminStorage />} />
-            <Route path="/admin/units" element={<AdminUnits />} />
+            {/* Units are managed on "Kho Lưu Trữ"; the old per-facility page keeps working as a link. */}
+            <Route path="/admin/units" element={<KeepQuery to="/admin/storage" />} />
             <Route path="/admin/facilities" element={<OpsFacilities />} />
             <Route path="/admin/customers" element={<AdminCustomers />} />
             <Route path="/admin/policies" element={<OpsPolicies />} />
@@ -136,4 +136,9 @@ export default function App() {
       </Router>
     </AuthProvider>
   )
+}
+
+/** Redirect that keeps the query string (?facility=…&q=…). */
+function KeepQuery({ to }: { to: string }) {
+  return <Navigate to={to + useLocation().search} replace />
 }

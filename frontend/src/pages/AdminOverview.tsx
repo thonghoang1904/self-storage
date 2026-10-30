@@ -32,14 +32,14 @@ export function AdminSystemPanels() {
       </div>
 
       <section className="panel">
-        <div className="panel-head wrap"><h2 className="panel-title">Theo cơ sở · 30 ngày gần nhất</h2><Link to="/admin/units" className="link">Xem kho từng cơ sở →</Link></div>
+        <div className="panel-head wrap"><h2 className="panel-title">Theo cơ sở · 30 ngày gần nhất</h2><Link to="/admin/storage" className="link">Xem kho các cơ sở →</Link></div>
         <div className="table-scroll">
           <table>
             <thead><tr><th>Cơ sở</th><th className="right">Kho</th><th className="right">Đang thuê</th><th className="right">Trống</th><th className="right">Bảo trì / khóa</th><th className="right">Hợp đồng</th><th className="right">Hỗ trợ mở</th><th className="right">Doanh thu</th></tr></thead>
             <tbody>
               {report?.facilities.map((f) => (
                 <tr key={f.facilityId}>
-                  <td><Link to={`/admin/units?facility=${f.facilityId}`} className="link">{f.facilityName}</Link></td>
+                  <td><Link to={`/admin/storage?facility=${f.facilityId}`} className="link">{f.facilityName}</Link></td>
                   <td className="right">{f.totalUnits}</td>
                   <td className="right">{f.rentedUnits} <small className="muted">({f.totalUnits ? Math.round(f.rentedUnits / f.totalUnits * 100) : 0}%)</small></td>
                   <td className="right">{f.availableUnits}</td>
@@ -58,7 +58,7 @@ export function AdminSystemPanels() {
         <section className="panel stack-sm">
           <h2 className="panel-title">Lối tắt quản trị</h2>
           {[
-            ['/admin/units', 'building', 'Kho từng cơ sở', 'Mọi kho và trạng thái'],
+            ['/admin/storage', 'building', 'Kho lưu trữ', 'Mọi kho, thêm, sửa, bảo trì, xóa'],
             ['/admin/facilities', 'grid', 'Quản lý cơ sở', 'Thêm, sửa, tạm đóng cơ sở'],
             ['/admin/policies', 'clipboard', 'Giá & chính sách', 'Giá thuê, chính sách, phí, khuyến mãi'],
             ['/admin/users', 'user', 'Nhân viên', 'Tài khoản, vai trò, phân công'],

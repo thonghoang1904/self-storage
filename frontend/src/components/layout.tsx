@@ -316,7 +316,7 @@ export function AdminLayout() {
       area="Admin"
       customerLink={false}
       titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu & Thống Kê', '/admin/reports': 'Báo Cáo', '/admin/support': 'Hỗ Trợ Khách Hàng', '/admin/system': 'Giao Dịch & Nhật Ký',
-        '/admin/storage': 'Kho Lưu Trữ Hệ Thống', '/admin/units': 'Kho Từng Cơ Sở', '/admin/facilities': 'Quản Lý Cơ Sở', '/admin/customers': 'Khách Hàng & Hợp Đồng',
+        '/admin/storage': 'Kho Lưu Trữ Hệ Thống', '/admin/facilities': 'Quản Lý Cơ Sở', '/admin/customers': 'Khách Hàng & Hợp Đồng',
         '/admin/policies': 'Giá & Chính Sách', '/admin/settings': 'Cài Đặt', '/admin': 'Tổng Quan Quản Lý' }}
       nav={[
         { icon: 'grid', label: 'Tổng Quan', to: '/admin', end: true },
