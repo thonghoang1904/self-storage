@@ -2032,14 +2032,14 @@ const routes: [string, RegExp, Handler][] = [
   }],
   ['GET', /^\/api\/facility-management\/facilities\/(\d+)\/staff$/, (m, { token }) => {
     const fid = Number(m[1])
-    facilityStaff(token, fid, [Roles.Manager])
+    facilityStaff(token, fid, UNIT_MANAGERS)
     return db.assignments.filter((a) => a.facilityId === fid).map((a) => ({ a, u: userById(a.staffId) }))
       .filter(({ u }) => u.role === Roles.Staff).sort((x, y) => x.u.fullName.localeCompare(y.u.fullName))
       .map<FacilityStaff>(({ a, u }) => ({ userId: u.userId, username: u.username, fullName: u.fullName, email: u.email, status: u.status ?? 'Active', assignedDate: a.assignedDate ?? '2026-01-05' }))
   }],
   ['POST', /^\/api\/facility-management\/facilities\/(\d+)\/staff$/, (m, { token, body }) => {
     const fid = Number(m[1])
-    const me = facilityStaff(token, fid, [Roles.Manager])
+    const me = facilityStaff(token, fid, UNIT_MANAGERS)
     const u = db.users.find((x) => x.userId === Number(body.staffUserId))
     if (!u) throw notFound('Không tìm thấy tài khoản nhân viên')
     if (u.role !== Roles.Staff || (u.status ?? 'Active') !== 'Active') throw bad('Chỉ có thể phân công tài khoản Facility Staff đang hoạt động')
@@ -2052,7 +2052,7 @@ const routes: [string, RegExp, Handler][] = [
   }],
   ['DELETE', /^\/api\/facility-management\/facilities\/(\d+)\/staff\/(\d+)$/, (m, { token }) => {
     const fid = Number(m[1])
-    const me = facilityStaff(token, fid, [Roles.Manager])
+    const me = facilityStaff(token, fid, UNIT_MANAGERS)
     const i = db.assignments.findIndex((a) => a.facilityId === fid && a.staffId === Number(m[2]) && userById(a.staffId).role === Roles.Staff)
     if (i < 0) throw notFound('Không tìm thấy phân công đang hoạt động')
     db.assignments.splice(i, 1)

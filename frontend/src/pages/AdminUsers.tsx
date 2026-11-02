@@ -7,6 +7,7 @@ import { roleLabel, Roles, type AdminUser, type Facility, type RoleInfo } from '
 import { staffCode } from '../validation'
 import { FormField, PasswordChecklist, useValidatedForm } from '../components/form'
 import { Select } from '../components/Select'
+import { Modal } from '../components/Modal'
 
 /**
  * #45 System Admin, Figma "staff-management": the system's staff accounts (GET /api/admin/users), adding
@@ -48,6 +49,9 @@ export default function AdminUsers() {
   const [editId, setEditId] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  // Facilities each staff account works at (GET .../facilities/{id}/staff per facility), and the one being reassigned.
+  const [assigned, setAssigned] = useState<Record<number, number[]>>({})
+  const [assigning, setAssigning] = useState<AdminUser | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -60,6 +64,11 @@ export default function AdminUsers() {
       setUsers(u)
       setRoles(r)
       setFacilities(f)
+      const lists = await Promise.all(f.map((fa) => api<{ userId: number }[]>(`/api/facility-management/facilities/${fa.facilityId}/staff`)
+        .then((xs) => xs.map((x) => [x.userId, fa.facilityId] as const)).catch(() => [])))
+      const map: Record<number, number[]> = {}
+      lists.flat().forEach(([uid, fid]) => { (map[uid] ??= []).push(fid) })
+      setAssigned(map)
     } catch (e) {
       setError((e as Error).message)
     }
@@ -124,12 +133,17 @@ export default function AdminUsers() {
       {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
 
+      {assigning && (
+        <AssignDialog user={assigning} facilities={facilities} current={assigned[assigning.userId] ?? []}
+          onClose={() => setAssigning(null)} onDone={async (msg) => { setAssigning(null); await done(msg) }} />
+      )}
+
       {creating && <CreateUserForm roles={roles} facilities={facilities} onCancel={() => setCreating(false)} onDone={done} />}
 
       <section className="panel">
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Avatar</th><th>Mã NV</th><th>Họ Tên</th><th>Email</th><th>Vai Trò</th><th>Số Điện Thoại</th><th>Trạng Thái</th><th className="right">Hành Động</th></tr></thead>
+            <thead><tr><th>Avatar</th><th>Mã NV</th><th>Họ Tên</th><th>Email</th><th>Vai Trò</th><th>Cơ Sở</th><th>Số Điện Thoại</th><th>Trạng Thái</th><th className="right">Hành Động</th></tr></thead>
             <tbody>
               {pageRows.map((u) => {
                 const st = statusOfAccount(u.status)
@@ -141,10 +155,17 @@ export default function AdminUsers() {
                     <td><b>{u.fullName}</b>{isMe && <small className="muted"> (bạn)</small>}<br /><small className="muted">{u.username}</small></td>
                     <td className="muted">{u.email}</td>
                     <td><b>{roleLabel(u.roleName)}</b></td>
+                    <td>{u.roleName === Roles.Staff
+                      ? (assigned[u.userId]?.length ? <small>{assigned[u.userId].map((id) => facilities.find((fa) => fa.facilityId === id)?.facilityName ?? `#${id}`).join(', ')}</small> : <small className="danger-text">Chưa phân công</small>)
+                      : <small className="muted">Mọi cơ sở</small>}</td>
                     <td className="muted">{u.phoneNumber}</td>
                     <td><Badge tone={st.tone}>{st.label}</Badge></td>
                     <td className="right">
                       <div className="row end">
+                        {u.roleName === Roles.Staff && (
+                          <button className="btn outline sm" disabled={u.status !== 'Active'} title={u.status === 'Active' ? 'Đổi cơ sở làm việc' : 'Tài khoản đang khóa'}
+                            onClick={() => { setNotice(''); setError(''); setAssigning(u) }}><Icon name="building" size={14} /> Phân công</button>
+                        )}
                         <button className="icon-action" title="Sửa vai trò, trạng thái và xem lịch sử" aria-label={`Sửa ${u.fullName}`}
                           onClick={() => { setNotice(''); setCreating(false); setEditId(editId === u.userId ? null : u.userId) }}><Icon name="edit" size={14} /></button>
                         <button className="icon-action danger" title={isMe ? 'Không thể tự khóa tài khoản của mình' : 'Cho nghỉ việc, khóa tài khoản'} aria-label={`Khóa ${u.fullName}`}
@@ -339,3 +360,56 @@ function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser
   )
 }
 
+
+/**
+ * "Phân công": tick the facilities a staff account works at. Saves the difference with
+ * POST /api/facility-management/facilities/{id}/staff (added) and DELETE .../staff/{userId} (removed).
+ */
+function AssignDialog({ user: u, facilities, current, onClose, onDone }: {
+  user: AdminUser; facilities: Facility[]; current: number[]; onClose: () => void; onDone: (msg: string) => Promise<void>
+}) {
+  const [picked, setPicked] = useState<number[]>(current)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const toggle = (id: number) => setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id])
+  const added = picked.filter((id) => !current.includes(id))
+  const removed = current.filter((id) => !picked.includes(id))
+  const name = (id: number) => facilities.find((f) => f.facilityId === id)?.facilityName ?? `#${id}`
+
+  const save = async () => {
+    if (picked.length === 0) { setError('Chọn ít nhất một cơ sở; nhân viên không có cơ sở thì không làm việc được.'); return }
+    setBusy(true)
+    setError('')
+    try {
+      for (const id of added) await api(`/api/facility-management/facilities/${id}/staff`, { body: { staffUserId: u.userId } })
+      for (const id of removed) await api(`/api/facility-management/facilities/${id}/staff/${u.userId}`, { method: 'DELETE' })
+      await onDone(`Đã phân công ${u.fullName}: ${picked.map(name).join(', ')}.`)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal title={`Phân công cơ sở · ${u.fullName}`} onClose={onClose}>
+      <p className="muted">Tích các cơ sở nhân viên làm việc. Nhân viên chỉ thấy và thao tác ở các cơ sở được tích.</p>
+      <div className="stack-sm">
+        {facilities.map((f) => (
+          <label key={f.facilityId} className="check-row">
+            <input type="checkbox" checked={picked.includes(f.facilityId)} disabled={busy} onChange={() => toggle(f.facilityId)} />
+            <span className="grow"><b>{f.facilityName}</b><small className="muted block">{f.address}, {f.district}{f.status !== 'Active' ? ' · không hoạt động' : ''}</small></span>
+          </label>
+        ))}
+      </div>
+      {(added.length > 0 || removed.length > 0) && (
+        <small className="muted">{added.length > 0 && `Thêm: ${added.map(name).join(', ')}. `}{removed.length > 0 && `Bỏ: ${removed.map(name).join(', ')}.`}</small>
+      )}
+      {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+      <div className="row end">
+        <button type="button" className="btn ghost" onClick={onClose} disabled={busy}>Hủy</button>
+        <button type="button" className="btn primary" onClick={() => void save()} disabled={busy || (added.length === 0 && removed.length === 0)}>{busy ? 'Đang lưu…' : 'Lưu phân công'}</button>
+      </div>
+    </Modal>
+  )
+}

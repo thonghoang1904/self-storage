@@ -186,12 +186,21 @@ const INVOICE_TYPE: Record<string, string> = {
 function ContractDialog({ contract: c, facilityId, onClose }: { contract: Contract; facilityId: number; onClose: () => void }) {
   const [info, setInfo] = useState<StaffContract | null>(null)
   const [invoices, setInvoices] = useState<Invoice[] | null>(null)
+  // The invoice opened from the list, shown in place of the contract (back arrow returns).
+  const [open, setOpen] = useState<Invoice | null>(null)
   useEffect(() => {
     api<StaffContract[]>(`/api/contracts/facilities/${facilityId}`).then((cs) => setInfo(cs.find((x) => x.contractId === c.contractId) ?? null)).catch(() => {})
     api<Invoice[]>(`/api/invoices/facilities/${facilityId}`).then((is) => setInvoices(is.filter((i) => i.contractId === c.contractId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt)))).catch(() => setInvoices([]))
   }, [c.contractId, facilityId])
   const owed = (invoices ?? []).filter((i) => i.status === 'Unpaid' || i.status === 'Overdue')
+  if (open) {
+    return (
+      <Modal title={<span className="row"><button type="button" className="icon-btn" aria-label="Quay lại hợp đồng" onClick={() => setOpen(null)}><Icon name="arrowRight" className="flip" /></button> Hóa đơn {open.invoiceNumber}</span>} onClose={onClose} wide>
+        <InvoiceView invoice={open} customer={info?.customerName} contract={c} />
+      </Modal>
+    )
+  }
   return (
     <Modal title={`Hợp đồng ${c.contractNumber}`} onClose={onClose} wide>
       <div className="row between wrap"><StatusBadge status={c.status} />{owed.length > 0 && <span className="badge bad">{owed.length} hóa đơn chưa trả · {fmtMoney(owed.reduce((n, i) => n + i.totalAmount, 0))}</span>}</div>
@@ -218,7 +227,7 @@ function ContractDialog({ contract: c, facilityId, onClose }: { contract: Contra
               <tbody>
                 {invoices.map((i) => (
                   <tr key={i.invoiceId}>
-                    <td className="code">{i.invoiceNumber}</td>
+                    <td className="code"><button type="button" className="link-btn link" onClick={() => setOpen(i)}>{i.invoiceNumber}</button></td>
                     <td>{INVOICE_TYPE[i.invoiceType] ?? i.invoiceType}</td>
                     <td>{fmtDate(i.dueDate)}</td>
                     <td className="right money">{fmtMoney(i.totalAmount)}</td>
@@ -231,5 +240,56 @@ function ContractDialog({ contract: c, facilityId, onClose }: { contract: Contra
         )}
       </div>
     </Modal>
+  )
+}
+
+const PAY_STATE: Record<string, [string, string]> = {
+  Success: ['Thành công', 'ok'], Pending: ['Đang chờ', 'warn'], Failed: ['Thất bại', 'bad'], Refunded: ['Đã hoàn', 'info'],
+  Reversed: ['Đã hoàn trả', 'info'], RefundDue: ['Chờ hoàn tiền', 'warn'],
+}
+const METHOD: Record<string, string> = { Cash: 'Tiền mặt', BankTransfer: 'Chuyển khoản', VNPay: 'VNPay', MoMo: 'MoMo' }
+
+/** One invoice: lines, totals and payments (from the facility invoice list, nothing more to load). */
+function InvoiceView({ invoice: i, customer, contract: c }: { invoice: Invoice; customer?: string; contract: Contract }) {
+  return (
+    <>
+      <div className="row between wrap"><StatusBadge status={i.status} /><small className="muted">{INVOICE_TYPE[i.invoiceType] ?? i.invoiceType}</small></div>
+      <div className="form-grid two">
+        <div className="info-box">
+          <div className="info-row"><span className="muted">Khách hàng</span><b>{customer ?? '…'}</b></div>
+          <div className="info-row"><span className="muted">Hợp đồng</span><b>{c.contractNumber} · Kho {c.unitCode}</b></div>
+        </div>
+        <div className="info-box">
+          <div className="info-row"><span className="muted">Ngày lập</span><b>{fmtDate(i.createdAt)}</b></div>
+          <div className="info-row"><span className="muted">Hạn thanh toán</span><b>{fmtDate(i.dueDate)}</b></div>
+          {i.billingPeriodStart && i.billingPeriodEnd && <div className="info-row"><span className="muted">Kỳ thuê</span><b>{fmtDate(i.billingPeriodStart)} – {fmtDate(i.billingPeriodEnd)}</b></div>}
+        </div>
+      </div>
+      <div className="table-scroll">
+        <table>
+          <thead><tr><th>Nội dung</th><th className="right">SL</th><th className="right">Đơn giá</th><th className="right">Thành tiền</th></tr></thead>
+          <tbody>
+            {i.details.map((d) => (
+              <tr key={d.detailId}><td>{d.description}</td><td className="right">{d.quantity}</td><td className="right">{fmtMoney(d.unitPrice)}</td><td className="right money">{fmtMoney(d.lineTotal)}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="info-box">
+        <div className="info-row"><span className="muted">Tạm tính</span><b>{fmtMoney(i.subTotal)}</b></div>
+        {i.discountAmount > 0 && <div className="info-row"><span className="muted">Giảm giá</span><b>−{fmtMoney(i.discountAmount)}</b></div>}
+        <div className="info-row"><span className="muted">Tổng cộng</span><b className="money">{fmtMoney(i.totalAmount)}</b></div>
+      </div>
+      <div className="stack-sm">
+        <b>Thanh toán</b>
+        {i.payments.length === 0 ? <p className="muted">Chưa có giao dịch thanh toán.</p> : i.payments.map((p) => (
+          <div key={p.paymentId} className="info-row">
+            <span><b>{fmtMoney(p.amountPaid)}</b> · {METHOD[p.paymentMethod] ?? p.paymentMethod}{p.transactionCode ? ` · ${p.transactionCode}` : ''}<br />
+              <small className="muted">{fmtDate(p.paymentDate)}{p.receivedByStaff ? ` · ${p.receivedByStaff}` : ''}</small></span>
+            <span className={`badge ${PAY_STATE[p.status]?.[1] ?? 'muted'}`}>{PAY_STATE[p.status]?.[0] ?? p.status}</span>
+          </div>
+        ))}
+      </div>
+    </>
   )
 }

@@ -221,7 +221,7 @@ public sealed class FacilityManagementController(
     }
 
     [HttpGet("staff")]
-    [Authorize(Roles = AppRoles.Manager)]
+    [Authorize(Roles = UnitManagerRoles)]
     public async Task<List<FacilityStaffDto>> Staff(int facilityId, CancellationToken ct)
     {
         await EnsureManagerOwnsFacilityAsync(facilityId, ct);
@@ -235,7 +235,7 @@ public sealed class FacilityManagementController(
     }
 
     [HttpPost("staff")]
-    [Authorize(Roles = AppRoles.Manager)]
+    [Authorize(Roles = UnitManagerRoles)]
     public async Task<FacilityStaffDto> AssignStaff(
         int facilityId, AssignFacilityStaffRequest req, CancellationToken ct)
     {
@@ -283,7 +283,7 @@ public sealed class FacilityManagementController(
     }
 
     [HttpDelete("staff/{staffUserId:int}")]
-    [Authorize(Roles = AppRoles.Manager)]
+    [Authorize(Roles = UnitManagerRoles)]
     public async Task<IActionResult> RemoveStaff(int facilityId, int staffUserId, CancellationToken ct)
     {
         await EnsureManagerOwnsFacilityAsync(facilityId, ct);
