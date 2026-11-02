@@ -7,7 +7,7 @@ import type { Facility } from '../types'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import { SupportCategories, SupportPriorities, type SupportChecklistItem, type SupportRequest, type SupportUpdate } from '../types'
 import { Select } from '../components/Select'
-import { StatCard, scrollToList } from '../components/StatCard'
+import { StatChip, scrollToList } from '../components/StatCard'
 
 /**
  * Figma "support-incident-management": metrics, filters, ticket list on the left and the selected
@@ -90,21 +90,20 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
 
   return (
     <div className="stack-xl">
-      <div className="page-title-row row between wrap">
+      <div className="page-top">
         <div>
           <h1>Hỗ Trợ & Sự Cố</h1>
           <p className="muted">{admin
             ? 'Toàn bộ yêu cầu hỗ trợ của khách ở mọi cơ sở: theo dõi, phản hồi khách và xử lý thay khi cần.'
             : 'Tiếp nhận yêu cầu hỗ trợ của khách tại cơ sở, làm theo các bước xử lý và cập nhật tiến độ cho khách.'}</p>
         </div>
-      </div>
-
-      <div className="stat-grid">
-        {/* Each card filters the list to what it counts; clicking the active card again goes back to "Cần xử lý". */}
-        <StatCard icon="alert" tone="warn" label="Mới gửi" value={count('Open')} note="chưa ai tiếp nhận" active={is('Open', 'all')} onClick={() => pick('Open', 'all')} />
-        <StatCard icon="refresh" tone="info" label="Đang xử lý" value={count('InProgress')} note="đã có nhân viên phụ trách" active={is('InProgress', 'all')} onClick={() => pick('InProgress', 'all')} />
-        <StatCard icon="lock" tone="bad" label="Khẩn cấp / Cao" value={urgent} note="nên ưu tiên trước" active={is('active', 'urgent')} onClick={() => pick('active', 'urgent')} />
-        <StatCard icon="check" tone="ok" label="Đã xử lý / đóng" value={count('Resolved') + count('Closed')} note="đã hoàn tất các bước xử lý" active={is('done', 'all')} onClick={() => pick('done', 'all')} />
+        {/* Each counter filters the list; clicking the active one again goes back to "Cần xử lý". */}
+        <div className="stat-chips">
+          <StatChip icon="alert" tone="warn" label="mới gửi" value={count('Open')} hint="Chưa ai tiếp nhận" active={is('Open', 'all')} onClick={() => pick('Open', 'all')} />
+          <StatChip icon="refresh" tone="info" label="đang xử lý" value={count('InProgress')} active={is('InProgress', 'all')} onClick={() => pick('InProgress', 'all')} />
+          <StatChip icon="lock" tone="bad" label="khẩn cấp / cao" value={urgent} hint="Nên ưu tiên trước" active={is('active', 'urgent')} onClick={() => pick('active', 'urgent')} />
+          <StatChip icon="check" tone="ok" label="đã xử lý / đóng" value={count('Resolved') + count('Closed')} active={is('done', 'all')} onClick={() => pick('done', 'all')} />
+        </div>
       </div>
 
       {/* Status as a tab bar (same pattern as the cancellation and contract pages), then search and priority. */}

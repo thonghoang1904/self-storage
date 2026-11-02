@@ -137,7 +137,7 @@ export default function Gate() {
   const stat = (key: '' | 'Granted' | 'Denied' | 'inside', icon: string, tone: string, label: string, value: number) => {
     const active = key !== 'inside' && key !== '' && logFilter === key
     return (
-      <button type="button" className={`gate-stat ${tone} ${active ? 'active' : ''}`} aria-pressed={active}
+      <button type="button" className={`stat-chip ${tone} ${active ? 'active' : ''}`} aria-pressed={active}
         onClick={() => (key === 'inside' ? scrollToList('gate-inside') : pickLog(key))}>
         <Icon name={icon} size={16} /><b>{value}</b><span>{label}</span>
       </button>
@@ -148,12 +148,12 @@ export default function Gate() {
   // a search result spans the full width; bookings and today's log on the left, who is inside right now on the right.
   return (
     <div className="stack-lg">
-      <div className="gate-top">
+      <div className="page-top">
         <div>
           <h1>Kiểm Tra & Cho Vào Kho</h1>
           <p className="muted">{fmtDate(new Date().toISOString())} · đối chiếu CCCD trên thẻ rồi cho vào hoặc ghi nhận từ chối.</p>
         </div>
-        <div className="gate-stats">
+        <div className="stat-chips">
           {stat('inside', 'users', 'info', 'đang trong kho', inside.length)}
           {stat('Granted', 'door', 'ok', `lượt vào · ${exited} đã ra`, granted)}
           {stat('Denied', 'alert', 'bad', 'từ chối', denied)}

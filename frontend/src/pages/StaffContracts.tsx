@@ -6,7 +6,7 @@ import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { Invoice, OverdueSummary, Renewal, StaffContract } from '../types'
 import { Select } from '../components/Select'
-import { StatCard, scrollToList } from '../components/StatCard'
+import { StatChip, scrollToList } from '../components/StatCard'
 import { ContractDialog } from './FacilityContracts'
 
 /** Figma "renewals-overdue": metrics, filters, one table of contracts to renew or collect, collection rule. */
@@ -142,21 +142,20 @@ export default function StaffContracts() {
   return (
     <div className="stack-xl">
       {viewing && facilityId && <ContractDialog contract={viewing} facilityId={facilityId} onClose={() => setViewing(null)} />}
-      <div className="page-title-row row between wrap">
+      <div className="page-top">
         <div>
           <h1>Gia Hạn & Quá Hạn</h1>
           <p className="muted">Theo dõi hợp đồng sắp hết hạn, thu phí gia hạn và xử lý kho quá hạn tại cơ sở.</p>
         </div>
-        <button className="btn outline" onClick={exportCsv}><Icon name="clipboard" size={15} /> Xuất danh sách</button>
-      </div>
-
-      <div className="stat-grid">
-        <StatCard icon="clipboard" tone="info" label="Hợp đồng hiệu lực" value={active} note="tại cơ sở này" active={kind === 'live'} onClick={() => pick('live')} />
-        <StatCard icon="refresh" tone="warn" label="Chờ thu phí gia hạn" value={renewals.length} note={renewals.length ? `${fmtMoney(renewals.reduce((s, r) => s + r.renewalFee, 0))} cần thu` : 'không có yêu cầu'}
-          active={kind === 'renewal'} onClick={() => pick('renewal')} />
-        <StatCard icon="calendar" tone="ok" label="Hết hạn trong 7 ngày" value={rows.filter(endingSoon).length} note="nhắc khách gia hạn hoặc trả kho" active={kind === 'soon'} onClick={() => pick('soon')} />
-        <StatCard icon="lock" tone="bad" label="Quá hạn · đang khóa" value={overdue.length} note={overdue.length ? `${fmtMoney(lateFees)} phí đã tính` : 'không có kho bị khóa'}
-          active={kind === 'overdue'} onClick={() => pick('overdue')} />
+        <div className="stat-chips">
+          <StatChip icon="clipboard" tone="info" label="hiệu lực" value={active} active={kind === 'live'} onClick={() => pick('live')} />
+          <StatChip icon="refresh" tone="warn" label="chờ phí gia hạn" value={renewals.length} extra={renewals.length ? fmtMoney(renewals.reduce((s, r) => s + r.renewalFee, 0)) : undefined}
+            active={kind === 'renewal'} onClick={() => pick('renewal')} />
+          <StatChip icon="calendar" tone="ok" label="hết hạn ≤ 7 ngày" value={rows.filter(endingSoon).length} hint="Nhắc khách gia hạn hoặc trả kho" active={kind === 'soon'} onClick={() => pick('soon')} />
+          <StatChip icon="lock" tone="bad" label="quá hạn · khóa" value={overdue.length} extra={overdue.length ? `${fmtMoney(lateFees)} phí` : undefined}
+            active={kind === 'overdue'} onClick={() => pick('overdue')} />
+          <button className="btn outline sm" onClick={exportCsv}><Icon name="clipboard" size={14} /> Xuất danh sách</button>
+        </div>
       </div>
 
       <div className="panel filter-bar">

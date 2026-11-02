@@ -1360,15 +1360,15 @@ a.user-chip:hover { background: var(--bg-tint); }
 a.stat-link { text-decoration: none; color: inherit; }
 
 /* Gate: search first, compact counters, inside list as a side column. */
-.gate-top { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
-.gate-top h1 { margin: 0; }
-.gate-stats { display: flex; flex-wrap: wrap; gap: 8px; }
-.gate-stat { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 999px; background: #fff; font: inherit; font-size: 13px; color: var(--muted); cursor: pointer; transition: border-color .15s, box-shadow .15s; }
-.gate-stat b { font-size: 16px; color: var(--text-strong); }
-.gate-stat:hover, .gate-stat.active { border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-50); }
-.gate-stat.info svg { color: var(--cyan-600); }
-.gate-stat.ok svg { color: var(--ok); }
-.gate-stat.bad svg { color: var(--bad); }
+.page-top { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.page-top h1 { margin: 0; }
+.stat-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.stat-chip { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 999px; background: #fff; font: inherit; font-size: 13px; color: var(--muted); cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.stat-chip b { font-size: 16px; color: var(--text-strong); }
+.stat-chip:hover, .stat-chip.active { border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-50); }
+.stat-chip.info svg { color: var(--cyan-600); }
+.stat-chip.ok svg { color: var(--ok); }
+.stat-chip.bad svg { color: var(--bad); }
 .gate-search { display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--cyan); box-shadow: 0 0 0 4px var(--cyan-50), var(--shadow); }
 .gate-search input { height: 52px; font-size: 16px; }
 .gate-search .btn { height: 52px; padding: 0 22px; }
@@ -1383,3 +1383,7 @@ a.stat-link { text-decoration: none; color: inherit; }
 .contract-row-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .contract-row-grid span { display: flex; flex-direction: column; gap: 2px; font-size: 13.5px; }
 @media (max-width: 700px) { .contract-row-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.stat-chip em { font-style: normal; font-weight: 700; color: var(--text-strong); }
+.stat-chip.warn svg { color: var(--warn); }
+.stat-chip:disabled { cursor: default; }
+.stat-chips .btn { align-self: center; }

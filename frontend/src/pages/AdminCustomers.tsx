@@ -4,7 +4,7 @@ import { daysUntil, fetchContracts } from '../consoleData'
 import { Badge, Empty, Icon, StatusBadge } from '../components/ui'
 import { Modal } from '../components/Modal'
 import { Roles, type AdminContract, type AdminUser, type Facility, type RoleInfo } from '../types'
-import { StatCard, scrollToList } from '../components/StatCard'
+import { StatChip, scrollToList } from '../components/StatCard'
 import { Pager } from './AdminStorage'
 import { Select } from '../components/Select'
 
@@ -82,21 +82,22 @@ export default function AdminCustomers() {
 
   return (
     <div className="stack-xl">
-      <div className="page-title-row">
-        <h1>Quản Lý Khách Hàng</h1>
-        <p className="muted">Theo dõi hồ sơ khách hàng và kho đang thuê của từng người.</p>
+      <div className="page-top">
+        <div>
+          <h1>Quản Lý Khách Hàng</h1>
+          <p className="muted">Theo dõi hồ sơ khách hàng và kho đang thuê của từng người.</p>
+        </div>
+        {/* Each counter filters the customer list; clicking the active one again shows everyone. */}
+        <div className="stat-chips">
+          <StatChip icon="users" tone="info" label="đang hoạt động" value={active} extra={`${rows.length} tài khoản`} active={standing === 'active'} onClick={() => pick('active')} />
+          <StatChip icon="package" tone="ok" label="đang thuê kho" value={renting} extra={`${liveContracts} hợp đồng`} active={standing === 'any'} onClick={() => pick('any')} />
+          <StatChip icon="alert" tone={overdue + soon ? 'bad' : 'ok'} label="cần xử lý" value={overdue + soon} extra={`${overdue} quá hạn · ${soon} sắp hết`} active={standing === 'attention'} onClick={() => pick('attention')} />
+        </div>
       </div>
 
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
       {viewing && <CustomerContracts customer={viewing} onClose={() => setViewing(null)} />}
 
-      <div className="stat-grid">
-        {/* Each card filters the customer list to what it counts; clicking the active card again shows everyone. */}
-        <StatCard icon="users" tone="info" label="Khách hàng đang hoạt động" value={active} note={`${rows.length} tài khoản khách hàng`} active={standing === 'active'} onClick={() => pick('active')} />
-        <StatCard icon="file" tone="ok" label="Hợp đồng hiệu lực" value={liveContracts} note={renting ? `${liveContracts} hợp đồng / ${renting} khách đang thuê` : 'chưa có khách đang thuê'} active={standing === 'any'} onClick={() => pick('any')} />
-        <StatCard icon="package" tone="info" label="Khách đang thuê kho" value={renting} note={`${rows.length - renting} khách chưa thuê kho`} active={standing === 'any'} onClick={() => pick('any')} />
-        <StatCard icon="alert" tone={overdue + soon ? 'bad' : 'ok'} label="Cần xử lý" value={overdue + soon} note={`${overdue} quá hạn • ${soon} sắp hết hạn`} active={standing === 'attention'} onClick={() => pick('attention')} />
-      </div>
 
       <div className="panel filter-bar">
         <div className="filter-controls">

@@ -6,6 +6,7 @@ import { appointmentReached, depositDueAt, depositMissed, pickupMissed } from '.
 import { Badge, Empty, Icon, splitTypeName, StatusBadge } from '../components/ui'
 import type { Reservation, StorageUnit } from '../types'
 import { Select } from '../components/Select'
+import { StatChip } from '../components/StatCard'
 
 const FILTERS = [
   { key: 'open', label: 'Cần xử lý' },
@@ -82,18 +83,17 @@ export default function StaffReservations() {
 
   return (
     <div className="stack-xl">
-      <div className="page-title-row">
+      <div className="page-top">
         <div>
           <h1>Xác Nhận Cọc & Bàn Giao Kho</h1>
-          <p className="muted">Khách đặt kho trực tuyến, nhân viên xác nhận đã nhận cọc rồi chọn kho cụ thể để bàn giao. Bàn giao sẽ tạo hợp đồng.</p>
+          <p className="muted">Khách đặt kho trực tuyến và chuyển khoản cọc; nhân viên chọn kho cụ thể để bàn giao. Bàn giao sẽ tạo hợp đồng.</p>
         </div>
-      </div>
-
-      {/* Each card filters the list below to its orders. */}
-      <div className="stat-grid three">
-        <button type="button" className={`stat-card stat-filter ${filter === 'PendingDeposit' ? 'active' : ''}`} onClick={() => showOnly('PendingDeposit')}><div className="row between"><span className="muted">Chờ đặt cọc</span><span className="stat-icon warn"><Icon name="wallet" size={17} /></span></div><b className="stat-value">{pending}</b><small className="stat-note warn">Quá hạn cọc đơn tự hủy, chậm nhất 20:00 ngày bắt đầu</small></button>
-        <button type="button" className={`stat-card stat-filter ${filter === 'Confirmed' ? 'active' : ''}`} onClick={() => showOnly('Confirmed')}><div className="row between"><span className="muted">Chờ bàn giao</span><span className="stat-icon info"><Icon name="key" size={17} /></span></div><b className="stat-value">{confirmed}</b><small className={`stat-note ${late ? 'bad' : 'info'}`}>{units.length} kho đang trống{late ? ` · ${late} đơn quá hạn` : ''}</small></button>
-        <button type="button" className={`stat-card stat-filter ${filter === 'CheckedIn' ? 'active' : ''}`} onClick={() => showOnly('CheckedIn')}><div className="row between"><span className="muted">Đã bàn giao</span><span className="stat-icon ok"><Icon name="check" size={17} /></span></div><b className="stat-value">{checkedIn}</b><small className="stat-note ok">Đã tạo hợp đồng</small></button>
+        {/* Each counter filters the list below to its orders. */}
+        <div className="stat-chips">
+          <StatChip icon="wallet" tone="warn" label="chờ đặt cọc" value={pending} hint="Quá hạn cọc đơn tự hủy, chậm nhất 20:00 ngày bắt đầu" active={filter === 'PendingDeposit'} onClick={() => showOnly('PendingDeposit')} />
+          <StatChip icon="key" tone={late ? 'bad' : 'info'} label="chờ bàn giao" value={confirmed} extra={late ? `${late} quá hạn` : `${units.length} kho trống`} active={filter === 'Confirmed'} onClick={() => showOnly('Confirmed')} />
+          <StatChip icon="check" tone="ok" label="đã bàn giao" value={checkedIn} hint="Đã tạo hợp đồng" active={filter === 'CheckedIn'} onClick={() => showOnly('CheckedIn')} />
+        </div>
       </div>
 
       <section className="panel" id="reservation-list">

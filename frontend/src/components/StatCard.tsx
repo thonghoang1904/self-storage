@@ -20,3 +20,17 @@ export function StatCard({ icon, tone, label, value, note, active = false, onCli
 
 /** Scrolls the list a card filters into view, after React has re-rendered it. */
 export const scrollToList = (id: string) => setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30)
+
+/**
+ * Compact counter in the page header (same look as the gate page): icon, number, short label and an optional extra
+ * such as an amount. With onClick it filters the list like StatCard; the longer explanation goes in the tooltip.
+ */
+export function StatChip({ icon, tone, label, value, extra, hint, active = false, onClick }: {
+  icon: string; tone: string; label: string; value: string | number; extra?: string; hint?: string; active?: boolean; onClick?: () => void
+}) {
+  return (
+    <button type="button" className={`stat-chip ${tone} ${active ? 'active' : ''}`} aria-pressed={active} onClick={onClick} title={hint} disabled={!onClick}>
+      <Icon name={icon} size={16} /><b>{value}</b><span>{label}{extra && <> · <em>{extra}</em></>}</span>
+    </button>
+  )
+}

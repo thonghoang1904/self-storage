@@ -7,6 +7,7 @@ import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { Invoice, RefundDuePayment, Reservation, StaffContract } from '../types'
 import { Select } from '../components/Select'
+import { StatChip } from '../components/StatCard'
 import { Modal } from '../components/Modal'
 import { InvoiceView } from '../components/InvoiceView'
 
@@ -100,24 +101,23 @@ export default function StaffBilling() {
           <InvoiceView invoice={viewing} customer={ref(viewing).customer} target={ref(viewing).target || undefined} />
         </Modal>
       )}
-      <div className="page-title-row row between wrap">
+      {/* Title left, counters right (same header as the gate page); each counter filters the list, click again to reset. */}
+      <div className="page-top">
         <div>
           <h1>Hóa Đơn</h1>
           <p className="muted">Theo dõi hóa đơn của cơ sở. Khách thanh toán bằng chuyển khoản, không thu tại quầy.</p>
         </div>
-        <button className="btn outline" onClick={() => void load()}><Icon name="refresh" size={15} /> Làm mới</button>
-      </div>
-
-      <div className="stat-grid">
-        {/* Each card filters the list below to what it counts; clicking the active card again shows everything due. */}
-        <Metric icon="wallet" tone="warn" label="Chờ thanh toán" value={String(due.length)} note={`${fmtMoney(due.reduce((s, i) => s + i.totalAmount, 0))} cần thu`}
-          active={status === 'due' && type === 'all'} onClick={() => pick('due', 'all')} />
-        <Metric icon="alert" tone="bad" label="Quá hạn thanh toán" value={String(invoices.filter((i) => i.status === 'Overdue').length)} note="cần nhắc khách"
-          active={status === 'Overdue' && type === 'all'} onClick={() => pick('Overdue', 'all')} />
-        <Metric icon="check" tone="ok" label="Đã thu hôm nay" value={String(paidToday.length)} note={fmtMoney(paidToday.reduce((s, p) => s + p.amountPaid, 0))}
-          active={status === 'paidToday'} onClick={() => pick('paidToday', 'all')} />
-        <Metric icon="refresh" tone="info" label="Hóa đơn gia hạn chờ thu" value={String(due.filter((i) => i.invoiceType === 'RENEWAL').length)} note="thu xong là tự gia hạn"
-          active={status === 'due' && type === 'RENEWAL'} onClick={() => pick('due', 'RENEWAL')} />
+        <div className="stat-chips">
+          <StatChip icon="wallet" tone="warn" label="chờ thanh toán" value={due.length} extra={fmtMoney(due.reduce((s, i) => s + i.totalAmount, 0))}
+            active={status === 'due' && type === 'all'} onClick={() => pick('due', 'all')} />
+          <StatChip icon="alert" tone="bad" label="quá hạn" value={invoices.filter((i) => i.status === 'Overdue').length} hint="Cần nhắc khách thanh toán"
+            active={status === 'Overdue' && type === 'all'} onClick={() => pick('Overdue', 'all')} />
+          <StatChip icon="check" tone="ok" label="đã thu hôm nay" value={paidToday.length} extra={fmtMoney(paidToday.reduce((s, p) => s + p.amountPaid, 0))}
+            active={status === 'paidToday'} onClick={() => pick('paidToday', 'all')} />
+          <StatChip icon="refresh" tone="info" label="gia hạn chờ thu" value={due.filter((i) => i.invoiceType === 'RENEWAL').length} hint="Thu xong là hợp đồng tự gia hạn"
+            active={status === 'due' && type === 'RENEWAL'} onClick={() => pick('due', 'RENEWAL')} />
+          <button className="btn outline sm" onClick={() => void load()}><Icon name="refresh" size={14} /> Làm mới</button>
+        </div>
       </div>
 
       <div className="panel filter-bar">
@@ -203,16 +203,6 @@ export default function StaffBilling() {
         </div>
       </div>
     </div>
-  )
-}
-
-function Metric({ icon, tone, label, value, note, active, onClick }: { icon: string; tone: string; label: string; value: string; note: string; active: boolean; onClick: () => void }) {
-  return (
-    <button type="button" className={`stat-card stat-filter ${active ? 'active' : ''}`} onClick={onClick} aria-pressed={active}>
-      <div className="row between"><span className="muted">{label}</span><span className={`stat-icon ${tone}`}><Icon name={icon} size={17} /></span></div>
-      <b className="stat-value">{value}</b>
-      <small className={`stat-note ${tone}`}>{note}</small>
-    </button>
   )
 }
 
