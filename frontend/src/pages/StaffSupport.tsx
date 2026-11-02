@@ -90,34 +90,32 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
 
   return (
     <div className="stack-xl">
+      {/* Header: title, and the one counter the tabs do not show (urgent / high still open) as a quick toggle. */}
       <div className="page-top">
         <div>
           <h1>Hỗ Trợ & Sự Cố</h1>
           <p className="muted">{admin
-            ? 'Toàn bộ yêu cầu hỗ trợ của khách ở mọi cơ sở: theo dõi, phản hồi khách và xử lý thay khi cần.'
-            : 'Tiếp nhận yêu cầu hỗ trợ của khách tại cơ sở, làm theo các bước xử lý và cập nhật tiến độ cho khách.'}</p>
+            ? 'Yêu cầu hỗ trợ của khách ở mọi cơ sở: theo dõi, phản hồi khách và xử lý thay khi cần.'
+            : 'Tiếp nhận yêu cầu của khách, làm theo các bước xử lý và cập nhật tiến độ cho khách.'}</p>
         </div>
-        {/* Each counter filters the list; clicking the active one again goes back to "Cần xử lý". */}
         <div className="stat-chips">
-          <StatChip icon="alert" tone="warn" label="mới gửi" value={count('Open')} hint="Chưa ai tiếp nhận" active={is('Open', 'all')} onClick={() => pick('Open', 'all')} />
-          <StatChip icon="refresh" tone="info" label="đang xử lý" value={count('InProgress')} active={is('InProgress', 'all')} onClick={() => pick('InProgress', 'all')} />
-          <StatChip icon="lock" tone="bad" label="khẩn cấp / cao" value={urgent} hint="Nên ưu tiên trước" active={is('active', 'urgent')} onClick={() => pick('active', 'urgent')} />
-          <StatChip icon="check" tone="ok" label="đã xử lý / đóng" value={count('Resolved') + count('Closed')} active={is('done', 'all')} onClick={() => pick('done', 'all')} />
+          <StatChip icon="lock" tone="bad" label="khẩn cấp / cao đang mở" value={urgent} hint="Nên ưu tiên xử lý trước"
+            active={is('active', 'urgent')} onClick={() => pick('active', 'urgent')} />
         </div>
       </div>
 
-      {/* Status as a tab bar (same pattern as the cancellation and contract pages), then search and priority. */}
-      <div className="panel filter-bar support-filter">
+      {/* Toolbar in two rows so nothing overflows: status tabs (with counts), then search and the other filters. */}
+      <div className="panel support-toolbar">
         <div className="segmented" role="tablist" aria-label="Trạng thái yêu cầu">
           {STATUS_TABS.map(([k, label]) => {
-            const n = k === 'all' ? rows.length : k === 'active' ? count('Open') + count('InProgress') : count(k)
+            const n = k === 'all' ? rows.length : k === 'active' ? count('Open') + count('InProgress') : k === 'done' ? count('Resolved') + count('Closed') : count(k)
             return <button key={k} type="button" role="tab" aria-selected={status === k} className={status === k ? 'active' : ''} onClick={() => setStatus(k)}>{label}{n > 0 && <span className="count-pill">{n}</span>}</button>
           })}
         </div>
-        <div className="filter-controls">
-          <span className="input-wrap grow-2">
+        <div className="support-toolbar-row">
+          <span className="input-wrap grow">
             <Icon name="search" size={16} className="input-lead" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={admin ? 'Tìm yêu cầu, kho, khách…' : 'Tìm yêu cầu, kho…'} />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={admin ? 'Tìm mã yêu cầu, tiêu đề, kho, khách…' : 'Tìm mã yêu cầu, tiêu đề, kho…'} />
           </span>
           {admin && (
             <Select value={facilityId ?? ''} onChange={(e) => onFacility?.(e.target.value ? Number(e.target.value) : null)} aria-label="Cơ sở">
@@ -130,6 +128,9 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
             <option value="urgent">Khẩn cấp và Cao</option>
             {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{SupportPriorities[p].label}</option>)}
           </Select>
+          {(q || priority !== 'all' || status !== 'active') && (
+            <button type="button" className="btn ghost sm" onClick={() => { setQ(''); setPriority('all'); setStatus('active') }}><Icon name="x" size={14} /> Bỏ lọc</button>
+          )}
         </div>
       </div>
 

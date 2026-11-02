@@ -1390,3 +1390,15 @@ a.stat-link { text-decoration: none; color: inherit; }
 /* Overview trend chart: the plot box is fixed at 200px and the dots are placed in %, so the svg must keep that
    height (the revenue chart's ".line-chart svg { height: auto }" above must not apply here). */
 .line-plot svg { height: 200px; overflow: hidden; }
+/* Support workspace: the selected request's detail on the left, the list on the right (list stays first on phones). */
+@media (min-width: 861px) {
+  .ticket-workspace { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
+  .ticket-workspace > .ticket-detail, .ticket-workspace > section:last-child { order: -1; }
+}
+/* Support toolbar: tabs on one row (wrap if needed), search and filters below. */
+.support-toolbar { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+.support-toolbar .segmented { align-self: flex-start; }
+.support-toolbar-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.support-toolbar-row .input-wrap { min-width: 240px; flex: 1; }
+.support-toolbar-row .input-wrap input { height: 42px; }
+.support-toolbar-row .select-btn { width: auto; min-width: 170px; height: 42px; }
