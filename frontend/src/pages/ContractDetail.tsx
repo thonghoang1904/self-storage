@@ -7,6 +7,8 @@ import { Badge, Empty, Icon, StatusBadge, UnitArt, splitTypeName } from '../comp
 import { photoVariant } from '../components/unitPhoto'
 import type { AccessRecord, ContractDetail as Detail, EarlyReturnQuote, EarlyReturnRequest, Facility, Invoice, Person, Renewal, StorageUnit, UnitType } from '../types'
 import { textError } from '../validation'
+import { Modal } from '../components/Modal'
+import { AuthorizedPeople, History } from './MyUnits'
 
 /**
  * Figma "customer-storage-contract-detail": the unit and its contract, the contract's invoices,
@@ -83,6 +85,7 @@ export default function ContractDetail() {
   const [lastVisit, setLastVisit] = useState<AccessRecord | null>(null)
   const showRenew = wantRenew
   const [showEarly, setShowEarly] = useState(wantEarly)
+  const [accessTab, setAccessTab] = useState<'people' | 'history' | null>(null)
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
@@ -259,9 +262,8 @@ export default function ContractDetail() {
                 </div>
               )}
               <nav className="cd-links">
-                {!ended && <Link to={`/my-units/${c.contractId}/move-in`}><Icon name="package" size={16} /><span>Đưa đồ vào kho<small>Khai báo đồ và lịch chuyển</small></span><Icon name="arrowRight" size={14} /></Link>}
-                <Link to={`/my-units?contract=${c.contractId}&tab=people`}><Icon name="users" size={16} /><span>Người vào kho<small>{people.length} người được phép vào</small></span><Icon name="arrowRight" size={14} /></Link>
-                <Link to={`/my-units?contract=${c.contractId}&tab=history`}><Icon name="shield" size={16} /><span>Nhật ký vào kho<small>Lần gần nhất: {lastVisit ? fmtTime(lastVisit.entryTime) : 'chưa có'}</small></span><Icon name="arrowRight" size={14} /></Link>
+                <button type="button" onClick={() => setAccessTab('people')}><Icon name="users" size={16} /><span>Người vào kho<small>{people.length} người được phép vào</small></span><Icon name="arrowRight" size={14} /></button>
+                <button type="button" onClick={() => setAccessTab('history')}><Icon name="shield" size={16} /><span>Nhật ký vào kho<small>Lần gần nhất: {lastVisit ? fmtTime(lastVisit.entryTime) : 'chưa có'}</small></span><Icon name="arrowRight" size={14} /></button>
                 {!ended && <Link to={`/support?contract=${c.contractId}`}><Icon name="alert" size={16} /><span>Báo sự cố<small>Gửi yêu cầu hỗ trợ</small></span><Icon name="arrowRight" size={14} /></Link>}
                 {!ended && <Link to={`/my-units/${c.contractId}/suspend`}><Icon name="clock" size={16} /><span>Tạm ngưng hợp đồng<small>30–90 ngày</small></span><Icon name="arrowRight" size={14} /></Link>}
                 <Link to={`/my-units/${c.contractId}/policy`}><Icon name="clipboard" size={16} /><span>Chính sách hợp đồng<small>Điều khoản đang áp dụng</small></span><Icon name="arrowRight" size={14} /></Link>
@@ -284,6 +286,18 @@ export default function ContractDetail() {
           </div>
         </div>
       </div>
+
+      {accessTab && (
+        <Modal wide title={`Kho ${c.unitCode} · ${c.facilityName}`} onClose={() => { setAccessTab(null); void load() }}>
+          <div className="stack">
+            <div className="tabs">
+              <button className={accessTab === 'people' ? 'active' : ''} onClick={() => setAccessTab('people')}><Icon name="users" size={16} /> Người vào kho</button>
+              <button className={accessTab === 'history' ? 'active' : ''} onClick={() => setAccessTab('history')}><Icon name="history" size={16} /> Nhật ký vào kho</button>
+            </div>
+            {accessTab === 'people' ? <AuthorizedPeople contractId={c.contractId} /> : <History contractId={c.contractId} />}
+          </div>
+        </Modal>
+      )}
     </>
   )
 }

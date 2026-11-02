@@ -1294,7 +1294,7 @@ a.user-chip:hover { background: var(--bg-tint); }
 @media (max-width: 720px) { .action-banner-inner { flex-wrap: wrap; } .action-banner .btn { width: 100%; justify-content: center; } }
 
 /* Reservation tracker on "Kho của tôi": the next step is the card's main button. */
-.order-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 18px; }
+.order-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 18px; }
 .order-card { display: flex; flex-direction: column; gap: 14px; padding: 20px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
 .order-card.todo { border: 1.5px solid var(--cyan); box-shadow: 0 0 0 4px rgba(0, 180, 216, 0.08), var(--shadow); }
 .order-card.late { border-color: var(--bad); }
@@ -1436,14 +1436,28 @@ a.stat-link { text-decoration: none; color: inherit; }
 .cd-specs dd { margin: 0; font-weight: 700; color: var(--text-strong); font-size: 14px; }
 .cd-main-btns { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 10px; }
 .cd-links { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.cd-links a, .cd-links button { width: 100%; background: none; border-left: 0; border-right: 0; border-bottom: 0; font: inherit; text-align: left; cursor: pointer; }
 .cd-links a { display: flex; align-items: center; gap: 12px; padding: 11px 14px; color: var(--text-strong); text-decoration: none; border-top: 1px solid var(--border); }
-.cd-links a:first-child { border-top: 0; }
-.cd-links a > svg:first-child { color: var(--cyan); flex: none; }
-.cd-links a > svg:last-child { color: var(--muted); flex: none; }
-.cd-links a span { flex: 1; display: flex; flex-direction: column; font-weight: 600; font-size: 14px; }
-.cd-links a small { font-weight: 500; font-size: 12px; color: var(--muted); }
-.cd-links a:hover { background: var(--cyan-50); }
+.cd-links button { display: flex; align-items: center; gap: 12px; padding: 11px 14px; color: var(--text-strong); border-top: 1px solid var(--border); }
+.cd-links > :first-child { border-top: 0; }
+.cd-links > * > svg:first-child { color: var(--cyan); flex: none; }
+.cd-links > * > svg:last-child { color: var(--muted); flex: none; }
+.cd-links > * > span { flex: 1; display: flex; flex-direction: column; font-weight: 600; font-size: 14px; }
+.cd-links > * small { font-weight: 500; font-size: 12px; color: var(--muted); }
+.cd-links > :hover { background: var(--cyan-50); }
+.cd-main-btns .btn svg { flex: none; }
 .cd-danger { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px; background: none; border: 0; font: inherit; font-weight: 600; font-size: 14px; color: var(--bad); cursor: pointer; text-decoration: none; border-radius: var(--radius); }
 .cd-danger:hover { background: var(--bad-bg); }
 @media (max-width: 1100px) { .cd-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .cd-summary { grid-template-columns: 1fr; } .cd-unit { grid-template-columns: 1fr; } .cd-unit-photo { aspect-ratio: 5 / 2; min-height: 0; } }
+
+/* ---------- Kho của tôi: summary row, per-card shortcuts to people / entry history ---------- */
+.mu-summary { margin-bottom: 8px; }
+.my-unit-links { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.my-unit-links button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 8px; border: 1px solid var(--border); border-radius: 10px; background: #fff; font: inherit; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; }
+.my-unit-links button:hover { border-color: var(--cyan); color: var(--cyan-600); background: var(--cyan-25); }
+.my-unit-links button svg { color: var(--cyan); }
+.my-unit-actions { margin-top: 0; }
+.my-unit-term { margin-top: auto; }
+@media (max-width: 1100px) { .my-unit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .my-unit-grid { grid-template-columns: 1fr; } .order-cards { grid-template-columns: 1fr; } }

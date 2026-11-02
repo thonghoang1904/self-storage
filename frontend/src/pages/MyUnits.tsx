@@ -8,6 +8,7 @@ import { Empty, Eyebrow, Icon, splitTypeName, StatusBadge } from '../components/
 import { ContractUnitArt } from '../components/unitPhoto'
 import { DenyReasons, type AccessRecord, type Contract, type Person, type Reservation } from '../types'
 import { FormField, useValidatedForm } from '../components/form'
+import { Modal } from '../components/Modal'
 
 const daysUntil = (iso: string) => Math.ceil((new Date(`${iso}T00:00:00`).getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000)
 
@@ -39,7 +40,6 @@ export default function MyUnits() {
       setContracts(cs)
       if (wantedTab && cs.some((c) => c.contractId === wantedContract)) {
         setOpenId(wantedContract)
-        setTimeout(() => document.getElementById('contract-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)
       }
     }).catch((e) => setError((e as Error).message))
     api<Reservation[]>('/api/reservations/my').then(setReservations).catch(() => {})
@@ -50,19 +50,51 @@ export default function MyUnits() {
   // Units the customer still holds; contracts that have ended (returned or liquidated) are not listed here.
   const current = contracts?.filter((c) => c.status === 'Active' || c.status === 'Renewed' || c.status === 'Overdue')
   const openReservations = reservations.filter((r) => r.status === 'PendingDeposit' || r.status === 'Confirmed')
+  const monthly = current?.reduce((sum, c) => sum + c.monthlyRentFee, 0) ?? 0
+  // The unit whose term ends first: what the customer most likely has to act on next.
+  const soonest = current?.filter((c) => c.status !== 'Overdue').sort((a, b) => a.endDate.localeCompare(b.endDate))[0]
+  const overdue = current?.filter((c) => c.status === 'Overdue').length ?? 0
+  const openPanel = (id: number, t: 'people' | 'history') => { setTab(t); setOpenId(id) }
 
   return (
     <>
       <section className="page-hero">
         <div className="container">
-          <Eyebrow dark>Tài khoản khách hàng thân thiết</Eyebrow>
+          <Eyebrow dark>Kho của tôi</Eyebrow>
           <h1>Xin Chào, {user?.fullName}!</h1>
-          <p>Quản lý kho lưu trữ của bạn · Theo dõi hóa đơn, thời hạn và cập nhật dịch vụ.</p>
+          <p>Kho đang thuê, thời hạn, người được vào kho và đơn đặt kho của bạn.</p>
         </div>
       </section>
 
       <div className="container page-body">
         {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+
+        {current && current.length > 0 && (
+          <div className="cd-summary mu-summary">
+            <div className="cd-tile">
+              <small>Kho đang thuê</small>
+              <b>{current.length} kho</b>
+              <small className={overdue ? 'danger-text' : 'muted'}>{overdue ? `${overdue} kho quá hạn` : `${active} đang hoạt động`}</small>
+            </div>
+            <div className="cd-tile">
+              <small>Tổng phí thuê</small>
+              <b>{fmtMoney(monthly)}<span>/tháng</span></b>
+              <small className="muted">Thanh toán theo từng hợp đồng</small>
+            </div>
+            <div className="cd-tile">
+              <small>Hết hạn gần nhất</small>
+              <b>{soonest ? fmtDate(soonest.endDate) : '—'}</b>
+              {soonest
+                ? <small className={daysUntil(soonest.endDate) <= 45 ? 'warn-text' : 'muted'}>Kho {soonest.unitCode} · còn {Math.max(0, daysUntil(soonest.endDate))} ngày</small>
+                : <small className="muted">Không có</small>}
+            </div>
+            <div className="cd-tile">
+              <small>Đơn đặt kho</small>
+              <b>{openReservations.length} đơn</b>
+              <small className="muted">{openReservations.length ? 'Đang chờ nhận kho' : 'Không có đơn đang xử lý'}</small>
+            </div>
+          </div>
+        )}
 
         {openReservations.length > 0 && (
           <section className="stack">
@@ -107,6 +139,10 @@ export default function MyUnits() {
                       {(c.status === 'Active' || c.status === 'Renewed') && <Link to={`/visit?contract=${c.contractId}`} className="btn primary sm"><Icon name="calendar" size={14} /> Vào kho</Link>}
                       {c.status === 'Active' && <Link to={`/my-units/${c.contractId}/renew`} className="btn outline sm"><Icon name="refresh" size={14} /> Gia hạn</Link>}
                     </div>
+                    <div className="my-unit-links">
+                      <button type="button" onClick={() => openPanel(c.contractId, 'people')}><Icon name="users" size={14} /> Người vào kho</button>
+                      <button type="button" onClick={() => openPanel(c.contractId, 'history')}><Icon name="history" size={14} /> Lịch sử ra vào</button>
+                    </div>
                     <div className="my-unit-foot">
                       <Link to={`/my-units/${c.contractId}`} className="link with-icon">Chi tiết hợp đồng <Icon name="arrowRight" size={14} /></Link>
                       {c.status === 'Active' && left > 0 && <Link to={`/my-units/${c.contractId}?return=early`} className="danger-text link-plain">Trả kho sớm</Link>}
@@ -125,28 +161,26 @@ export default function MyUnits() {
         </section>
 
         {open && (
-          <section className="panel" id="contract-detail">
-            <div className="panel-head">
-              <div>
-                <h2 className="section-title">Kho {open.unitCode} · {open.facilityName}</h2>
-                <p className="muted">HĐ {open.contractNumber} · {fmtDate(open.startDate)} – {fmtDate(open.endDate)}</p>
+          <Modal wide onClose={() => setOpenId(null)} title={<>Kho {open.unitCode} · {open.facilityName}</>}>
+            <div className="stack">
+              <div className="row between wrap">
+                <small className="muted">HĐ {open.contractNumber} · {fmtDate(open.startDate)} – {fmtDate(open.endDate)}</small>
+                <StatusBadge status={open.status} />
               </div>
-              <span className="row"><StatusBadge status={open.status} /><button className="icon-btn" aria-label="Đóng" onClick={() => setOpenId(null)}><Icon name="x" /></button></span>
+              <div className="tabs">
+                <button className={tab === 'people' ? 'active' : ''} onClick={() => setTab('people')}><Icon name="users" size={16} /> Người vào kho</button>
+                <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}><Icon name="history" size={16} /> Lịch sử ra vào</button>
+              </div>
+              {tab === 'people' ? <AuthorizedPeople contractId={open.contractId} /> : <History contractId={open.contractId} />}
             </div>
-            <div className="tabs">
-              <button className={tab === 'people' ? 'active' : ''} onClick={() => setTab('people')}><Icon name="users" size={16} /> Người vào kho</button>
-              <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}><Icon name="history" size={16} /> Lịch sử ra vào</button>
-            </div>
-            {tab === 'people' ? <AuthorizedPeople contractId={open.contractId} /> : <History contractId={open.contractId} />}
-          </section>
+          </Modal>
         )}
-
       </div>
     </>
   )
 }
 
-function AuthorizedPeople({ contractId }: { contractId: number }) {
+export function AuthorizedPeople({ contractId }: { contractId: number }) {
   const [people, setPeople] = useState<Person[]>([])
   const form = useValidatedForm(
     { fullName: '', citizenId: '', phoneNumber: '', relationship: '' },
@@ -204,7 +238,7 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
 
   return (
     <div className="stack">
-      <p className="muted">Thêm người được vào kho thay bạn (người nhà, bạn bè, nhân viên, bên vận chuyển). Họ vào kho khi xuất trình CCCD của chính họ cho nhân viên.</p>
+      <p className="muted">Người được vào kho thay bạn (người nhà, bạn bè, bên vận chuyển…). Khi đến, họ xuất trình CCCD của chính họ cho nhân viên.</p>
       <div className="person-list">
         {people.map((p) => (
           <div key={p.authorizedPersonId} className="person-row">
@@ -246,7 +280,7 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
   )
 }
 
-function History({ contractId }: { contractId: number }) {
+export function History({ contractId }: { contractId: number }) {
   const [rows, setRows] = useState<AccessRecord[] | null>(null)
   useEffect(() => {
     setRows(null)
