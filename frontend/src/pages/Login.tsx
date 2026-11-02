@@ -10,8 +10,8 @@ import { FormField, PasswordChecklist, useValidatedForm } from '../components/fo
 
 const DEMO_ACCOUNTS = [
   { username: 'customer1', label: 'Khách hàng', note: 'Đang thuê kho B-01' },
-  { username: 'staff1', label: 'Nhân viên', note: 'Cổng cơ sở Quận 7' },
-  { username: 'manager1', label: 'Quản lý', note: 'Cơ sở Quận 7' },
+  { username: 'staff1', label: 'Nhân viên', note: 'Cổng ra vào các cơ sở được phân công' },
+  { username: 'manager1', label: 'Quản lý', note: 'Các cơ sở được phân công' },
 ]
 
 /** Split screen from the Figma "user-login" frame: brand panel left, form right. */

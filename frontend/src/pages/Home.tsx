@@ -22,20 +22,20 @@ export default function Home() {
   const { user } = useAuth()
   const [types, setTypes] = useState<UnitType[]>([])
   const [facilities, setFacilities] = useState<Facility[]>([])
-  const [availability, setAvailability] = useState<Availability[]>([])
-  // Free units per facility (GET /api/facilities/{id}/availability), shown on each facility card.
-  const [freeAt, setFreeAt] = useState<Record<number, number>>({})
+  // Free units of every facility (GET /api/facilities/{id}/availability): summed per unit type on the unit cards,
+  // and per facility on the facility cards.
+  const [availability, setAvailability] = useState<Record<number, Availability[]>>({})
 
   useEffect(() => {
     api<UnitType[]>('/api/unit-types').then(setTypes).catch(() => {})
     api<Facility[]>('/api/facilities').then((fs) => {
       setFacilities(fs)
-      if (fs.length) api<Availability[]>(`/api/facilities/${fs[0].facilityId}/availability`).then(setAvailability).catch(() => {})
       fs.forEach((f) => api<Availability[]>(`/api/facilities/${f.facilityId}/availability`)
-        .then((a) => setFreeAt((m) => ({ ...m, [f.facilityId]: a.reduce((n, x) => n + x.availableUnits, 0) }))).catch(() => {}))
+        .then((a) => setAvailability((m) => ({ ...m, [f.facilityId]: a }))).catch(() => {}))
     }).catch(() => {})
   }, [])
 
+  const freeOf = (id: number) => availability[id]?.reduce((n, x) => n + x.availableUnits, 0)
   const rentLink = user ? (homeFor(user.role) === '/my-units' ? '/rent' : homeFor(user.role)) : '/rent'
   // Customers (and visitors, who sign in first) open the booking page with this facility already chosen.
   const facilityRentLink = (id: number) => (rentLink === '/rent' ? `/rent?facility=${id}` : rentLink)
@@ -87,12 +87,14 @@ export default function Home() {
           <div className="section-head">
             <span className="kicker">Kho lưu trữ phổ biến</span>
             <h2>Chọn Không Gian Phù Hợp Với Bạn</h2>
-            <p>Đa dạng kích thước, giá thuê rõ ràng theo tháng. Tiền cọc bằng một tháng thuê.{facilities[0] && availability.length > 0 && ` Số kho trống tính tại ${facilities[0].facilityName}.`}</p>
+            <p>Đa dạng kích thước, giá thuê rõ ràng theo tháng. Tiền cọc bằng một tháng thuê.{facilities.length > 1 && ` Số kho trống tính trên cả ${facilities.length} cơ sở.`}</p>
           </div>
           <div className="unit-grid">
             {types.map((t, i) => {
               const { name, size } = splitTypeName(t.typeName)
-              const a = availability.find((x) => x.unitTypeId === t.unitTypeId)
+              // Free units of this type at each facility that reported, and their total.
+              const per = facilities.flatMap((f) => (availability[f.facilityId] ?? []).filter((x) => x.unitTypeId === t.unitTypeId).map((x) => ({ name: f.facilityName, n: x.availableUnits })))
+              const a = per.length ? { availableUnits: per.reduce((n, x) => n + x.n, 0) } : null
               const popular = t.unitTypeId === popularId
               return (
                 <article key={t.unitTypeId} className={`unit-card ${popular ? 'featured' : ''}`}>
@@ -109,7 +111,7 @@ export default function Home() {
                         <span className="muted">Giá thuê chỉ từ</span>
                         <span className="unit-price-value"><b>{fmtMoney(t.baseMonthlyRate)}</b><small>/tháng</small></span>
                       </div>
-                      {a && (() => { const where = facilities[0]?.facilityName ?? ''; const text = a.availableUnits > 0 ? `Còn ${a.availableUnits} kho trống` : 'Tạm hết chỗ'; return <p className={`unit-stock ${a.availableUnits > 0 ? '' : 'out'}`} title={`${text} tại ${where}`}><Icon name="building" size={14} /> <span>{text}</span></p> })()}
+                      {a && (() => { const text = a.availableUnits > 0 ? `Còn ${a.availableUnits} kho trống` : 'Tạm hết chỗ'; return <p className={`unit-stock ${a.availableUnits > 0 ? '' : 'out'}`} title={per.map((x) => `${x.name}: ${x.n} kho trống`).join('\n')}><Icon name="building" size={14} /> <span>{text}{per.length > 1 ? ` · ${per.filter((x) => x.n > 0).length}/${per.length} cơ sở` : ''}</span></p> })()}
                       <Link to={rentLink} className="btn block outline unit-cta">Đặt Thuê Ngay</Link>
                     </div>
                   </div>
@@ -154,8 +156,8 @@ export default function Home() {
                   <span className="meta"><Icon name="clock" size={14} /> Mở cửa {f.operatingHours}</span>
                   <span className="meta"><Icon name="phone" size={14} /> {f.hotline}</span>
                   <div className="row between wrap facility-card-foot">
-                    {freeAt[f.facilityId] !== undefined && (
-                      <span className={freeAt[f.facilityId] > 0 ? 'ok-text' : 'muted'}>{freeAt[f.facilityId] > 0 ? `Còn ${freeAt[f.facilityId]} kho trống` : 'Tạm hết chỗ'}</span>
+                    {freeOf(f.facilityId) !== undefined && (
+                      <span className={freeOf(f.facilityId)! > 0 ? 'ok-text' : 'muted'}>{freeOf(f.facilityId)! > 0 ? `Còn ${freeOf(f.facilityId)} kho trống` : 'Tạm hết chỗ'}</span>
                     )}
                     <Link to={facilityRentLink(f.facilityId)} className="btn outline sm">Thuê kho tại đây <Icon name="arrowRight" size={14} /></Link>
                   </div>

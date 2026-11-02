@@ -133,6 +133,8 @@ export function PortalHeader() {
 }
 
 export function Footer() {
+  const [facilities, setFacilities] = useState<Pick<Facility, 'facilityId' | 'facilityName' | 'address' | 'district' | 'city'>[]>([])
+  useEffect(() => { api<Facility[]>('/api/facilities').then((fs) => setFacilities(fs.filter((f) => f.status !== 'Closed'))).catch(() => {}) }, [])
   return (
     <footer className="site-footer">
       <div className="container footer-grid">
@@ -152,14 +154,17 @@ export function Footer() {
         <div>
           <h4>Ra vào kho</h4>
           <span>Xuất trình CCCD tại cổng</span>
-          <span>Người được ủy quyền dùng CCCD của chính họ</span>
+          <span>Người vào kho dùng CCCD của chính họ</span>
           <span>Không dùng mã PIN</span>
         </div>
         <div>
           <h4>Liên Hệ Trực Tiếp</h4>
           <span className="footer-contact"><Icon name="phone" size={15} /> (028) 1234 5678</span>
           <span className="footer-contact"><Icon name="mail" size={15} /> contact@safekeep.com.vn</span>
-          <span className="footer-contact"><Icon name="pin" size={15} /> 123 Nguyễn Thị Thập, Quận 7, TP. Hồ Chí Minh</span>
+          {/* One line per open facility (GET /api/facilities); the first address until the list loads. */}
+          {(facilities.length ? facilities : [{ facilityId: 0, facilityName: '', address: '123 Nguyễn Thị Thập', district: 'Quận 7', city: 'TP. Hồ Chí Minh' }]).map((f) => (
+            <span key={f.facilityId} className="footer-contact"><Icon name="pin" size={15} /> <span>{f.facilityName && <b>{f.facilityName}: </b>}{f.address}, {f.district}, {f.city}</span></span>
+          ))}
         </div>
       </div>
       <div className="container footer-bottom">
