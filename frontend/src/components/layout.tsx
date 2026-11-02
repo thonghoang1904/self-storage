@@ -7,6 +7,7 @@ import { Icon, Logo } from './ui'
 import { NotificationBell } from './NotificationBell'
 import { Select } from './Select'
 import { ActionBanner } from './ActionBanner'
+import { ProfileDialog } from './ProfileDialog'
 
 // ------------------------------------------------------------------ demo bar
 
@@ -224,6 +225,7 @@ export function StaffLayout() {
   const [facilityId, setFacilityId] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
   useEffect(() => setMenuOpen(false), [pathname])
 
   useEffect(() => {
@@ -263,13 +265,14 @@ export function StaffLayout() {
           </nav>
           {user && (
             <div className="sidebar-user">
-              <Link to="/account/profile" className="sidebar-user-link" title="Sửa thông tin tài khoản">
+              <button type="button" className="sidebar-user-link" title="Xem thông tin cá nhân" onClick={() => setProfileOpen(true)}>
                 <span className="avatar">{initials(user.fullName)}</span>
               <span className="grow">
                 <b>{user.fullName}</b>
                 <small>{roleLabel(user.role)}</small>
               </span>
-              </Link>
+              </button>
+              {profileOpen && <ProfileDialog onClose={() => setProfileOpen(false)} />}
               <button type="button" className="sidebar-logout" title="Đăng xuất" onClick={() => { logout(); navigate('/login') }}><Icon name="logout" size={16} /> <span>Đăng xuất</span></button>
             </div>
           )}
@@ -306,6 +309,7 @@ function ConsoleLayout({ area, nav, titles, customerLink = true }: { area: strin
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
   useEffect(() => setMenuOpen(false), [pathname])
   // Longest matching prefix, so /admin/units is not titled by /admin.
   const title = Object.entries(titles).filter(([path]) => pathname === path || pathname.startsWith(`${path}/`)).sort((a, b) => b[0].length - a[0].length)[0]?.[1] ?? ''
@@ -322,13 +326,14 @@ function ConsoleLayout({ area, nav, titles, customerLink = true }: { area: strin
         </nav>
         {user && (
           <div className="sidebar-user">
-            <Link to="/account/profile" className="sidebar-user-link" title="Sửa thông tin tài khoản">
+            <button type="button" className="sidebar-user-link" title="Xem thông tin cá nhân" onClick={() => setProfileOpen(true)}>
               <span className="avatar">{initials(user.fullName)}</span>
             <span className="grow">
               <b>{user.fullName}</b>
               <small>{roleLabel(user.role)}</small>
             </span>
-            </Link>
+            </button>
+            {profileOpen && <ProfileDialog onClose={() => setProfileOpen(false)} />}
             <button type="button" className="sidebar-logout" title="Đăng xuất" onClick={() => { logout(); navigate('/login') }}><Icon name="logout" size={16} /> <span>Đăng xuất</span></button>
           </div>
         )}

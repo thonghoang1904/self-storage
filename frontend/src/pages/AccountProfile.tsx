@@ -101,7 +101,8 @@ function ProfileView({ profile: p }: { profile: Profile }) {
   )
 }
 
-function ProfileForm({ profile, onSaved }: { profile: Profile; onSaved: (p: Profile) => void }) {
+/** `onCancel` / `bare`: used inside the staff/admin profile dialog (no panel frame, Hủy closes the form). */
+export function ProfileForm({ profile, onSaved, onCancel, bare = false }: { profile: Profile; onSaved: (p: Profile) => void; onCancel?: () => void; bare?: boolean }) {
   // An account without a CCCD (e.g. made by an admin) may fill it in once; after that only staff change it.
   const needsCid = !profile.citizenId
   const initial = { fullName: profile.fullName, email: profile.email, phoneNumber: profile.phoneNumber, address: profile.address ?? '', citizenId: '' }
@@ -138,8 +139,8 @@ function ProfileForm({ profile, onSaved }: { profile: Profile; onSaved: (p: Prof
   }
 
   return (
-    <form className="panel stack" onSubmit={save} noValidate>
-      <div><h2 className="panel-title">Thông tin cá nhân</h2><p className="muted">Email dùng để nhận hóa đơn, mã đặt lại mật khẩu và thông báo.</p></div>
+    <form className={bare ? 'stack' : 'panel stack'} onSubmit={save} noValidate>
+      <div>{!bare && <h2 className="panel-title">Thông tin cá nhân</h2>}<p className="muted">Email dùng để nhận hóa đơn, mã đặt lại mật khẩu và thông báo.</p></div>
       <div className="form-grid two">
         <FormField label="Họ và tên *" error={form.error('fullName')}><input {...form.field('fullName')} maxLength={100} autoComplete="name" /></FormField>
         <FormField label="Số điện thoại *" error={form.error('phoneNumber')}><input {...form.field('phoneNumber')} inputMode="tel" maxLength={15} autoComplete="tel" /></FormField>
@@ -155,13 +156,13 @@ function ProfileForm({ profile, onSaved }: { profile: Profile; onSaved: (p: Prof
       {msg && <p className={`alert ${msg.tone}`}><Icon name={msg.tone === 'ok' ? 'check' : 'alert'} size={16} />{msg.text}</p>}
       <div className="row">
         <button className="btn primary" type="submit" disabled={busy || !changed}>{busy ? 'Đang lưu…' : 'Lưu thay đổi'}</button>
-        <Link to="/account/profile" className="btn ghost">Hủy</Link>
+        {onCancel ? <button type="button" className="btn ghost" onClick={onCancel}>Hủy</button> : <Link to="/account/profile" className="btn ghost">Hủy</Link>}
       </div>
     </form>
   )
 }
 
-function PasswordForm({ onDone }: { onDone: () => void }) {
+export function PasswordForm({ onDone, onCancel, bare = false }: { onDone: () => void; onCancel?: () => void; bare?: boolean }) {
   const form = useValidatedForm(
     { current: '', next: '', confirm: '' },
     {
@@ -194,8 +195,8 @@ function PasswordForm({ onDone }: { onDone: () => void }) {
     return <PasswordInput value={form.values[k]} onChange={(v) => form.setValue(k, v)} onBlur={fld.onBlur} invalid={!!form.error(k)} inputRef={fld.ref} autoComplete={autoComplete} placeholder={placeholder} />
   }
   return (
-    <form className="panel stack" onSubmit={submit} noValidate>
-      <div><h2 className="panel-title">Đổi mật khẩu</h2><p className="muted">Ít nhất 8 ký tự, có chữ hoa, chữ thường và số.</p></div>
+    <form className={bare ? 'stack' : 'panel stack'} onSubmit={submit} noValidate>
+      <div>{!bare && <h2 className="panel-title">Đổi mật khẩu</h2>}<p className="muted">Ít nhất 8 ký tự, có chữ hoa, chữ thường và số.</p></div>
       <FormField label="Mật khẩu hiện tại" error={form.error('current')}>{pw('current', 'current-password', 'Mật khẩu đang dùng')}</FormField>
       <div className="form-grid two">
         <FormField label="Mật khẩu mới" error={form.error('next')}>{pw('next', 'new-password', 'Mật khẩu mới')}</FormField>
@@ -204,7 +205,7 @@ function PasswordForm({ onDone }: { onDone: () => void }) {
       {msg && <p className={`alert ${msg.tone}`}><Icon name={msg.tone === 'ok' ? 'check' : 'alert'} size={16} />{msg.text}</p>}
       <div className="row">
         <button className="btn primary" type="submit" disabled={busy}>{busy ? 'Đang đổi…' : 'Đổi mật khẩu'}</button>
-        <Link to="/account/profile" className="btn ghost">Hủy</Link>
+        {onCancel ? <button type="button" className="btn ghost" onClick={onCancel}>Hủy</button> : <Link to="/account/profile" className="btn ghost">Hủy</Link>}
       </div>
     </form>
   )
