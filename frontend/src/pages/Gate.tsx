@@ -7,7 +7,7 @@ import { DenyReasons, type AccessRecord, type Person, type VisitCandidate, type 
 import { CITIZEN_ID_FILTER } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
 import { Select } from '../components/Select'
-import { StatCard, scrollToList } from '../components/StatCard'
+import { scrollToList } from '../components/StatCard'
 
 const REFRESH_MS = 5000
 const hhmm = (iso: string) => iso.slice(11, 16)
@@ -134,33 +134,42 @@ export default function Gate() {
   const pickLog = (k: '' | 'Granted' | 'Denied') => { setLogFilter(logFilter === k ? '' : k); scrollToList('gate-log') }
   const exited = today.filter((r) => r.exitTime).length
 
+  const stat = (key: '' | 'Granted' | 'Denied' | 'inside', icon: string, tone: string, label: string, value: number) => {
+    const active = key !== 'inside' && key !== '' && logFilter === key
+    return (
+      <button type="button" className={`gate-stat ${tone} ${active ? 'active' : ''}`} aria-pressed={active}
+        onClick={() => (key === 'inside' ? scrollToList('gate-inside') : pickLog(key))}>
+        <Icon name={icon} size={16} /><b>{value}</b><span>{label}</span>
+      </button>
+    )
+  }
+
+  // Gate layout: the check-in search first (it is the job at the door), then what needs attention in two columns:
+  // a search result spans the full width; bookings and today's log on the left, who is inside right now on the right.
   return (
-    <div className="stack-xl">
-      <div className="page-title-row">
+    <div className="stack-lg">
+      <div className="gate-top">
         <div>
           <h1>Kiểm Tra & Cho Vào Kho</h1>
-          <p className="muted">Tìm hợp đồng của khách, đối chiếu CCCD trên thẻ rồi cho vào hoặc ghi nhận từ chối.</p>
+          <p className="muted">{fmtDate(new Date().toISOString())} · đối chiếu CCCD trên thẻ rồi cho vào hoặc ghi nhận từ chối.</p>
+        </div>
+        <div className="gate-stats">
+          {stat('inside', 'users', 'info', 'đang trong kho', inside.length)}
+          {stat('Granted', 'door', 'ok', `lượt vào · ${exited} đã ra`, granted)}
+          {stat('Denied', 'alert', 'bad', 'từ chối', denied)}
+          {stat('', 'history', 'muted', 'tổng hôm nay', today.length)}
         </div>
       </div>
 
-      <div className="stat-grid">
-        {/* Clicking a card jumps to its list; the log cards also filter today's log (click again for all). */}
-        <StatCard icon="users" tone="info" label="Đang ở trong kho" value={inside.length} note="Cập nhật mỗi 5 giây" onClick={() => scrollToList('gate-inside')} />
-        <StatCard icon="door" tone="ok" label="Lượt vào hôm nay" value={granted} note={`${exited} lượt đã ra`} active={logFilter === 'Granted'} onClick={() => pickLog('Granted')} />
-        <StatCard icon="alert" tone="bad" label="Từ chối hôm nay" value={denied} note="Đã ghi lý do vào nhật ký" active={logFilter === 'Denied'} onClick={() => pickLog('Denied')} />
-        <StatCard icon="history" tone="warn" label="Tổng lượt hôm nay" value={today.length} note={fmtDate(new Date().toISOString())} onClick={() => pickLog('')} />
-      </div>
-
-      <section className="panel">
-        <h3 className="panel-title">Tìm & kiểm tra khách đến</h3>
-        <p className="muted">Nhập mã kho, số hợp đồng, số CCCD, số điện thoại hoặc tên của khách hay người được ủy quyền. Chỉ cần gõ một phần, chữ hoa hay thường đều được (vd: <b>a</b>, <b>b-0</b>, <b>0912</b>).</p>
+      <section className="panel gate-search">
         <form className="search-row" onSubmit={search}>
           <span className="input-wrap grow">
             <Icon name="search" className="input-lead" />
-            <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="vd: B-01, HD-DEMO-0001, 079300000456" />
+            <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Mã kho, số hợp đồng, CCCD, số điện thoại hoặc tên khách / người vào kho" aria-label="Tìm khách đến" />
           </span>
           <button className="btn primary" type="submit" disabled={searching || !query.trim()}><Icon name="search" size={16} /> {searching ? 'Đang tìm…' : 'Kiểm tra'}</button>
         </form>
+        <small className="muted">Gõ một phần là đủ, không phân biệt hoa thường (vd: <b>b-0</b>, <b>0912</b>, <b>nguyen</b>).</small>
         {IS_DEMO && (
           <div className="quick-tries">
             <span className="muted">Thử nhanh:</span>
@@ -173,61 +182,71 @@ export default function Gate() {
         {notice && <p className={`alert ${notice.tone}`}><Icon name={notice.tone === 'ok' ? 'check' : 'alert'} size={16} />{notice.text}</p>}
       </section>
 
-      {candidates && candidates.length === 0 && <div className="panel"><Empty icon="search">Không tìm thấy hợp đồng nào khớp "{searched}" tại cơ sở này.</Empty></div>}
-      {candidates?.map((c) => (
-        <VisitCard key={`${c.contractId}-${searched}`} facilityId={facilityId!} visit={c} query={searched} regs={regs} onRecorded={onRecorded} />
-      ))}
-
-      <RegistrationsPanel facilityId={facilityId} regs={regs} onReview={review} />
-
-      <section className="panel">
-        <div className="panel-head">
-          <h3 className="panel-title" id="gate-inside">Đang ở trong kho <span className="pill">{inside.length}</span></h3>
+      {candidates && (
+        <div className="stack">
+          <div className="row between wrap">
+            <h3 className="panel-title">Kết quả cho "{searched}"</h3>
+            <button type="button" className="link-btn" onClick={() => { setCandidates(null); setQuery('') }}><Icon name="x" size={13} /> Xóa kết quả</button>
+          </div>
+          {candidates.length === 0 && <div className="panel"><Empty icon="search">Không tìm thấy hợp đồng nào khớp "{searched}" tại cơ sở này.</Empty></div>}
+          {candidates.map((c) => (
+            <VisitCard key={`${c.contractId}-${searched}`} facilityId={facilityId!} visit={c} query={searched} regs={regs} onRecorded={onRecorded} />
+          ))}
         </div>
-        <div className="table-scroll">
-          <table>
-            <thead><tr><th>Kho</th><th>Người vào</th><th>Mục đích</th><th>Vào lúc</th><th>Nhân viên duyệt</th><th></th></tr></thead>
-            <tbody>
-              {inside.map((r) => (
-                <tr key={r.accessRecordId}>
-                  <td><span className="unit-code">{r.unitCode}</span></td>
-                  <td><b>{r.visitorName}</b>{(r.companionCount ?? 0) > 0 && <span className="pill muted">+{r.companionCount} người</span>}<br /><small className="muted">HĐ {r.contractNumber}</small></td>
-                  <td>{r.purpose ?? '—'}</td>
-                  <td>{fmtTime(r.entryTime)}</td>
-                  <td>{r.verifiedBy}</td>
-                  <td className="right"><button className="btn outline sm" onClick={() => confirmExit(r)}><Icon name="logout" size={15} /> Xác nhận ra</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {inside.length === 0 && <Empty icon="door">Không có ai trong kho.</Empty>}
-        </div>
-      </section>
+      )}
 
-      <section className="panel">
-        <h3 className="panel-title" id="gate-log">Nhật ký hôm nay <span className="pill">{logShown.length}{logFilter ? ` / ${today.length}` : ''}</span>
-          {logFilter && <button type="button" className="link-btn link" onClick={() => setLogFilter('')}> · {logFilter === 'Granted' ? 'Chỉ lượt vào' : 'Chỉ lượt từ chối'} ×</button>}</h3>
-        <div className="table-scroll">
-          <table>
-            <thead><tr><th>Giờ</th><th>Kho</th><th>Người</th><th>Kết quả</th><th>Ra lúc</th><th>Nhân viên</th></tr></thead>
-            <tbody>
-              {logShown.map((r) => (
-                <tr key={r.accessRecordId}>
-                  <td>{fmtTime(r.entryTime)}</td>
-                  <td><span className="unit-code">{r.unitCode}</span></td>
-                  <td>{r.visitorName}{(r.companionCount ?? 0) > 0 && <small className="muted"> +{r.companionCount} người</small>}</td>
-                  <td>{r.result === 'Granted'
-                    ? <span className="badge ok">Cho vào</span>
-                    : <span className="badge bad">Từ chối · {DenyReasons[r.denyReason ?? 'Other'] ?? r.denyReason}</span>}</td>
-                  <td>{r.exitTime ? fmtTime(r.exitTime) : '—'}</td>
-                  <td>{r.verifiedBy}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {logShown.length === 0 && <Empty icon="history">{today.length ? 'Không có lượt nào khớp.' : 'Chưa có lượt nào hôm nay.'}</Empty>}
+
+      <div className="gate-grid">
+        <div className="stack-lg">
+          <RegistrationsPanel facilityId={facilityId} regs={regs} onReview={review} />
+
+          <section className="panel">
+            <h3 className="panel-title" id="gate-log">Nhật ký hôm nay <span className="pill">{logShown.length}{logFilter ? ` / ${today.length}` : ''}</span>
+              {logFilter && <button type="button" className="link-btn link" onClick={() => setLogFilter('')}> · {logFilter === 'Granted' ? 'Chỉ lượt vào' : 'Chỉ lượt từ chối'} ×</button>}</h3>
+            <div className="table-scroll">
+              <table>
+                <thead><tr><th>Giờ</th><th>Kho</th><th>Người</th><th>Kết quả</th><th>Ra lúc</th><th>Nhân viên</th></tr></thead>
+                <tbody>
+                  {logShown.map((r) => (
+                    <tr key={r.accessRecordId}>
+                      <td>{fmtTime(r.entryTime)}</td>
+                      <td><span className="unit-code">{r.unitCode}</span></td>
+                      <td>{r.visitorName}{(r.companionCount ?? 0) > 0 && <small className="muted"> +{r.companionCount} người</small>}</td>
+                      <td>{r.result === 'Granted'
+                        ? <span className="badge ok">Cho vào</span>
+                        : <span className="badge bad">Từ chối · {DenyReasons[r.denyReason ?? 'Other'] ?? r.denyReason}</span>}</td>
+                      <td>{r.exitTime ? fmtTime(r.exitTime) : '—'}</td>
+                      <td>{r.verifiedBy}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {logShown.length === 0 && <Empty icon="history">{today.length ? 'Không có lượt nào khớp.' : 'Chưa có lượt nào hôm nay.'}</Empty>}
+            </div>
+          </section>
         </div>
-      </section>
+
+        <aside className="panel gate-inside" id="gate-inside">
+          <div className="row between">
+            <h3 className="panel-title">Đang ở trong kho</h3>
+            <span className="pill">{inside.length}</span>
+          </div>
+          <small className="muted">Cập nhật mỗi 5 giây. Khách ra cổng thì bấm xác nhận.</small>
+          <div className="stack-sm">
+            {inside.map((r) => (
+              <div key={r.accessRecordId} className="inside-item">
+                <span className="unit-code">{r.unitCode}</span>
+                <div className="grow">
+                  <b>{r.visitorName}</b>{(r.companionCount ?? 0) > 0 && <small className="muted"> +{r.companionCount} người</small>}
+                  <small className="muted block">Vào {fmtTime(r.entryTime)}{r.purpose ? ` · ${r.purpose}` : ''}</small>
+                </div>
+                <button className="btn outline sm" onClick={() => confirmExit(r)} title={`HĐ ${r.contractNumber} · duyệt bởi ${r.verifiedBy}`}><Icon name="logout" size={14} /> Đã ra</button>
+              </div>
+            ))}
+            {inside.length === 0 && <Empty icon="door">Không có ai trong kho.</Empty>}
+          </div>
+        </aside>
+      </div>
     </div>
   )
 }

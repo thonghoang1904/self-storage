@@ -1358,3 +1358,28 @@ a.user-chip:hover { background: var(--bg-tint); }
 .user-menu-list a:hover, .user-menu-list button:hover { background: var(--bg-tint); }
 .user-menu-list button { border-top: 1px solid var(--border); border-radius: 0 0 8px 8px; margin-top: 4px; }
 a.stat-link { text-decoration: none; color: inherit; }
+
+/* Gate: search first, compact counters, inside list as a side column. */
+.gate-top { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.gate-top h1 { margin: 0; }
+.gate-stats { display: flex; flex-wrap: wrap; gap: 8px; }
+.gate-stat { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 999px; background: #fff; font: inherit; font-size: 13px; color: var(--muted); cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.gate-stat b { font-size: 16px; color: var(--text-strong); }
+.gate-stat:hover, .gate-stat.active { border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-50); }
+.gate-stat.info svg { color: var(--cyan-600); }
+.gate-stat.ok svg { color: var(--ok); }
+.gate-stat.bad svg { color: var(--bad); }
+.gate-search { display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--cyan); box-shadow: 0 0 0 4px var(--cyan-50), var(--shadow); }
+.gate-search input { height: 52px; font-size: 16px; }
+.gate-search .btn { height: 52px; padding: 0 22px; }
+.gate-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px; align-items: start; }
+@media (max-width: 1100px) { .gate-grid { grid-template-columns: minmax(0, 1fr); } }
+.gate-inside { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 12px; }
+.inside-item { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 12px; }
+.inside-item small.block { display: block; }
+.unit-code { white-space: nowrap; }
+/* Admin: one customer's contracts in a dialog. */
+.contract-row { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; }
+.contract-row-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.contract-row-grid span { display: flex; flex-direction: column; gap: 2px; font-size: 13.5px; }
+@media (max-width: 700px) { .contract-row-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

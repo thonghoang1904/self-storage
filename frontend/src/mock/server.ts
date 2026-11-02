@@ -2086,10 +2086,10 @@ const routes: [string, RegExp, Handler][] = [
   ['GET', /^\/api\/admin\/contracts$/, (_m, { token, query }) => {
     adminOnly(token)
     const { skip, size } = paging(query)
-    const status = query.get('status'), fid = Number(query.get('facilityId')) || null, term = (query.get('search') ?? '').trim().toLowerCase()
+    const status = query.get('status'), fid = Number(query.get('facilityId')) || null, cid = Number(query.get('customerId')) || null, term = (query.get('search') ?? '').trim().toLowerCase()
     if (status && !['Active', 'Overdue', 'Renewed', 'Terminated', 'Liquidated'].includes(status)) throw bad('Trạng thái hợp đồng không hợp lệ')
     return db.contracts.map(adminContractDto)
-      .filter((c) => (!status || c.status === status) && (!fid || c.facilityId === fid)
+      .filter((c) => (!status || c.status === status) && (!fid || c.facilityId === fid) && (!cid || c.customerId === cid)
         && (!term || [c.contractNumber, c.customerName, c.customerEmail, c.unitCode].some((v) => v.toLowerCase().includes(term))))
       .sort((a, b) => b.signedDate.localeCompare(a.signedDate) || b.contractId - a.contractId).slice(skip, skip + size)
   }],

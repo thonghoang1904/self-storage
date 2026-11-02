@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { api, fmtDate } from '../api'
+import { api, fmtDate, fmtMoney } from '../api'
 import { daysUntil, fetchContracts } from '../consoleData'
-import { Badge, Empty, Icon } from '../components/ui'
+import { Badge, Empty, Icon, StatusBadge } from '../components/ui'
+import { Modal } from '../components/Modal'
 import { Roles, type AdminContract, type AdminUser, type Facility, type RoleInfo } from '../types'
 import { StatCard, scrollToList } from '../components/StatCard'
 import { Pager } from './AdminStorage'
@@ -34,6 +34,8 @@ export default function AdminCustomers() {
   const [facilityId, setFacilityId] = useState('')
   const [page, setPage] = useState(1)
   const [error, setError] = useState('')
+  // The customer whose contracts are shown in a dialog over the list.
+  const [viewing, setViewing] = useState<AdminUser | null>(null)
 
   useEffect(() => {
     const fail = (e: unknown) => setError((e as Error).message)
@@ -86,6 +88,7 @@ export default function AdminCustomers() {
       </div>
 
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+      {viewing && <CustomerContracts customer={viewing} onClose={() => setViewing(null)} />}
 
       <div className="stat-grid">
         {/* Each card filters the customer list to what it counts; clicking the active card again shows everyone. */}
@@ -134,7 +137,7 @@ export default function AdminCustomers() {
                   <td>{next ? fmtDate(next.endDate) : '—'}</td>
                   <td><Badge tone={STANDING[st].tone}>{st === 'soon' && next ? `Còn ${Math.max(0, daysUntil(next.endDate))} ngày` : STANDING[st].label}</Badge></td>
                   <td>{own.length > 0
-                    ? <Link className="link nowrap" to={`/admin/contracts?search=${encodeURIComponent(own.length > 1 ? u.email : next!.contractNumber)}`}>Xem hợp đồng</Link>
+                    ? <button type="button" className="link-btn link nowrap" onClick={() => setViewing(u)}>Xem hợp đồng</button>
                     : <span className="muted">—</span>}</td>
                 </tr>
               ))}
@@ -151,5 +154,54 @@ export default function AdminCustomers() {
         )}
       </section>
     </div>
+  )
+}
+
+/**
+ * Every contract of one customer (GET /api/admin/contracts?customerId=, all statuses, newest first) in a dialog:
+ * customer contact, then one card per contract with unit, period, rent, deposit and how long is left.
+ */
+function CustomerContracts({ customer: u, onClose }: { customer: AdminUser; onClose: () => void }) {
+  const [rows, setRows] = useState<AdminContract[] | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    api<AdminContract[]>(`/api/admin/contracts?customerId=${u.userId}&pageSize=100`).then(setRows).catch((e) => setError((e as Error).message))
+  }, [u.userId])
+  const live = (rows ?? []).filter((c) => c.status === 'Active' || c.status === 'Overdue' || c.status === 'Renewed')
+  return (
+    <Modal title={`Hợp đồng của ${u.fullName}`} onClose={onClose} wide>
+      <div className="info-box">
+        <div className="info-row"><span className="muted">Mã khách</span><b>KH-{u.userId} · {u.username}</b></div>
+        <div className="info-row"><span className="muted">Email</span><b>{u.email}</b></div>
+        <div className="info-row"><span className="muted">Số điện thoại</span><b>{u.phoneNumber}</b></div>
+        {rows && <div className="info-row"><span className="muted">Hợp đồng</span><b>{live.length} đang hiệu lực · {rows.length} tất cả</b></div>}
+      </div>
+      {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+      {!rows && !error && <p className="muted">Đang tải…</p>}
+      {rows?.length === 0 && <Empty icon="file">Khách chưa có hợp đồng nào.</Empty>}
+      <div className="stack-sm">
+        {rows?.map((c) => {
+          const left = daysUntil(c.endDate)
+          const ended = c.status === 'Terminated' || c.status === 'Liquidated'
+          return (
+            <div key={c.contractId} className="contract-row">
+              <div className="row between wrap">
+                <b className="code">{c.contractNumber}</b>
+                <span className="row">
+                  {!ended && <small className={left < 0 ? 'danger-text' : left <= 30 ? 'warn-text' : 'muted'}>{left < 0 ? `Quá hạn ${-left} ngày` : `Còn ${left} ngày`}</small>}
+                  <StatusBadge status={c.status} />
+                </span>
+              </div>
+              <div className="contract-row-grid">
+                <span><small className="muted">Kho</small><b>{c.unitCode} · {c.facilityName}</b></span>
+                <span><small className="muted">Thời hạn</small><b>{fmtDate(c.startDate)} – {fmtDate(c.endDate)}</b></span>
+                <span><small className="muted">Giá thuê</small><b>{fmtMoney(c.monthlyRentFee)}/tháng</b></span>
+                <span><small className="muted">Tiền cọc</small><b>{fmtMoney(c.depositPaid)}</b></span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </Modal>
   )
 }
