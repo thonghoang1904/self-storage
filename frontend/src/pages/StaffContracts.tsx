@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { localToday } from '../validation'
-import { api, billingLink, fmtDate, fmtMoney } from '../api'
+import { api, fmtDate, fmtMoney } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { Invoice, OverdueSummary, Renewal, StaffContract } from '../types'
 import { Select } from '../components/Select'
 import { StatCard, scrollToList } from '../components/StatCard'
+import { ContractDialog } from './FacilityContracts'
 
 /** Figma "renewals-overdue": metrics, filters, one table of contracts to renew or collect, collection rule. */
 
@@ -45,6 +46,7 @@ export default function StaffContracts() {
   const [overdue, setOverdue] = useState<OverdueSummary[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [q, setQ] = useState('')
+  const [viewing, setViewing] = useState<StaffContract | null>(null)
   const [kind, setKind] = useState<'open' | 'live' | 'soon' | Kind | 'all'>('all')
   const [within, setWithin] = useState<'all' | '7' | '30'>('all')
   const [page, setPage] = useState(1)
@@ -139,6 +141,7 @@ export default function StaffContracts() {
 
   return (
     <div className="stack-xl">
+      {viewing && facilityId && <ContractDialog contract={viewing} facilityId={facilityId} onClose={() => setViewing(null)} />}
       <div className="page-title-row row between wrap">
         <div>
           <h1>Gia Hạn & Quá Hạn</h1>
@@ -189,7 +192,7 @@ export default function StaffContracts() {
       <section className="panel" id="contract-list">
         <div>
           <h2 className="panel-title">Danh sách gia hạn & quá hạn</h2>
-          <p className="muted">Xác nhận thu phí gia hạn khi khách đã thanh toán tại quầy; kho quá hạn chuyển sang kiểm tra trả kho.</p>
+          <p className="muted">Bấm mã hợp đồng để xem hợp đồng và hóa đơn. Khách tự chuyển khoản phí gia hạn; kho quá hạn chuyển sang kiểm tra trả kho.</p>
         </div>
         <div className="table-scroll">
           <table>
@@ -201,7 +204,7 @@ export default function StaffContracts() {
                 const canReturn = (c.status === 'Active' || c.status === 'Overdue') && new Date(c.returnAppointment) <= new Date()
                 return (
                   <tr key={c.contractId}>
-                    <td className="code">{c.contractNumber}</td>
+                    <td className="code"><button type="button" className="link-btn link" onClick={() => setViewing(c)} title="Xem hợp đồng và hóa đơn">{c.contractNumber}</button></td>
                     <td><b>{c.customerName}</b><br /><small className="muted">{c.customerPhone}</small></td>
                     <td>{c.unitCode} <StatusBadge status={c.unitStatus} /></td>
                     <td>{fmtDate(c.endDate)}</td>
@@ -230,7 +233,6 @@ export default function StaffContracts() {
                           </>
                         )}
                         {/* Only when there is an open invoice to collect: the late fee itself is billed at return. */}
-                        {r.bills.length > 0 && <Link to={billingLink(c.contractNumber)} className="btn outline sm"><Icon name="wallet" size={14} /> Xem hóa đơn</Link>}
                         {/* Opens the return page with this contract already picked, so staff never copy the code across. */}
                         {canReturn && <Link to={`/staff-return?contract=${c.contractId}`} className="btn outline sm"><Icon name="door" size={14} /> Trả kho & hoàn cọc</Link>}
                         {!canReturn && (c.status === 'Active' || c.status === 'Overdue') && (

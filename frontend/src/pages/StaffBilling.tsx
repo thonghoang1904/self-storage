@@ -7,6 +7,8 @@ import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { Invoice, RefundDuePayment, Reservation, StaffContract } from '../types'
 import { Select } from '../components/Select'
+import { Modal } from '../components/Modal'
+import { InvoiceView } from '../components/InvoiceView'
 
 /**
  * Staff billing: invoices of the facility (GET /api/invoices/facilities/{id}) and recording a cash or
@@ -35,6 +37,7 @@ export default function StaffBilling() {
   const [page, setPage] = useState(1)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [viewing, setViewing] = useState<Invoice | null>(null)
 
   const load = useCallback(async () => {
     if (!facilityId) return
@@ -92,6 +95,11 @@ export default function StaffBilling() {
 
   return (
     <div className="stack-xl">
+      {viewing && (
+        <Modal title={`Hóa đơn ${viewing.invoiceNumber}`} onClose={() => setViewing(null)} wide>
+          <InvoiceView invoice={viewing} customer={ref(viewing).customer} target={ref(viewing).target || undefined} />
+        </Modal>
+      )}
       <div className="page-title-row row between wrap">
         <div>
           <h1>Hóa Đơn</h1>
@@ -158,7 +166,7 @@ export default function StaffBilling() {
                 const paid = inv.payments.find((p) => p.status === 'Success')
                 return (
                   <tr key={inv.invoiceId}>
-                    <td className="code">{inv.invoiceNumber}<br /><small className="muted">{typeLabel(inv.invoiceType)}</small></td>
+                    <td className="code"><button type="button" className="link-btn link" onClick={() => setViewing(inv)} title="Xem hóa đơn">{inv.invoiceNumber}</button><br /><small className="muted">{typeLabel(inv.invoiceType)}</small></td>
                     <td><b>{r.customer}</b>{r.phone && <><br /><small className="muted">{r.phone}</small></>}</td>
                     <td>{inv.details[0]?.description ?? '—'}{r.target && <><br /><small className="muted">{r.target}</small></>}</td>
                     <td>{reservation && reservation.status === 'PendingDeposit' ? fmtTime(depositDueAt(reservation)) : fmtDate(inv.dueDate)}</td>

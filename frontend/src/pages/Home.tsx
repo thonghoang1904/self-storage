@@ -22,8 +22,7 @@ export default function Home() {
   const { user } = useAuth()
   const [types, setTypes] = useState<UnitType[]>([])
   const [facilities, setFacilities] = useState<Facility[]>([])
-  // Free units of every facility (GET /api/facilities/{id}/availability): summed per unit type on the unit cards,
-  // and per facility on the facility cards.
+  // Free units of every facility (GET /api/facilities/{id}/availability), shown on the facility cards.
   const [availability, setAvailability] = useState<Record<number, Availability[]>>({})
 
   useEffect(() => {
@@ -87,14 +86,11 @@ export default function Home() {
           <div className="section-head">
             <span className="kicker">Kho lưu trữ phổ biến</span>
             <h2>Chọn Không Gian Phù Hợp Với Bạn</h2>
-            <p>Đa dạng kích thước, giá thuê rõ ràng theo tháng. Tiền cọc bằng một tháng thuê.{facilities.length > 1 && ` Số kho trống tính trên cả ${facilities.length} cơ sở.`}</p>
+            <p>Đa dạng kích thước, giá thuê rõ ràng theo tháng. Tiền cọc bằng một tháng thuê.</p>
           </div>
           <div className="unit-grid">
             {types.map((t, i) => {
               const { name, size } = splitTypeName(t.typeName)
-              // Free units of this type at each facility that reported, and their total.
-              const per = facilities.flatMap((f) => (availability[f.facilityId] ?? []).filter((x) => x.unitTypeId === t.unitTypeId).map((x) => ({ name: f.facilityName, n: x.availableUnits })))
-              const a = per.length ? { availableUnits: per.reduce((n, x) => n + x.n, 0) } : null
               const popular = t.unitTypeId === popularId
               return (
                 <article key={t.unitTypeId} className={`unit-card ${popular ? 'featured' : ''}`}>
@@ -111,7 +107,6 @@ export default function Home() {
                         <span className="muted">Giá thuê chỉ từ</span>
                         <span className="unit-price-value"><b>{fmtMoney(t.baseMonthlyRate)}</b><small>/tháng</small></span>
                       </div>
-                      {a && (() => { const text = a.availableUnits > 0 ? `Còn ${a.availableUnits} kho trống` : 'Tạm hết chỗ'; return <p className={`unit-stock ${a.availableUnits > 0 ? '' : 'out'}`} title={per.map((x) => `${x.name}: ${x.n} kho trống`).join('\n')}><Icon name="building" size={14} /> <span>{text}{per.length > 1 ? ` · ${per.filter((x) => x.n > 0).length}/${per.length} cơ sở` : ''}</span></p> })()}
                       <Link to={rentLink} className="btn block outline unit-cta">Đặt Thuê Ngay</Link>
                     </div>
                   </div>
