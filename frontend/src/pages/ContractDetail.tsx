@@ -81,7 +81,7 @@ export default function ContractDetail() {
   const [facility, setFacility] = useState<Facility | null>(null)
   const [people, setPeople] = useState<Person[]>([])
   const [lastVisit, setLastVisit] = useState<AccessRecord | null>(null)
-  const [showRenew, setShowRenew] = useState(wantRenew)
+  const showRenew = wantRenew
   const [showEarly, setShowEarly] = useState(wantEarly)
   const [error, setError] = useState('')
 
@@ -129,152 +129,158 @@ export default function ContractDetail() {
   // Until the day before the end date the customer can ask to hand the unit back early; on the end date it is a normal return.
   const canReturnEarly = c.status === 'Active' && left > 0
 
+  const termPct = (() => {
+    const s = asLocal(c.startDate).getTime(), e = asLocal(c.endDate).getTime()
+    return e > s ? Math.min(100, Math.max(0, ((Date.now() - s) / (e - s)) * 100)) : 100
+  })()
+  const leftText = ended ? 'Đã kết thúc' : left > 0 ? `còn ${left} ngày` : left === 0 ? 'hết hạn hôm nay' : `quá ${-left} ngày`
+  const openEarly = () => {
+    setShowEarly(true)
+    setTimeout(() => document.getElementById('early-return')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }
+
   return (
     <>
       <section className="page-hero detail-hero">
         <div className="container">
           <div className="grow">
             <nav className="crumbs"><Link to="/my-units">Kho Của Tôi</Link><span>/</span><b>{c.unitCode}</b></nav>
-            <h1>Chi Tiết Kho & Hợp Đồng</h1>
-            <p>Theo dõi quyền truy cập, thời hạn, thanh toán và các thao tác hợp đồng của kho {c.unitCode}{typeName ? ` · ${typeName.name}` : ''}.</p>
+            <h1>Kho {c.unitCode}{typeName ? <span className="hero-sub"> · {typeName.name}</span> : null}</h1>
+            <p>{c.facilityName} · Hợp đồng {c.contractNumber}</p>
           </div>
           <div className="hero-side">
             {c.status === 'Active' ? <span className="badge ok">Đang hoạt động</span> : <StatusBadge status={c.status} />}
-            <small>Hợp đồng {c.contractNumber}</small>
           </div>
         </div>
       </section>
 
       <div className="container page-body">
         {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+
+        {locked && (
+          <section className="panel alert-panel">
+            <h3 className="panel-title"><Icon name="lock" size={18} /> Kho đang bị khóa do quá hạn</h3>
+            <p className="muted">Kho bị khóa sau 24 giờ kể từ 20:00 ngày hết hạn. Phí lưu kho quá hạn tính mỗi ngày bằng phí tháng / 30 và được cấn trừ vào tiền cọc. Vui lòng đến cơ sở để trả kho.</p>
+            <dl className="summary-lines">
+              <div><dt>Phí quá hạn đã tính</dt><dd>{fmtMoney(c.accumulatedLateFee)}</dd></div>
+              <div><dt>Cọc còn lại sau cấn trừ</dt><dd>{fmtMoney(c.depositBalance)}</dd></div>
+              <div><dt>Còn phải thanh toán</dt><dd className="danger-text">{fmtMoney(c.outstandingLateFee)}</dd></div>
+            </dl>
+          </section>
+        )}
+
+        {/* the four numbers a customer looks for first */}
+        <div className="cd-summary">
+          <div className="cd-tile">
+            <small>Giá thuê</small>
+            <b>{fmtMoney(c.monthlyRentFee)}<span>/tháng</span></b>
+            <small className="muted">Thanh toán hàng tháng</small>
+          </div>
+          <div className="cd-tile">
+            <small>Thời hạn</small>
+            <b>{fmtDate(c.endDate)}</b>
+            <small className={ended ? 'muted' : left <= 7 ? 'warn-text' : 'cyan'}>Từ {fmtDate(c.startDate)} · {leftText}</small>
+            {!ended && <span className="term-bar"><i style={{ width: `${termPct}%` }} /></span>}
+          </div>
+          <div className="cd-tile">
+            <small>Tiền cọc</small>
+            <b>{fmtMoney(c.depositPaid)}</b>
+            <small className={c.accumulatedLateFee > 0 ? 'danger-text' : 'muted'}>{c.accumulatedLateFee > 0 ? `Phí quá hạn ${fmtMoney(c.accumulatedLateFee)} · còn ${fmtMoney(c.depositBalance)}` : 'Hoàn lại khi trả kho'}</small>
+          </div>
+          <div className="cd-tile">
+            <small>Kỳ thanh toán tiếp theo</small>
+            <b>{next ? fmtMoney(next.amount) : '—'}</b>
+            <small className={next?.state === 'overdue' ? 'danger-text' : 'muted'}>{next ? `${next.period} · hạn ${fmtDate(next.due)}` : 'Không còn kỳ nào'}</small>
+          </div>
+        </div>
+
         <div className="detail-grid detail-cols">
           <div className="stack-lg detail-main">
-          {/* row 1 left: the unit */}
-          <>
-            <section className="panel unit-panel">
-              <div className="unit-photo"><UnitArt variant={unit ? photoVariant(unit.unitTypeName, unit.unitTypeId) : 2} /></div>
-              <div className="row between wrap">
-                <div>
-                  <h2 className="unit-title">{typeName?.name ?? `Kho ${c.unitCode}`}{area ? ` ${area.toLocaleString('vi-VN')}m²` : ''}</h2>
-                  <p className="muted">Mã kho {c.unitCode} · {c.facilityName}</p>
+            {/* the unit: photo beside its specs */}
+            <section className="panel cd-unit">
+              <div className="cd-unit-photo"><UnitArt variant={unit ? photoVariant(unit.unitTypeName, unit.unitTypeId) : 2} /></div>
+              <div className="cd-unit-info">
+                <div className="row between wrap">
+                  <div>
+                    <h2 className="panel-title">{typeName?.name ?? `Kho ${c.unitCode}`}{area ? ` · ${area.toLocaleString('vi-VN')}m²` : ''}</h2>
+                    <small className="muted block">Mã kho {c.unitCode}</small>
+                  </div>
+                  <span className={`badge ${locked ? 'bad' : ended ? 'muted' : 'ok'}`}>{locked ? 'Khóa do quá hạn' : ended ? 'Đã trả kho' : 'Truy cập bình thường'}</span>
                 </div>
-                <span className={`badge ${locked ? 'bad' : ended ? 'muted' : 'ok'}`}>{locked ? 'Khóa do quá hạn' : ended ? 'Đã trả kho' : 'Truy cập bình thường'}</span>
+                <dl className="cd-specs">
+                  <div><dt>Kích thước</dt><dd>{type ? `${type.lengthMeters} × ${type.widthMeters} × ${type.heightMeters}m` : '—'}</dd></div>
+                  <div><dt>Vị trí</dt><dd>{unit ? `Tầng ${unit.floorNumber}${unit.zoneArea ? ` · ${unit.zoneArea}` : ''}` : '—'}</dd></div>
+                  <div><dt>Điều hòa</dt><dd>{type ? (type.hasClimateControl ? 'Có' : 'Không') : '—'}</dd></div>
+                  <div><dt>Giờ mở cửa</dt><dd>{facility?.operatingHours ?? '—'}</dd></div>
+                  <div><dt>Trạng thái kho</dt><dd><StatusBadge status={c.unitStatus} /></dd></div>
+                </dl>
               </div>
-              <dl className="spec-grid">
-                <div><dt>Cơ sở</dt><dd>{c.facilityName}</dd></div>
-                <div><dt>Điều hòa</dt><dd>{type ? (type.hasClimateControl ? 'Có kiểm soát nhiệt độ' : 'Không') : '—'}</dd></div>
-                <div><dt>Vị trí</dt><dd>{unit ? `Tầng ${unit.floorNumber}${unit.zoneArea ? ` · ${unit.zoneArea}` : ''}` : '—'}</dd></div>
-                <div><dt>Giờ mở cửa</dt><dd>{facility?.operatingHours ?? '—'}</dd></div>
-                <div><dt>Kích thước</dt><dd>{type ? `${type.lengthMeters}m × ${type.widthMeters}m × ${type.heightMeters}m` : '—'}</dd></div>
-                <div><dt>Trạng thái kho</dt><dd><StatusBadge status={c.unitStatus} /></dd></div>
-              </dl>
             </section>
 
-            {locked && (
-              <section className="panel alert-panel">
-                <h3 className="panel-title"><Icon name="lock" size={18} /> Kho đang bị khóa do quá hạn</h3>
-                <p className="muted">Kho bị khóa sau 24 giờ kể từ 20:00 ngày hết hạn. Phí lưu kho quá hạn tính mỗi ngày bằng phí tháng / 30 và được cấn trừ vào tiền cọc. Vui lòng đến cơ sở để trả kho.</p>
-                <dl className="summary-lines">
-                  <div><dt>Phí quá hạn đã tính</dt><dd>{fmtMoney(c.accumulatedLateFee)}</dd></div>
-                  <div><dt>Cọc còn lại sau cấn trừ</dt><dd>{fmtMoney(c.depositBalance)}</dd></div>
-                  <div><dt>Còn phải thanh toán</dt><dd className="danger-text">{fmtMoney(c.outstandingLateFee)}</dd></div>
-                </dl>
-              </section>
-            )}
-          </>
+            {showRenew && !ended && <section className="panel"><h3 className="panel-title">Gia hạn hợp đồng</h3><RenewalPanel contract={c} renewals={renewals} onChanged={load} /></section>}
+            {showEarly && canReturnEarly && <section id="early-return" className="panel scroll-target"><EarlyReturnPanel contract={c} facility={facility} /></section>}
 
-          <section className="panel stack contract-actions">
-            <div><h3 className="panel-title">Thao Tác Hợp Đồng</h3><p className="muted">Gia hạn, trả kho, tạm ngưng và các yêu cầu khác cho hợp đồng {c.contractNumber}.</p></div>
-            {showRenew && <RenewalPanel contract={c} renewals={renewals} onChanged={load} />}
-            <div className="action-tiles">
-              {!ended && <Link to={`/my-units/${c.contractId}/move-in`} className="action-tile"><span className="tile-icon"><Icon name="package" size={18} /></span><b>Đưa đồ vào kho</b><small>Khai báo đồ và lịch chuyển</small></Link>}
-              {!ended && <Link to={`/support?contract=${c.contractId}`} className="action-tile"><span className="tile-icon"><Icon name="alert" size={18} /></span><b>Báo sự cố</b><small>Gửi yêu cầu hỗ trợ</small></Link>}
-              {canReturnEarly
-                ? <button type="button" className={`action-tile ${showEarly ? 'active' : ''}`} aria-expanded={showEarly} onClick={() => setShowEarly(!showEarly)}><span className="tile-icon"><Icon name="logout" size={18} /></span><b>Trả kho sớm</b><small>Trước ngày {fmtDate(c.endDate)}</small></button>
-                : !ended && <Link to={`/support?contract=${c.contractId}&topic=return`} className="action-tile"><span className="tile-icon"><Icon name="logout" size={18} /></span><b>Yêu cầu trả kho</b><small>Hẹn ngày trả với cơ sở</small></Link>}
-              {!ended && <Link to={`/my-units/${c.contractId}/suspend`} className="action-tile"><span className="tile-icon"><Icon name="clock" size={18} /></span><b>Tạm ngưng hợp đồng</b><small>30–90 ngày</small></Link>}
-              <Link to={`/my-units/${c.contractId}/policy`} className="action-tile"><span className="tile-icon"><Icon name="clipboard" size={18} /></span><b>Xem chính sách hợp đồng</b><small>Điều khoản đang áp dụng</small></Link>
-              <Link to="/account/security" className="action-tile"><span className="tile-icon"><Icon name="shield" size={18} /></span><b>Bảo mật & nhật ký</b><small>Lịch sử vào kho, đăng nhập</small></Link>
-            </div>
-            {showEarly && canReturnEarly && <EarlyReturnPanel contract={c} facility={facility} />}
-          </section>
-          {/* row 2 left: payments */}
-          <section className="panel">
-            <div>
-              <h3 className="panel-title">Lịch Thanh Toán & Hóa Đơn</h3>
-              <p className="muted">{next ? `Kỳ tiếp theo: ${fmtDate(next.due)}` : 'Không còn kỳ thanh toán nào'}</p>
-            </div>
-            <div className="table-scroll">
-              <table className="schedule-table">
-                <thead><tr><th>Kỳ thanh toán</th><th>Số tiền</th><th>Ngày đến hạn</th><th>Trạng thái</th><th>Hóa đơn</th></tr></thead>
-                <tbody>
-                  {schedule.map((r) => (
-                    <tr key={r.key}>
-                      <td>{r.period}</td>
-                      <td className="money">{fmtMoney(r.amount)}</td>
-                      <td>{fmtDate(r.due)}</td>
-                      <td><span className={`badge ${STATE_BADGE[r.state].tone}`}>{STATE_BADGE[r.state].label}</span></td>
-                      <td>{r.invoice ? <Link to="/invoices" className="code">{r.invoice}</Link> : <b className="plain-strong">Chưa phát hành</b>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {schedule.length === 0 && <Empty icon="wallet">Chưa có kỳ thanh toán nào cho hợp đồng này.</Empty>}
-            </div>
-            <div className="row between wrap">
-              <small className="muted">Thanh toán trực tuyến qua VNPay hoặc tại quầy cơ sở.</small>
-              <Link to="/invoices" className="btn soft sm"><Icon name="card" size={14} /> Quản lý thanh toán</Link>
-            </div>
-          </section>
-
-          </div>
-          <div className="stack-lg detail-side">
-          {/* row 1 right: the contract */}
-          <section className="panel contract-card">
-            <h3 className="panel-title">Thông Tin Hợp Đồng</h3>
-            <div className="price-box">
-              <div className="row between"><small className="muted">Mã hợp đồng</small><b>{c.contractNumber}</b></div>
-              <div><b className="price-big">{fmtMoney(c.monthlyRentFee)}</b> <small className="muted">/ tháng</small></div>
-            </div>
-            <div className="info-row"><span className="muted">Ngày bắt đầu</span><b>{fmtDate(c.startDate)}</b></div>
-            <div className="info-row"><span className="muted">Ngày hết hạn</span><b>{fmtDate(c.endDate)}</b></div>
-            <div className="info-row"><span className="muted">Thời gian còn lại</span>
-              <b className={ended ? '' : left <= 7 ? 'warn-text' : 'cyan'}>{ended ? 'Đã kết thúc' : left > 0 ? `${left} ngày` : left === 0 ? 'Hết hạn hôm nay' : `Quá ${-left} ngày`}</b></div>
-            <div className="info-row"><span className="muted">Chu kỳ thanh toán</span><b>Hàng tháng</b></div>
-            <div className="info-row"><span className="muted">Tiền cọc</span><b>{fmtMoney(c.depositPaid)}</b></div>
-            {c.accumulatedLateFee > 0 && <>
-              <div className="info-row"><span className="muted">Phí quá hạn</span><b className="danger-text">{fmtMoney(c.accumulatedLateFee)}</b></div>
-              <div className="info-row"><span className="muted">Số dư cọc</span><b>{fmtMoney(c.depositBalance)}</b></div>
-            </>}
-            {!ended && (
-              <div className="row wrap">
-                <Link to={`/my-units/${c.contractId}/renew`} className="btn primary"><Icon name="calendar" size={15} /> {pending ? 'Xem yêu cầu gia hạn' : 'Gia hạn hợp đồng'}</Link>
-                <button className="btn ghost sm" onClick={() => setShowRenew(!showRenew)}>{showRenew ? 'Ẩn gia hạn nhanh' : 'Gia hạn nhanh'}</button>
+            <section className="panel">
+              <div className="row between wrap">
+                <div>
+                  <h3 className="panel-title">Lịch Thanh Toán & Hóa Đơn</h3>
+                  <p className="muted">Thanh toán trực tuyến qua VNPay hoặc tại quầy cơ sở.</p>
+                </div>
+                <Link to="/invoices" className="btn soft sm"><Icon name="card" size={14} /> Quản lý thanh toán</Link>
               </div>
-            )}
-          </section>
+              <div className="table-scroll">
+                <table className="schedule-table">
+                  <thead><tr><th>Kỳ thanh toán</th><th>Số tiền</th><th>Ngày đến hạn</th><th>Trạng thái</th><th>Hóa đơn</th></tr></thead>
+                  <tbody>
+                    {schedule.map((r) => (
+                      <tr key={r.key}>
+                        <td>{r.period}</td>
+                        <td className="money">{fmtMoney(r.amount)}</td>
+                        <td>{fmtDate(r.due)}</td>
+                        <td><span className={`badge ${STATE_BADGE[r.state].tone}`}>{STATE_BADGE[r.state].label}</span></td>
+                        <td>{r.invoice ? <Link to="/invoices" className="code">{r.invoice}</Link> : <span className="muted nowrap">Chưa phát hành</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {schedule.length === 0 && <Empty icon="wallet">Chưa có kỳ thanh toán nào cho hợp đồng này.</Empty>}
+              </div>
+            </section>
+          </div>
 
-          {/* row 2 right: access */}
-          <section className="panel">
-            <div>
+          <div className="stack-lg detail-side">
+            {/* everything the customer can do with this contract, in one place */}
+            <section className="panel stack cd-actions">
+              <h3 className="panel-title">Thao Tác</h3>
+              {!ended && (
+                <div className="cd-main-btns">
+                  {!locked && <Link to={`/visit?contract=${c.contractId}`} className="btn primary"><Icon name="calendar" size={15} /> Đăng ký vào kho</Link>}
+                  <Link to={`/my-units/${c.contractId}/renew`} className="btn outline"><Icon name="refresh" size={15} /> {pending ? 'Xem yêu cầu gia hạn' : 'Gia hạn'}</Link>
+                </div>
+              )}
+              <nav className="cd-links">
+                {!ended && <Link to={`/my-units/${c.contractId}/move-in`}><Icon name="package" size={16} /><span>Đưa đồ vào kho<small>Khai báo đồ và lịch chuyển</small></span><Icon name="arrowRight" size={14} /></Link>}
+                <Link to={`/my-units?contract=${c.contractId}&tab=people`}><Icon name="users" size={16} /><span>Người vào kho<small>{people.length} người được phép vào</small></span><Icon name="arrowRight" size={14} /></Link>
+                <Link to={`/my-units?contract=${c.contractId}&tab=history`}><Icon name="shield" size={16} /><span>Nhật ký vào kho<small>Lần gần nhất: {lastVisit ? fmtTime(lastVisit.entryTime) : 'chưa có'}</small></span><Icon name="arrowRight" size={14} /></Link>
+                {!ended && <Link to={`/support?contract=${c.contractId}`}><Icon name="alert" size={16} /><span>Báo sự cố<small>Gửi yêu cầu hỗ trợ</small></span><Icon name="arrowRight" size={14} /></Link>}
+                {!ended && <Link to={`/my-units/${c.contractId}/suspend`}><Icon name="clock" size={16} /><span>Tạm ngưng hợp đồng<small>30–90 ngày</small></span><Icon name="arrowRight" size={14} /></Link>}
+                <Link to={`/my-units/${c.contractId}/policy`}><Icon name="clipboard" size={16} /><span>Chính sách hợp đồng<small>Điều khoản đang áp dụng</small></span><Icon name="arrowRight" size={14} /></Link>
+              </nav>
+              {canReturnEarly
+                ? <button type="button" className="cd-danger" onClick={openEarly}><Icon name="logout" size={15} /> Trả kho sớm</button>
+                : !ended && <Link to={`/support?contract=${c.contractId}&topic=return`} className="cd-danger"><Icon name="logout" size={15} /> Yêu cầu trả kho</Link>}
+            </section>
+
+            <section className="panel stack-sm">
               <h3 className="panel-title">Quyền Truy Cập</h3>
-              <p className="muted">Chỉ hiển thị cho chủ hợp đồng</p>
-            </div>
-            <div className={`access-state ${locked || ended ? 'off' : 'on'}`}>
-              <b>Trạng thái truy cập</b>
-              <span>{ended ? 'Đã kết thúc' : locked ? 'Đang khóa' : 'Đang bật'}</span>
-            </div>
-            <div className="info-row"><span className="muted">Chủ hợp đồng</span><b>{user?.fullName ?? '—'}</b></div>
-            <div className="info-row"><span className="muted">Người vào kho</span><b>{people.length} người</b></div>
-            <div className="info-row"><span className="muted">Xác thực</span><b>CCCD tại cổng</b></div>
-            <div className="info-row"><span className="muted">Khung giờ</span><b>{facility?.operatingHours ?? '—'}</b></div>
-            <div className="info-row"><span className="muted">Lần vào gần nhất</span><b>{lastVisit ? fmtTime(lastVisit.entryTime) : 'Chưa có'}</b></div>
-            <div className="action-grid">
-              {!ended && !locked && <Link to={`/visit?contract=${c.contractId}`} className="btn primary sm"><Icon name="calendar" size={14} /> Đăng ký vào kho</Link>}
-              <Link to={`/my-units?contract=${c.contractId}&tab=people`} className="btn soft sm"><Icon name="users" size={14} /> Quản lý người vào kho</Link>
-              <Link to={`/my-units?contract=${c.contractId}&tab=history`} className="btn soft sm"><Icon name="shield" size={14} /> Bảo mật & nhật ký</Link>
-            </div>
-          </section>
+              <div className={`access-state ${locked || ended ? 'off' : 'on'}`}>
+                <b>Trạng thái</b>
+                <span>{ended ? 'Đã kết thúc' : locked ? 'Đang khóa' : 'Đang bật'}</span>
+              </div>
+              <div className="info-row"><span className="muted">Chủ hợp đồng</span><b>{user?.fullName ?? '—'}</b></div>
+              <div className="info-row"><span className="muted">Xác thực</span><b>CCCD tại cổng</b></div>
+              <div className="info-row"><span className="muted">Khung giờ</span><b>{facility?.operatingHours ?? '—'}</b></div>
+            </section>
           </div>
         </div>
       </div>

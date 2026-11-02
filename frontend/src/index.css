@@ -1416,3 +1416,34 @@ a.stat-link { text-decoration: none; color: inherit; }
 .support-toolbar-row .input-wrap { min-width: 240px; flex: 1; }
 .support-toolbar-row .input-wrap input { height: 42px; }
 .support-toolbar-row .select-btn { width: auto; min-width: 170px; height: 42px; }
+
+/* ---------- customer contract detail (Kho A-02): summary tiles, unit beside specs, actions list ---------- */
+.detail-hero .hero-sub { font-weight: 600; opacity: .7; }
+.cd-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
+.cd-tile { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
+.cd-tile > small:first-child { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.cd-tile > b { font-size: 22px; color: var(--text-strong); font-family: var(--font-head, inherit); }
+.cd-tile > b span { font-size: 13px; font-weight: 600; color: var(--muted); }
+.cd-tile > small:not(:first-child) { font-size: 12.5px; font-weight: 600; }
+.cd-tile .term-bar { margin-top: 6px; }
+.cd-unit { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 0; padding: 0; overflow: hidden; }
+.cd-unit-photo { min-height: 200px; background: var(--bg-tint); overflow: hidden; }
+.cd-unit-photo .photo-fill, .cd-unit-photo svg { width: 100%; height: 100%; object-fit: cover; }
+.cd-unit-info { display: flex; flex-direction: column; gap: 14px; padding: 20px 22px; }
+.cd-specs { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; }
+.cd-specs div { display: flex; flex-direction: column; gap: 2px; }
+.cd-specs dt { font-size: 12.5px; color: var(--muted-2, var(--muted)); }
+.cd-specs dd { margin: 0; font-weight: 700; color: var(--text-strong); font-size: 14px; }
+.cd-main-btns { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 10px; }
+.cd-links { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.cd-links a { display: flex; align-items: center; gap: 12px; padding: 11px 14px; color: var(--text-strong); text-decoration: none; border-top: 1px solid var(--border); }
+.cd-links a:first-child { border-top: 0; }
+.cd-links a > svg:first-child { color: var(--cyan); flex: none; }
+.cd-links a > svg:last-child { color: var(--muted); flex: none; }
+.cd-links a span { flex: 1; display: flex; flex-direction: column; font-weight: 600; font-size: 14px; }
+.cd-links a small { font-weight: 500; font-size: 12px; color: var(--muted); }
+.cd-links a:hover { background: var(--cyan-50); }
+.cd-danger { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px; background: none; border: 0; font: inherit; font-weight: 600; font-size: 14px; color: var(--bad); cursor: pointer; text-decoration: none; border-radius: var(--radius); }
+.cd-danger:hover { background: var(--bad-bg); }
+@media (max-width: 1100px) { .cd-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .cd-summary { grid-template-columns: 1fr; } .cd-unit { grid-template-columns: 1fr; } .cd-unit-photo { aspect-ratio: 5 / 2; min-height: 0; } }
