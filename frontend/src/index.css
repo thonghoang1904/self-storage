@@ -309,7 +309,7 @@ input:focus, .select-btn:focus-visible, .select-btn.open { outline: none; border
 .my-unit-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
 .my-unit-card { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: #fff; box-shadow: var(--shadow); transition: border-color 0.15s; }
 .my-unit-card.selected { border-color: var(--cyan); }
-.my-unit-media { position: relative; height: 140px; display: block; overflow: hidden; }
+.my-unit-media { position: relative; height: 130px; display: block; overflow: hidden; }
 .my-unit-media img, .my-unit-media svg { transition: transform .25s ease; }
 a.my-unit-media:hover img, a.my-unit-media:hover svg { transform: scale(1.03); }
 .my-unit-title { color: inherit; text-decoration: none; }
@@ -320,6 +320,20 @@ a.my-unit-media:hover img, a.my-unit-media:hover svg { transform: scale(1.03); }
 .my-unit-body { display: flex; flex-direction: column; gap: 14px; padding: 18px 20px 20px; flex: 1; }
 .my-unit-body h3 { font-size: 18px; }
 .my-unit-body h3 small { font-family: var(--font-body); font-weight: 600; font-size: 13px; color: var(--muted); }
+.my-unit-body h3 + small { font-size: 13px; }
+.my-unit-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.my-unit-facts > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2, #f4f7fa); }
+.my-unit-facts small { font-size: 12px; color: var(--muted); }
+.my-unit-facts b { font-size: 15px; color: var(--text-strong); }
+.my-unit-facts b span { font-size: 12px; font-weight: 600; color: var(--muted); }
+.my-unit-term { display: flex; flex-direction: column; gap: 6px; }
+.my-unit-term small { font-size: 12px; font-weight: 600; }
+.term-bar { display: block; height: 6px; border-radius: 99px; background: var(--border); overflow: hidden; }
+.term-bar i { display: block; height: 100%; border-radius: inherit; background: var(--cyan); }
+.my-unit-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 10px; margin-top: auto; }
+.my-unit-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 13px; font-weight: 600; }
+.link-plain { text-decoration: none; }
+.link-plain:hover { text-decoration: underline; }
 .meta-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); flex: 1; }
 .meta-list li { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .meta-list b { color: var(--text-strong); }

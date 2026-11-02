@@ -16,6 +16,13 @@ const daysUntil = (iso: string) => Math.ceil((new Date(`${iso}T00:00:00`).getTim
  * Figma "user-dashboard": rented units, quick actions and latest notices.
  * The authorized-person / entry-history panel opens from the contract page (?contract=&tab=).
  */
+/** Share of the contract term already used, for the thin bar under the dates. */
+const termPct = (start: string, end: string) => {
+  const s = new Date(start).getTime(), e = new Date(end).getTime()
+  if (!(e > s)) return 100
+  return Math.min(100, Math.max(0, ((Date.now() - s) / (e - s)) * 100))
+}
+
 export default function MyUnits() {
   const { user } = useAuth()
   const query = new URLSearchParams(useLocation().search)
@@ -81,24 +88,29 @@ export default function MyUnits() {
                     <span className="tag-status"><StatusBadge status={c.status} /></span>
                   </Link>
                   <div className="my-unit-body">
-                    <h3><Link to={`/my-units/${c.contractId}`} className="my-unit-title">Kho {c.unitCode}</Link> <small>· {c.facilityName}</small></h3>
-                    <ul className="meta-list">
-                      <li><Icon name="calendar" size={14} /> Bắt đầu: {fmtDate(c.startDate)}</li>
-                      <li><Icon name="clock" size={14} /> Hết hạn: <b>{fmtDate(c.endDate)}</b>{c.status === 'Active' && left >= 0 && left <= 45 && <span className="warn-text"> · còn {left} ngày</span>}</li>
-                      <li><Icon name="card" size={14} /> Chi phí: <b className="cyan">{fmtMoney(c.monthlyRentFee)}/tháng</b></li>
-                    </ul>
-                    <div className="row">
-                      {c.status === 'Active' && <Link to={`/my-units/${c.contractId}/renew`} className="btn primary sm grow">Gia Hạn</Link>}
-                      <Link to={`/my-units/${c.contractId}`} className="btn outline sm grow">Chi Tiết</Link>
+                    <div>
+                      <h3><Link to={`/my-units/${c.contractId}`} className="my-unit-title">Kho {c.unitCode}</Link></h3>
+                      <small className="muted">{c.facilityName}</small>
                     </div>
-                    {(c.status === 'Active' || c.status === 'Renewed') && (
-                      <div className="row">
-                        <Link to={`/visit?contract=${c.contractId}`} className="btn ghost sm grow"><Icon name="calendar" size={14} /> Đăng Ký Vào Kho</Link>
+                    <div className="my-unit-facts">
+                      <div><small>Chi phí</small><b>{fmtMoney(c.monthlyRentFee)}<span>/tháng</span></b></div>
+                      <div><small>Hết hạn</small><b>{fmtDate(c.endDate)}</b></div>
+                    </div>
+                    <div className="my-unit-term">
+                      <div className="row between">
+                        <small className="muted">Từ {fmtDate(c.startDate)}</small>
+                        {c.status === 'Active' && left >= 0 && <small className={left <= 45 ? 'warn-text' : 'muted'}>còn {left} ngày</small>}
                       </div>
-                    )}
-                    {c.status === 'Active' && left > 0 && (
-                      <Link to={`/my-units/${c.contractId}?return=early`} className="btn ghost sm block danger-text"><Icon name="logout" size={14} /> Trả Kho Sớm</Link>
-                    )}
+                      <span className="term-bar"><i style={{ width: `${termPct(c.startDate, c.endDate)}%` }} /></span>
+                    </div>
+                    <div className="my-unit-actions">
+                      {(c.status === 'Active' || c.status === 'Renewed') && <Link to={`/visit?contract=${c.contractId}`} className="btn primary sm"><Icon name="calendar" size={14} /> Vào kho</Link>}
+                      {c.status === 'Active' && <Link to={`/my-units/${c.contractId}/renew`} className="btn outline sm"><Icon name="refresh" size={14} /> Gia hạn</Link>}
+                    </div>
+                    <div className="my-unit-foot">
+                      <Link to={`/my-units/${c.contractId}`} className="link with-icon">Chi tiết hợp đồng <Icon name="arrowRight" size={14} /></Link>
+                      {c.status === 'Active' && left > 0 && <Link to={`/my-units/${c.contractId}?return=early`} className="danger-text link-plain">Trả kho sớm</Link>}
+                    </div>
                   </div>
                 </article>
               )
