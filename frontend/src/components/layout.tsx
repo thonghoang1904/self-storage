@@ -235,7 +235,6 @@ export function StaffLayout() {
       .catch((e) => setError((e as Error).message))
   }, [])
 
-  const isManager = user?.role === Roles.Manager
   const title = pathname === '/facility' ? 'Tổng Quan Cơ Sở'
     : pathname.startsWith('/facility-units') ? 'Kho Lưu Trữ'
     : pathname.startsWith('/facility-staff') ? 'Nhân Viên Cơ Sở'
@@ -253,15 +252,6 @@ export function StaffLayout() {
         <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
           <div className="sidebar-brand"><Logo area="Facility" light /></div>
           <nav className="sidebar-nav">
-            {isManager && (
-              <>
-                <small className="sidebar-group">Quản lý cơ sở</small>
-                <NavLink to="/facility" end><Icon name="grid" /> Tổng Quan</NavLink>
-                <NavLink to="/facility-units"><Icon name="package" /> Kho Lưu Trữ</NavLink>
-                <NavLink to="/facility-staff"><Icon name="users" /> Nhân Viên</NavLink>
-                <small className="sidebar-group">Vận hành hằng ngày</small>
-              </>
-            )}
             <NavLink to="/gate"><Icon name="door" /> Cổng Ra Vào</NavLink>
             <NavLink to="/reservations"><Icon name="clipboard" /> Đặt Kho</NavLink>
             <NavLink to="/staff-billing"><Icon name="wallet" /> Hóa Đơn</NavLink>
@@ -372,6 +362,7 @@ export function AdminLayout() {
         { icon: 'user', label: 'Nhân Viên', to: '/admin/users' },
         { icon: 'grid', label: 'Cơ Sở', to: '/admin/facilities' },
         { icon: 'phone', label: 'Hỗ Trợ', to: '/admin/support' },
+        { icon: 'wallet', label: 'Giá & Chính Sách', to: '/admin/policies' },
         { icon: 'file', label: 'Hợp Đồng', to: '/admin/contracts' },
         { icon: 'chart', label: 'Doanh Thu', to: '/admin/revenue' },
         { icon: 'file', label: 'Báo Cáo', to: '/admin/reports' },

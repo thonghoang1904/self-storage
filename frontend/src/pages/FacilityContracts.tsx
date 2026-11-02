@@ -3,7 +3,8 @@ import { Link, useLocation } from 'react-router-dom'
 import { api, billingLink, fmtDate, fmtMoney } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
-import { ExtraChargeFees, type Contract, type ExtraChargeInvoice } from '../types'
+import { ExtraChargeFees, type Contract, type ExtraChargeInvoice, type Invoice, type StaffContract } from '../types'
+import { Modal } from '../components/Modal'
 import { Select } from '../components/Select'
 
 /**
@@ -32,6 +33,7 @@ export default function FacilityContracts() {
   const [chargeFor, setChargeFor] = useState<number | null>(null)
   const [created, setCreated] = useState<ExtraChargeInvoice[]>([])
   const [error, setError] = useState('')
+  const [viewing, setViewing] = useState<Contract | null>(null)
 
   const load = useCallback(async () => {
     if (!facilityId) return
@@ -48,6 +50,7 @@ export default function FacilityContracts() {
 
   return (
     <div className="stack-xl">
+      {viewing && facilityId && <ContractDialog contract={viewing} facilityId={facilityId} onClose={() => setViewing(null)} />}
       <div className="page-title-row">
         <h1>Hợp Đồng & Phụ Thu</h1>
         <p className="muted">Danh sách hợp đồng tại cơ sở. Lập phụ thu khi khách làm mất chìa khóa, thẻ từ, cần vệ sinh hoặc thay ổ khóa.</p>
@@ -59,18 +62,16 @@ export default function FacilityContracts() {
             <Icon name="search" size={16} className="input-lead" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm mã hợp đồng, mã kho…" />
           </span>
-          <div className="segmented" role="tablist">
-            {STATUSES.map((s) => (
-              <button key={s.value} className={status === s.value ? 'active' : ''} onClick={() => setStatus(s.value)}>{s.label}</button>
-            ))}
-          </div>
+          <Select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Trạng thái hợp đồng">
+            {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.value ? s.label : 'Trạng thái: Tất cả'}</option>)}
+          </Select>
         </div>
       </div>
 
       {created.length > 0 && (
         <p className="alert ok"><Icon name="check" size={16} />
           Đã lập {created.length} hóa đơn phụ thu ({created.map((x) => x.invoiceNumber).join(', ')}), tổng {fmtMoney(total)}. Khách thấy ở mục Thanh Toán.
-          {created.length === 1 && <> <Link to={billingLink(created[0].invoiceNumber)} className="link">Thu tiền ngay</Link></>}
+          {created.length === 1 && <> <Link to={billingLink(created[0].invoiceNumber)} className="link">Xem hóa đơn</Link></>}
         </p>
       )}
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
@@ -85,7 +86,7 @@ export default function FacilityContracts() {
                 return (
                   <Fragment key={c.contractId}>
                     <tr>
-                      <td className="code"><Link to={billingLink(c.contractNumber)} className="link" title="Xem hóa đơn của hợp đồng">{c.contractNumber}</Link></td>
+                      <td className="code"><button type="button" className="link-btn link" onClick={() => setViewing(c)} title="Xem thông tin hợp đồng">{c.contractNumber}</button></td>
                       <td><b>{c.unitCode}</b></td>
                       <td>{fmtDate(c.startDate)} – {fmtDate(c.endDate)}</td>
                       <td className="money">{fmtMoney(c.monthlyRentFee)}<small className="muted">/tháng</small></td>
@@ -171,5 +172,64 @@ function ChargeForm({ contract: c, facilityId, onDone }: { contract: Contract; f
       </div>
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
     </div>
+  )
+}
+
+const INVOICE_TYPE: Record<string, string> = {
+  DEPOSIT: 'Tiền cọc', RENEWAL: 'Gia hạn', MONTHLY_RENT: 'Tiền thuê', OVERDUE_FINE: 'Phí quá hạn', EXTRA_CHARGE: 'Phụ phí',
+}
+
+/**
+ * The contract, its customer and its invoices in a dialog over the list (no page change):
+ * GET /api/contracts/facilities/{id} for the customer and deposit, GET /api/invoices/facilities/{id} for the invoices.
+ */
+function ContractDialog({ contract: c, facilityId, onClose }: { contract: Contract; facilityId: number; onClose: () => void }) {
+  const [info, setInfo] = useState<StaffContract | null>(null)
+  const [invoices, setInvoices] = useState<Invoice[] | null>(null)
+  useEffect(() => {
+    api<StaffContract[]>(`/api/contracts/facilities/${facilityId}`).then((cs) => setInfo(cs.find((x) => x.contractId === c.contractId) ?? null)).catch(() => {})
+    api<Invoice[]>(`/api/invoices/facilities/${facilityId}`).then((is) => setInvoices(is.filter((i) => i.contractId === c.contractId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)))).catch(() => setInvoices([]))
+  }, [c.contractId, facilityId])
+  const owed = (invoices ?? []).filter((i) => i.status === 'Unpaid' || i.status === 'Overdue')
+  return (
+    <Modal title={`Hợp đồng ${c.contractNumber}`} onClose={onClose} wide>
+      <div className="row between wrap"><StatusBadge status={c.status} />{owed.length > 0 && <span className="badge bad">{owed.length} hóa đơn chưa trả · {fmtMoney(owed.reduce((n, i) => n + i.totalAmount, 0))}</span>}</div>
+      <div className="form-grid two">
+        <div className="info-box">
+          <div className="info-row"><span className="muted">Khách hàng</span><b>{info?.customerName ?? '…'}</b></div>
+          <div className="info-row"><span className="muted">Số điện thoại</span><b>{info?.customerPhone ?? '…'}</b></div>
+          <div className="info-row"><span className="muted">Tiền cọc</span><b>{info ? fmtMoney(info.depositPaid) : '…'}</b></div>
+        </div>
+        <div className="info-box">
+          <div className="info-row"><span className="muted">Kho</span><b>{c.unitCode} · {c.facilityName}</b></div>
+          <div className="info-row"><span className="muted">Thời hạn</span><b>{fmtDate(c.startDate)} – {fmtDate(c.endDate)}</b></div>
+          <div className="info-row"><span className="muted">Giá thuê</span><b>{fmtMoney(c.monthlyRentFee)}/tháng</b></div>
+        </div>
+      </div>
+      <div className="stack-sm">
+        <b>Hóa đơn của hợp đồng</b>
+        {invoices === null && <p className="muted">Đang tải…</p>}
+        {invoices?.length === 0 && <p className="muted">Chưa có hóa đơn.</p>}
+        {invoices && invoices.length > 0 && (
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Số hóa đơn</th><th>Loại</th><th>Hạn</th><th className="right">Số tiền</th><th>Trạng thái</th></tr></thead>
+              <tbody>
+                {invoices.map((i) => (
+                  <tr key={i.invoiceId}>
+                    <td className="code">{i.invoiceNumber}</td>
+                    <td>{INVOICE_TYPE[i.invoiceType] ?? i.invoiceType}</td>
+                    <td>{fmtDate(i.dueDate)}</td>
+                    <td className="right money">{fmtMoney(i.totalAmount)}</td>
+                    <td><StatusBadge status={i.status} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Modal>
   )
 }
