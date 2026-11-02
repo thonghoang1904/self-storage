@@ -41,7 +41,7 @@ export async function saveUnit(facilityId: number, form: UnitFormValue, units: S
   return before && before.unitCode !== code ? `Đã đổi mã kho ${before.unitCode} thành ${code}.` : `Đã cập nhật kho ${code}.`
 }
 
-export function UnitForm({ form, onChange, units, types, busy, onSubmit, onClose }: {
+export function UnitForm({ form, onChange, units, types, busy, onSubmit, onClose, bare = false }: {
   form: UnitFormValue
   onChange: (form: UnitFormValue) => void
   units: StorageUnit[]
@@ -49,17 +49,21 @@ export function UnitForm({ form, onChange, units, types, busy, onSubmit, onClose
   busy: boolean
   onSubmit: (e: FormEvent) => void
   onClose: () => void
+  /** Inside a dialog that already has the title and close button. */
+  bare?: boolean
 }) {
   const code = useInputFilter(CODE_FILTER)
   const current = units.find((u) => u.unitId === form.unitId)
   const renameOnly = !!current && LOCKED_UNIT_STATUSES.includes(current.status)
   const selectedType = types.find((t) => t.unitTypeId === form.unitTypeId) ?? types[0]
   return (
-    <form className="panel" onSubmit={onSubmit}>
-      <div className="panel-head">
-        <h2 className="panel-title">{current ? `Sửa kho ${current.unitCode}` : 'Thêm kho mới'}</h2>
-        <button type="button" className="icon-btn" aria-label="Đóng" onClick={onClose}><Icon name="x" /></button>
-      </div>
+    <form className={bare ? 'stack' : 'panel'} onSubmit={onSubmit}>
+      {!bare && (
+        <div className="panel-head">
+          <h2 className="panel-title">{current ? `Sửa kho ${current.unitCode}` : 'Thêm kho mới'}</h2>
+          <button type="button" className="icon-btn" aria-label="Đóng" onClick={onClose}><Icon name="x" /></button>
+        </div>
+      )}
       <div className="form-grid four">
         <label className="field"><span>Mã kho</span>
           <input value={form.unitCode} onChange={(e) => onChange({ ...form, unitCode: code.keep(e.target.value) })} placeholder="vd: B-04" maxLength={30} required autoFocus />

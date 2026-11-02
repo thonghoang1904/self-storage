@@ -342,7 +342,7 @@ function Inspection({ contract: c, overdue, request, onChanged, invoices }: {
               <p className="alert ok"><Icon name="check" size={16} />
                 Đã trả kho{result.earlyReturnFee ? ` sớm (phí ${fmtMoney(result.earlyReturnFee)})` : ''}. Cấn trừ {fmtMoney(result.lateFeesDeducted)}, cần hoàn {fmtMoney(result.depositRefundDue)}{result.lateFeesStillOwed > 0 ? `, đã lập hóa đơn phí còn nợ ${fmtMoney(result.lateFeesStillOwed)}` : ''}.
                 {(result.unpaidInvoicesOffset ?? 0) > 0 && ` Đã cấn ${fmtMoney(result.unpaidInvoicesOffset ?? 0)} hóa đơn chưa trả vào cọc.`}
-                {(result.lateFeesStillOwed > 0 || (result.unpaidInvoicesRemaining ?? 0) > 0) && <> <Link to={billingLink(c.contractNumber)} className="link">Thu tiền còn nợ</Link></>}
+                {(result.lateFeesStillOwed > 0 || (result.unpaidInvoicesRemaining ?? 0) > 0) && <> <Link to={billingLink(c.contractNumber)} className="link">Xem hóa đơn còn nợ</Link></>}
               </p>
             )}
             {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}

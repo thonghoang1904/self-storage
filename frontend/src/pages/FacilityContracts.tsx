@@ -85,7 +85,7 @@ export default function FacilityContracts() {
                 return (
                   <Fragment key={c.contractId}>
                     <tr>
-                      <td className="code">{c.contractNumber}</td>
+                      <td className="code"><Link to={billingLink(c.contractNumber)} className="link" title="Xem hóa đơn của hợp đồng">{c.contractNumber}</Link></td>
                       <td><b>{c.unitCode}</b></td>
                       <td>{fmtDate(c.startDate)} – {fmtDate(c.endDate)}</td>
                       <td className="money">{fmtMoney(c.monthlyRentFee)}<small className="muted">/tháng</small></td>
@@ -93,7 +93,6 @@ export default function FacilityContracts() {
                       <td className="right">
                         <span className="row end">
                           {billable && <button className="btn outline sm" onClick={() => setChargeFor(chargeFor === c.contractId ? null : c.contractId)}><Icon name="plus" size={14} /> Lập phụ thu</button>}
-                          <Link to={billingLink(c.contractNumber)} className="btn ghost sm"><Icon name="wallet" size={14} /> Hóa đơn</Link>
                         </span>
                       </td>
                     </tr>

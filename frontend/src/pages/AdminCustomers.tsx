@@ -77,8 +77,8 @@ export default function AdminCustomers() {
   return (
     <div className="stack-xl">
       <div className="page-title-row">
-        <h1>Quản Lý Khách Hàng & Hợp Đồng</h1>
-        <p className="muted">Theo dõi hồ sơ khách hàng, kho đang thuê và hạn hợp đồng của từng người.</p>
+        <h1>Quản Lý Khách Hàng</h1>
+        <p className="muted">Theo dõi hồ sơ khách hàng và kho đang thuê của từng người.</p>
       </div>
 
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
@@ -110,7 +110,7 @@ export default function AdminCustomers() {
 
       <section className="panel">
         <div>
-          <h2 className="panel-title">Danh sách khách hàng & hợp đồng</h2>
+          <h2 className="panel-title">Danh sách khách hàng</h2>
           <p className="muted">Mỗi khách hiện hợp đồng cần chú ý nhất: quá hạn trước, rồi hợp đồng hết hạn sớm nhất.</p>
         </div>
         <div className="table-scroll">

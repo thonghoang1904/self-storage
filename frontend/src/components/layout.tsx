@@ -4,6 +4,7 @@ import { api, IS_DEMO } from '../api'
 import { useAuth } from '../auth'
 import { GATE_ROLES, roleLabel, Roles, type Facility } from '../types'
 import { Icon, Logo } from './ui'
+import { NotificationBell } from './NotificationBell'
 import { Select } from './Select'
 import { ActionBanner } from './ActionBanner'
 
@@ -77,6 +78,7 @@ export function PortalHeader() {
           <div className="portal-nav-actions">
             {user ? (
               <>
+                <NotificationBell />
                 <Link to="/account/profile" className="user-chip" title="Sửa thông tin tài khoản">
                   <span className="avatar">{initials(user.fullName)}</span>
                   <span className="user-chip-text"><b>{user.fullName}</b><small>{user.username}</small></span>
@@ -201,7 +203,7 @@ export function StaffLayout() {
     : pathname.startsWith('/facility-contracts') ? 'Hợp Đồng & Phụ Thu'
     : pathname.startsWith('/staff-cancellations') ? 'Yêu Cầu Hủy Đặt Kho'
     : pathname.startsWith('/reservations') ? 'Đặt Kho & Nhận Kho'
-    : pathname.startsWith('/staff-billing') ? 'Hóa Đơn & Thu Tiền'
+    : pathname.startsWith('/staff-billing') ? 'Hóa Đơn'
     : pathname.startsWith('/staff-contracts') ? 'Gia Hạn & Quá Hạn'
     : pathname.startsWith('/staff-return') ? 'Trả Kho & Hoàn Cọc'
     : pathname.startsWith('/staff-support') ? 'Hỗ Trợ Khách Hàng' : 'Cổng Ra Vào'
@@ -222,14 +224,13 @@ export function StaffLayout() {
               </>
             )}
             <NavLink to="/gate"><Icon name="door" /> Cổng Ra Vào</NavLink>
-            <NavLink to="/reservations"><Icon name="clipboard" /> Đặt Kho & Nhận Kho</NavLink>
-            <NavLink to="/staff-billing"><Icon name="wallet" /> Hóa Đơn & Thu Tiền</NavLink>
-            <NavLink to="/staff-contracts"><Icon name="refresh" /> Gia Hạn & Quá Hạn</NavLink>
-            <NavLink to="/staff-return"><Icon name="key" /> Trả Kho & Hoàn Cọc</NavLink>
-            <NavLink to="/staff-support"><Icon name="phone" /> Hỗ Trợ Khách Hàng</NavLink>
-            <NavLink to="/staff-cancellations"><Icon name="x" /> Yêu Cầu Hủy Đặt Kho</NavLink>
-            <NavLink to="/facility-contracts"><Icon name="file" /> Hợp Đồng & Phụ Thu</NavLink>
-            <Link to="/"><Icon name="grid" /> Trang khách hàng</Link>
+            <NavLink to="/reservations"><Icon name="clipboard" /> Đặt Kho</NavLink>
+            <NavLink to="/staff-billing"><Icon name="wallet" /> Hóa Đơn</NavLink>
+            <NavLink to="/staff-contracts"><Icon name="refresh" /> Gia Hạn</NavLink>
+            <NavLink to="/staff-return"><Icon name="key" /> Trả Kho</NavLink>
+            <NavLink to="/staff-support"><Icon name="phone" /> Hỗ Trợ</NavLink>
+            <NavLink to="/staff-cancellations"><Icon name="x" /> Hủy Đặt Kho</NavLink>
+            <NavLink to="/facility-contracts"><Icon name="file" /> Hợp Đồng</NavLink>
           </nav>
           {user && (
             <div className="sidebar-user">
@@ -253,7 +254,6 @@ export function StaffLayout() {
             <span className="grow" />
             {facilities.length > 0 && (
               <label className="facility-select">
-                <Icon name="building" size={16} />
                 <Select value={facilityId ?? ''} onChange={(e) => setFacilityId(Number(e.target.value))}>
                   {facilities.map((f) => <option key={f.facilityId} value={f.facilityId}>{f.facilityName}</option>)}
                 </Select>
@@ -324,13 +324,15 @@ export function AdminLayout() {
       area="Admin"
       customerLink={false}
       titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu & Thống Kê', '/admin/reports': 'Báo Cáo', '/admin/support': 'Hỗ Trợ Khách Hàng', '/admin/system': 'Giao Dịch & Nhật Ký',
-        '/admin/storage': 'Kho Lưu Trữ Hệ Thống', '/admin/facilities': 'Quản Lý Cơ Sở', '/admin/customers': 'Khách Hàng & Hợp Đồng',
+        '/admin/storage': 'Kho Lưu Trữ Hệ Thống', '/admin/facilities': 'Quản Lý Cơ Sở', '/admin/customers': 'Khách Hàng',
         '/admin/policies': 'Giá & Chính Sách', '/admin/settings': 'Cài Đặt', '/admin': 'Tổng Quan Quản Lý' }}
       nav={[
         { icon: 'grid', label: 'Tổng Quan', to: '/admin', end: true },
         { icon: 'building', label: 'Kho Lưu Trữ', to: '/admin/storage' },
         { icon: 'users', label: 'Khách Hàng', to: '/admin/customers' },
         { icon: 'user', label: 'Nhân Viên', to: '/admin/users' },
+        { icon: 'grid', label: 'Cơ Sở', to: '/admin/facilities' },
+        { icon: 'phone', label: 'Hỗ Trợ', to: '/admin/support' },
         { icon: 'file', label: 'Hợp Đồng', to: '/admin/contracts' },
         { icon: 'chart', label: 'Doanh Thu', to: '/admin/revenue' },
         { icon: 'file', label: 'Báo Cáo', to: '/admin/reports' },

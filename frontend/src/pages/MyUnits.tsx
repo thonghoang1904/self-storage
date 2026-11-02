@@ -6,15 +6,11 @@ import { useAuth } from '../auth'
 import { depositDueAt, depositMissed, pickupMissed } from '../components/appointment'
 import { Empty, Eyebrow, Icon, splitTypeName, StatusBadge } from '../components/ui'
 import { ContractUnitArt } from '../components/unitPhoto'
-import { DenyReasons, type AccessRecord, type Contract, type Invoice, type Person, type Reservation } from '../types'
+import { DenyReasons, type AccessRecord, type Contract, type Person, type Reservation } from '../types'
 import { FormField, useValidatedForm } from '../components/form'
 
 const daysUntil = (iso: string) => Math.ceil((new Date(`${iso}T00:00:00`).getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000)
 
-const ago = (iso: string) => {
-  const d = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(iso).setHours(0, 0, 0, 0)) / 86400000)
-  return d <= 0 ? 'Hôm nay' : d === 1 ? '1 ngày trước' : `${d} ngày trước`
-}
 
 /**
  * Figma "user-dashboard": rented units, quick actions and latest notices.
@@ -27,7 +23,6 @@ export default function MyUnits() {
   const wantedTab = query.get('tab') === 'history' ? 'history' : query.get('tab') === 'people' ? 'people' : null
   const [contracts, setContracts] = useState<Contract[] | null>(null)
   const [reservations, setReservations] = useState<Reservation[]>([])
-  const [invoices, setInvoices] = useState<Invoice[] | null>(null)
   const [openId, setOpenId] = useState<number | null>(null)
   const [tab, setTab] = useState<'people' | 'history'>(wantedTab ?? 'people')
   const [error, setError] = useState('')
@@ -41,7 +36,6 @@ export default function MyUnits() {
       }
     }).catch((e) => setError((e as Error).message))
     api<Reservation[]>('/api/reservations/my').then(setReservations).catch(() => {})
-    api<Invoice[]>('/api/invoices/my').then(setInvoices).catch(() => setInvoices([]))
   }, [])
 
   const active = contracts?.filter((c) => c.status === 'Active' || c.status === 'Renewed').length ?? 0
@@ -49,11 +43,6 @@ export default function MyUnits() {
   // Units the customer still holds; contracts that have ended (returned or liquidated) are not listed here.
   const current = contracts?.filter((c) => c.status === 'Active' || c.status === 'Renewed' || c.status === 'Overdue')
   const openReservations = reservations.filter((r) => r.status === 'PendingDeposit' || r.status === 'Confirmed')
-  const ending = contracts?.filter((c) => c.status === 'Active' && daysUntil(c.endDate) <= 45) ?? []
-  const unpaid = invoices?.filter((i) => i.status === 'Unpaid' || i.status === 'Overdue') ?? []
-  // Deposits belong to the reservation card above, not to the notification list.
-  const notices = unpaid.filter((i) => i.invoiceType !== 'DEPOSIT')
-  const unitOf = (i: Invoice) => contracts?.find((c) => c.contractId === i.contractId)?.unitCode
 
   return (
     <>
@@ -80,7 +69,6 @@ export default function MyUnits() {
         <section className="stack">
           <div className="row between wrap">
             <h2 className="section-title with-icon"><Icon name="package" size={20} className="cyan" /> Kho Lưu Trữ Của Tôi {active > 0 && <span className="pill">{active} Đang Hoạt Động</span>}</h2>
-            <Link to="/visit" className="btn primary sm"><Icon name="calendar" size={15} /> Đăng ký vào kho</Link>
           </div>
           <div className="my-unit-grid">
             {current?.map((c) => {
@@ -109,7 +97,7 @@ export default function MyUnits() {
                       </div>
                     )}
                     {c.status === 'Active' && left > 0 && (
-                      <Link to={`/my-units/${c.contractId}?return=early`} className="btn ghost sm block"><Icon name="logout" size={14} /> Trả Kho Sớm</Link>
+                      <Link to={`/my-units/${c.contractId}?return=early`} className="btn ghost sm block danger-text"><Icon name="logout" size={14} /> Trả Kho Sớm</Link>
                     )}
                   </div>
                 </article>
@@ -134,51 +122,13 @@ export default function MyUnits() {
               <span className="row"><StatusBadge status={open.status} /><button className="icon-btn" aria-label="Đóng" onClick={() => setOpenId(null)}><Icon name="x" /></button></span>
             </div>
             <div className="tabs">
-              <button className={tab === 'people' ? 'active' : ''} onClick={() => setTab('people')}><Icon name="users" size={16} /> Người được ủy quyền</button>
+              <button className={tab === 'people' ? 'active' : ''} onClick={() => setTab('people')}><Icon name="users" size={16} /> Người vào kho</button>
               <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}><Icon name="history" size={16} /> Lịch sử ra vào</button>
             </div>
             {tab === 'people' ? <AuthorizedPeople contractId={open.contractId} /> : <History contractId={open.contractId} />}
           </section>
         )}
 
-        <div className="dash-row">
-            <div className="stack">
-              <h3 className="aside-title">Thao Tác Nhanh</h3>
-              <Link to="/rent" className="quick-action">
-                <span className="feature-icon sm"><Icon name="package" size={18} /></span>
-                <span className="grow"><b>Đặt Thêm Kho</b><small>Thuê thêm kho bảo mật cao</small></span>
-                <Icon name="arrowRight" size={16} className="cyan" />
-              </Link>
-              <Link to="/support" className="quick-action">
-                <span className="feature-icon sm"><Icon name="phone" size={18} /></span>
-                <span className="grow"><b>Liên Hệ Hỗ Trợ</b><small>Báo sự cố, theo dõi nhân viên xử lý</small></span>
-                <Icon name="arrowRight" size={16} className="cyan" />
-              </Link>
-            </div>
-
-            <div className="stack">
-              <h3 className="aside-title">Thông Báo Mới Nhất</h3>
-              {notices.slice(0, 3).map((i) => (
-                <div key={`i${i.invoiceId}`} className="notice">
-                  <span className="notice-icon warn"><Icon name="wallet" size={16} /></span>
-                  <div className="grow">
-                    <div className="notice-head"><b>Yêu cầu thanh toán</b><small>{ago(i.createdAt)}</small></div>
-                    <p>{unitOf(i) ? `Kho ${unitOf(i)}` : 'Hóa đơn'} {i.invoiceNumber} cần thanh toán {fmtMoney(i.totalAmount)} trước ngày {fmtDate(i.dueDate)}. <Link to="/invoices" className="link">Thanh toán</Link></p>
-                  </div>
-                </div>
-              ))}
-              {ending.map((c) => (
-                <div key={`c${c.contractId}`} className="notice">
-                  <span className="notice-icon bad"><Icon name="alert" size={16} /></span>
-                  <div className="grow">
-                    <div className="notice-head"><b>Cảnh báo hết hạn hợp đồng</b><small>Còn {daysUntil(c.endDate)} ngày</small></div>
-                    <p>Kho {c.unitCode} của bạn sắp kết thúc thời hạn thuê vào ngày {fmtDate(c.endDate)}. <Link to={`/my-units/${c.contractId}/renew`} className="link">Gửi yêu cầu gia hạn</Link></p>
-                  </div>
-                </div>
-              ))}
-              {notices.length + ending.length === 0 && <p className="muted">Không có thông báo mới.</p>}
-            </div>
-        </div>
       </div>
     </>
   )
@@ -191,7 +141,7 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
     {
       fullName: fullNameError,
       // The same person cannot be authorized twice on one contract.
-      citizenId: (v) => citizenIdError(v) ?? (people.some((p) => p.citizenId === v) ? 'Người có số CCCD này đã được ủy quyền' : null),
+      citizenId: (v) => citizenIdError(v) ?? (people.some((p) => p.citizenId === v) ? 'Người có số CCCD này đã có trong danh sách' : null),
       phoneNumber: phoneError,
       relationship: relationshipError,
     },
@@ -242,7 +192,7 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
 
   return (
     <div className="stack">
-      <p className="muted">Bạn có thể ủy quyền cho bất kỳ ai (người nhà, bạn bè, nhân viên, bên vận chuyển). Họ vào kho thay bạn khi xuất trình CCCD của chính họ cho nhân viên.</p>
+      <p className="muted">Thêm người được vào kho thay bạn (người nhà, bạn bè, nhân viên, bên vận chuyển). Họ vào kho khi xuất trình CCCD của chính họ cho nhân viên.</p>
       <div className="person-list">
         {people.map((p) => (
           <div key={p.authorizedPersonId} className="person-row">
@@ -261,7 +211,7 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
             )}
           </div>
         ))}
-        {people.length === 0 && <Empty icon="users">Chưa ủy quyền cho ai.</Empty>}
+        {people.length === 0 && <Empty icon="users">Chưa có người vào kho nào.</Empty>}
       </div>
       {adding ? (
         <form onSubmit={add} className="add-person" noValidate>
@@ -272,12 +222,12 @@ function AuthorizedPeople({ contractId }: { contractId: number }) {
             <FormField label="Quan hệ (không bắt buộc)" error={form.error('relationship')}><input {...form.field('relationship')} maxLength={50} placeholder="vd: Người nhà, bạn bè, nhân viên, bên vận chuyển" /></FormField>
           </div>
           <div className="row">
-            <button className="btn primary sm" type="submit" disabled={busy}>{busy ? 'Đang lưu…' : 'Lưu người được ủy quyền'}</button>
+            <button className="btn primary sm" type="submit" disabled={busy}>{busy ? 'Đang lưu…' : 'Lưu người vào kho'}</button>
             <button className="btn ghost sm" type="button" onClick={() => { setAdding(false); form.reset() }}>Hủy</button>
           </div>
         </form>
       ) : (
-        <button className="btn outline sm self-start" onClick={() => setAdding(true)}><Icon name="plus" size={16} /> Thêm người được ủy quyền</button>
+        <button className="btn outline sm self-start" onClick={() => setAdding(true)}><Icon name="plus" size={16} /> Thêm người vào kho</button>
       )}
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
     </div>

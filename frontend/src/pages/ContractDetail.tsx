@@ -265,13 +265,13 @@ export default function ContractDetail() {
               <span>{ended ? 'Đã kết thúc' : locked ? 'Đang khóa' : 'Đang bật'}</span>
             </div>
             <div className="info-row"><span className="muted">Chủ hợp đồng</span><b>{user?.fullName ?? '—'}</b></div>
-            <div className="info-row"><span className="muted">Người được ủy quyền</span><b>{people.length} người</b></div>
+            <div className="info-row"><span className="muted">Người vào kho</span><b>{people.length} người</b></div>
             <div className="info-row"><span className="muted">Xác thực</span><b>CCCD tại cổng</b></div>
             <div className="info-row"><span className="muted">Khung giờ</span><b>{facility?.operatingHours ?? '—'}</b></div>
             <div className="info-row"><span className="muted">Lần vào gần nhất</span><b>{lastVisit ? fmtTime(lastVisit.entryTime) : 'Chưa có'}</b></div>
             <div className="action-grid">
               {!ended && !locked && <Link to={`/visit?contract=${c.contractId}`} className="btn primary sm"><Icon name="calendar" size={14} /> Đăng ký vào kho</Link>}
-              <Link to={`/my-units?contract=${c.contractId}&tab=people`} className="btn soft sm"><Icon name="users" size={14} /> Quản lý người ủy quyền</Link>
+              <Link to={`/my-units?contract=${c.contractId}&tab=people`} className="btn soft sm"><Icon name="users" size={14} /> Quản lý người vào kho</Link>
               <Link to={`/my-units?contract=${c.contractId}&tab=history`} className="btn soft sm"><Icon name="shield" size={14} /> Bảo mật & nhật ký</Link>
             </div>
           </section>

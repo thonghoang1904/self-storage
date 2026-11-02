@@ -3,12 +3,12 @@ import { Link } from 'react-router-dom'
 import { api, fmtMoney, fmtTime } from '../api'
 import { Empty, Icon } from '../components/ui'
 import { PageHero } from '../components/layout'
-import type { AccessRecord, AccountActivity, Contract, Invoice } from '../types'
+import type { AccessRecord, Contract, Invoice } from '../types'
 
 /**
  * Figma "Bảo mật tài khoản & hợp đồng" (96:10597), trimmed by the team: no alert settings, devices or OTP.
- * The security log comes first, split into five buttons (all, sign-in & account, gate entries, payments, contracts),
- * merging GET /api/auth/me/activity (empty when the backend lacks it) with each contract's access history and the payments made.
+ * The log is split into four buttons (all, gate entries, payments, contracts), merging each contract's access history,
+ * the payments made and the contracts themselves.
  * Account details live on the account page (/account/profile).
  */
 
@@ -16,10 +16,9 @@ import type { AccessRecord, AccountActivity, Contract, Invoice } from '../types'
 export const mask = (s: string | null | undefined, keep = 3) => (s ? `${'•'.repeat(Math.max(0, s.length - keep))}${s.slice(-keep)}` : '—')
 export const maskEmail = (e: string) => { const [n, d] = e.split('@'); return d ? `${n.slice(0, 2)}${'•'.repeat(Math.max(1, n.length - 2))}@${d}` : e }
 
-type LogRow = { key: string; at: string; group: 'account' | 'access' | 'payment' | 'contract'; title: string; detail: string; result: string; to?: string }
+type LogRow = { key: string; at: string; group: 'access' | 'payment' | 'contract'; title: string; detail: string; result: string; to?: string }
 const GROUPS: { key: '' | LogRow['group']; label: string; icon: string }[] = [
   { key: '', label: 'Tất cả', icon: 'history' },
-  { key: 'account', label: 'Đăng nhập & tài khoản', icon: 'user' },
   { key: 'access', label: 'Ra vào kho', icon: 'lock' },
   { key: 'payment', label: 'Thanh toán', icon: 'wallet' },
   { key: 'contract', label: 'Hợp đồng', icon: 'clipboard' },
@@ -37,15 +36,10 @@ export default function AccountSecurity() {
   const load = useCallback(async () => {
 
     const rows: LogRow[] = []
-    const [activity, contracts, invoices] = await Promise.all([
-      api<AccountActivity[]>('/api/auth/me/activity').catch(() => [] as AccountActivity[]),
+    const [contracts, invoices] = await Promise.all([
       api<Contract[]>('/api/contracts/my').catch(() => [] as Contract[]),
       api<Invoice[]>('/api/invoices/my').catch(() => [] as Invoice[]),
     ])
-    for (const a of activity) {
-      rows.push({ key: `a${a.logId}`, at: a.createdAt, group: a.category === 'Contract' ? 'contract' : 'account', title: a.action,
-        detail: [a.details, a.ipAddress && `IP ${a.ipAddress}`].filter(Boolean).join(' · '), result: a.result })
-    }
     const access = await Promise.all(contracts.map((c) => api<AccessRecord[]>(`/api/contracts/${c.contractId}/access-history`).catch(() => [] as AccessRecord[])))
     access.forEach((rs, ci) => rs.forEach((r, n) => rows.push({ key: `r${r.accessRecordId}-${ci}-${n}`, at: r.entryTime, group: 'access',
       title: `${r.result === 'Granted' ? 'Vào kho' : 'Bị từ chối vào kho'} ${r.unitCode}`,
@@ -66,7 +60,7 @@ export default function AccountSecurity() {
   return (
     <>
       <PageHero eyebrow="Tài khoản khách hàng" title="Bảo Mật Tài Khoản & Hợp Đồng">
-        Xem nhật ký đăng nhập, ra vào kho, thanh toán và hợp đồng của tài khoản.
+        Xem nhật ký ra vào kho, thanh toán và hợp đồng của tài khoản.
       </PageHero>
       <div className="container page-body">
         <div className="notice info-notice">
@@ -76,7 +70,7 @@ export default function AccountSecurity() {
 
         <section className="panel stack">
           <div><h2 className="panel-title">Nhật ký</h2><p className="muted">Chọn mục muốn xem, mới nhất trước.</p></div>
-          <div className="action-tiles five" role="tablist" aria-label="Loại nhật ký">
+          <div className="action-tiles four" role="tablist" aria-label="Loại nhật ký">
             {GROUPS.map((g) => (
               <button key={g.key} type="button" role="tab" aria-selected={group === g.key} className={`action-tile ${group === g.key ? 'active' : ''}`} onClick={() => setGroup(g.key)}>
                 <span className="tile-icon"><Icon name={g.icon} size={18} /></span>

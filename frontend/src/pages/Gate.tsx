@@ -469,7 +469,7 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
         {/* OverdueLocked has two causes (AccessService.FindIssues): unpaid rent/extra-charge bills, which the billing page
             collects; or the contract itself past its end and locked, which is settled by renewing or returning the unit. */}
         {v.issues.some((i) => i.code === 'OverdueLocked' && i.message.startsWith('Còn hóa đơn')) && (
-          <Link to={billingLink(v.contractNumber)} className="btn outline sm self-start"><Icon name="wallet" size={14} /> Thu tiền cho hợp đồng này</Link>
+          <Link to={billingLink(v.contractNumber)} className="btn outline sm self-start"><Icon name="wallet" size={14} /> Xem hóa đơn hợp đồng này</Link>
         )}
         {v.issues.some((i) => i.code === 'OverdueLocked' && !i.message.startsWith('Còn hóa đơn')) && (
           <span className="row wrap">

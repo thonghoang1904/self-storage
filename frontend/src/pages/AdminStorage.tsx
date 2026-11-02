@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney } from '../api'
 import { daysUntil, fetchContracts } from '../consoleData'
-import { Badge, Empty, Icon, splitTypeName } from '../components/ui'
+import { Badge, Empty, Icon, splitTypeName, StatusBadge } from '../components/ui'
+import { Modal } from '../components/Modal'
 import { EMPTY_UNIT_FORM, LOCKED_UNIT_STATUSES, saveUnit, UnitForm, unitFormOf, type UnitFormValue } from '../components/UnitForm'
 import type { AdminContract, Facility, StorageUnit, UnitType } from '../types'
 import { Select } from '../components/Select'
@@ -50,6 +51,8 @@ export default function AdminStorage() {
   // The unit form, with the facility it belongs to (chosen when adding, fixed when editing).
   const [form, setForm] = useState<{ facilityId: number; value: UnitFormValue } | null>(null)
   const [removing, setRemoving] = useState<number | null>(null)
+  // The live contract shown in a dialog (card click or "Hợp đồng").
+  const [viewing, setViewing] = useState<AdminContract | null>(null)
 
   const load = useCallback(async () => {
     const list = await api<Facility[]>('/api/operations/facilities')
@@ -107,7 +110,6 @@ export default function AdminStorage() {
     setRemoving(null)
     setError('')
     setNotice('')
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
   const add = () => {
     const fid = activeFacilities.some((f) => f.facilityId === Number(facilityId)) ? Number(facilityId) : activeFacilities[0]?.facilityId
@@ -132,6 +134,7 @@ export default function AdminStorage() {
     setStatus: (u, next) => void setUnitStatus(u, next),
     askRemove: (id) => { setRemoving(id); setError(''); setNotice('') },
     remove: (u) => void removeUnit(u),
+    view: (c) => setViewing(c),
   }
   const formUnits = form ? (units ?? []).filter((u) => u.facilityId === form.facilityId) : []
   const formFacility = facilities.find((f) => f.facilityId === form?.facilityId)
@@ -150,7 +153,7 @@ export default function AdminStorage() {
       </div>
 
       {form && (
-        <div className="stack-sm">
+        <Modal title={form.value.unitId ? `Sửa kho ${form.value.unitCode}` : 'Thêm kho mới'} onClose={() => setForm(null)} wide>
           {form.value.unitId ? (
             <p className="muted">Cơ sở: <b>{formFacility?.facilityName}</b></p>
           ) : (
@@ -160,10 +163,13 @@ export default function AdminStorage() {
               </Select>
             </label>
           )}
+          {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
           <UnitForm form={form.value} onChange={(value) => setForm({ ...form, value })} units={formUnits} types={types} busy={busy}
-            onSubmit={save} onClose={() => setForm(null)} />
-        </div>
+            onSubmit={save} onClose={() => setForm(null)} bare />
+        </Modal>
       )}
+
+      {viewing && <ContractDialog contract={viewing} onClose={() => setViewing(null)} />}
 
       {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
@@ -206,7 +212,7 @@ export default function AdminStorage() {
                   <tr key={t.unit.unitId}>
                     <td><b>{t.unit.unitCode}</b></td>
                     <td>{t.unit.facilityName}</td>
-                    <td>{t.contract ? <Link className="link" to={`/admin/contracts?search=${encodeURIComponent(t.contract.contractNumber)}`}>{t.contract.customerName}</Link>
+                    <td>{t.contract ? <button type="button" className="link-btn link" onClick={() => setViewing(t.contract!)}>{t.contract.customerName}</button>
                       : <span className="muted">{splitTypeName(t.unit.unitTypeName).name} · Tầng {t.unit.floorNumber}{t.unit.zoneArea ? ` · ${t.unit.zoneArea}` : ''}</span>}</td>
                     <td>{t.contract ? fmtDate(t.contract.endDate) : '—'}</td>
                     <td className="right money">{fmtMoney(t.contract?.monthlyRentFee ?? t.unit.monthlyPrice)}</td>
@@ -248,6 +254,7 @@ interface Actions {
   setStatus: (u: Unit, next: 'Available' | 'UnderMaintenance') => void
   askRemove: (unitId: number | null) => void
   remove: (u: Unit) => void
+  view: (c: AdminContract) => void
 }
 
 /** The buttons a unit allows (the API refuses the rest): edit always; maintenance and delete only without a tenant. */
@@ -255,7 +262,7 @@ function UnitActions({ tile: { unit: u, contract }, actions: a }: { tile: Tile; 
   const free = !contract && (u.status === 'Available' || u.status === 'UnderMaintenance')
   if (a.removing === u.unitId) {
     return (
-      <span className="row end wrap">
+      <span className="row end wrap" onClick={(e) => e.stopPropagation()}>
         <small>Xóa kho {u.unitCode}?</small>
         <button className="btn danger sm" disabled={a.busy} onClick={() => a.remove(u)}>Xóa</button>
         <button className="btn ghost sm" disabled={a.busy} onClick={() => a.askRemove(null)}>Không</button>
@@ -263,8 +270,8 @@ function UnitActions({ tile: { unit: u, contract }, actions: a }: { tile: Tile; 
     )
   }
   return (
-    <span className="row end wrap">
-      {contract && <Link className="btn outline sm" to={`/admin/contracts?search=${encodeURIComponent(contract.contractNumber)}`}>Hợp đồng</Link>}
+    <span className="row end wrap" onClick={(e) => e.stopPropagation()}>
+      {contract && <button className="btn outline sm" onClick={() => a.view(contract)}>Hợp đồng</button>}
       {free && u.status === 'Available' && <button className="btn ghost sm" disabled={a.busy} onClick={() => a.setStatus(u, 'UnderMaintenance')}>Bảo trì</button>}
       {free && u.status === 'UnderMaintenance' && <button className="btn ghost sm" disabled={a.busy} onClick={() => a.setStatus(u, 'Available')}>Hoạt động lại</button>}
       <button className="btn ghost sm" disabled={a.busy} onClick={() => a.edit(u)}
@@ -280,7 +287,8 @@ function UnitTile({ tile: t, actions }: { tile: Tile; actions: Actions }) {
   const u = t.unit
   const days = c ? daysUntil(c.endDate) : 0
   return (
-    <article className="unit-tile">
+    <article className={`unit-tile ${c ? 'clickable' : ''}`} onClick={c ? () => actions.view(c) : undefined}
+      title={c ? `Xem hợp đồng ${c.contractNumber}` : undefined}>
       <div className="row between">
         <h3><span className="stat-icon info"><Icon name="package" size={15} /></span>{u.unitCode}</h3>
         <Badge tone={s.tone}>{s.label}</Badge>
@@ -304,6 +312,29 @@ function UnitTile({ tile: t, actions }: { tile: Tile; actions: Actions }) {
         <UnitActions tile={t} actions={actions} />
       </div>
     </article>
+  )
+}
+
+/** The unit's live contract, read-only, in a dialog over the storage page. */
+function ContractDialog({ contract: c, onClose }: { contract: AdminContract; onClose: () => void }) {
+  const left = daysUntil(c.endDate)
+  return (
+    <Modal title={`Hợp đồng ${c.contractNumber}`} onClose={onClose}>
+      <div className="row between wrap"><StatusBadge status={c.status} /><small className={left <= 30 ? 'danger-text' : 'muted'}>{left >= 0 ? `Còn ${left} ngày` : `Quá hạn ${-left} ngày`}</small></div>
+      <div className="info-box">
+        <div className="info-row"><span className="muted">Khách hàng</span><b>{c.customerName}</b></div>
+        <div className="info-row"><span className="muted">Email</span><b>{c.customerEmail}</b></div>
+        <div className="info-row"><span className="muted">Số điện thoại</span><b>{c.customerPhoneNumber}</b></div>
+      </div>
+      <div className="info-box">
+        <div className="info-row"><span className="muted">Kho</span><b>{c.unitCode} · {c.facilityName}</b></div>
+        <div className="info-row"><span className="muted">Thời hạn</span><b>{fmtDate(c.startDate)} – {fmtDate(c.endDate)}</b></div>
+        <div className="info-row"><span className="muted">Ngày ký</span><b>{fmtDate(c.signedDate)}</b></div>
+        <div className="info-row"><span className="muted">Giá thuê</span><b>{fmtMoney(c.monthlyRentFee)}/tháng</b></div>
+        <div className="info-row"><span className="muted">Tiền cọc</span><b>{fmtMoney(c.depositPaid)}</b></div>
+      </div>
+      {c.termsConditions && <p className="muted">{c.termsConditions}</p>}
+    </Modal>
   )
 }
 

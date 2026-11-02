@@ -211,14 +211,6 @@ export default function StaffContracts() {
                       <span className="row end">
                         {r.renewal && (
                           <>
-                            <button className="btn primary sm" disabled={busyId !== null}
-                              onClick={() => {
-                                // The API records this as a cash payment; bank transfers go through the billing page with their code.
-                                if (!window.confirm(`Xác nhận đã thu ${fmtMoney(r.amountDue)} TIỀN MẶT phí gia hạn ${c.contractNumber}?\nNếu khách chuyển khoản, hãy ghi nhận ở trang Hóa đơn & thu tiền để nhập mã giao dịch.`)) return
-                                act(c.contractId, () => api(`/api/contracts/renewals/${r.renewal!.renewalId}/confirm-payment`, { method: 'POST' }), `Đã gia hạn ${c.contractNumber} đến ${fmtDate(r.renewal!.newEndDate)}.`)
-                              }}>
-                              Đã thu tiền mặt
-                            </button>
                             <button className="btn ghost sm danger-text" disabled={busyId !== null}
                               onClick={() => {
                                 if (!window.confirm(`Từ chối yêu cầu gia hạn ${c.contractNumber}? Hóa đơn gia hạn chưa thanh toán sẽ bị hủy.`)) return
@@ -226,18 +218,14 @@ export default function StaffContracts() {
                               }}>
                               Từ chối
                             </button>
-                            <Link to={billingLink(c.contractNumber)} className="btn ghost sm" title="Khách chuyển khoản: ghi nhận kèm mã giao dịch">Thu chuyển khoản</Link>
                           </>
                         )}
                         {/* Only when there is an open invoice to collect: the late fee itself is billed at return. */}
-                        {r.bills.length > 0 && <Link to={billingLink(c.contractNumber)} className="btn primary sm"><Icon name="wallet" size={14} /> Thu tiền</Link>}
+                        {r.bills.length > 0 && <Link to={billingLink(c.contractNumber)} className="btn outline sm"><Icon name="wallet" size={14} /> Xem hóa đơn</Link>}
                         {/* Opens the return page with this contract already picked, so staff never copy the code across. */}
                         {canReturn && <Link to={`/staff-return?contract=${c.contractId}`} className="btn outline sm"><Icon name="door" size={14} /> Trả kho & hoàn cọc</Link>}
                         {!canReturn && (c.status === 'Active' || c.status === 'Overdue') && (
-                          <>
-                            {!r.renewal && !r.bills.length && <small className="muted">Chưa cần xử lý</small>}
-                            <Link to={`/staff-return?contract=${c.contractId}`} className="btn ghost sm" title="Khách muốn trả trước hạn">Trả kho sớm</Link>
-                          </>
+                          !r.renewal && !r.bills.length && <small className="muted">Chưa cần xử lý</small>
                         )}
                         {c.status === 'Terminated' && <Link to={`/staff-return?contract=${c.contractId}`} className="btn ghost sm">Hoàn cọc</Link>}
                       </span>

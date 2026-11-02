@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { CITIZEN_ID_FILTER, citizenIdError, digitsOnly, emailError, fullNameError, NAME_FILTER, normalizePhone, passwordError, PHONE_FILTER, phoneError, USERNAME_FILTER, usernameError } from '../validation'
-import { api, fmtTime } from '../api'
+import { api } from '../api'
 import { useAuth } from '../auth'
 import { Badge, Empty, Icon } from '../components/ui'
-import { roleLabel, Roles, type ActivityLog, type AdminUser, type Facility, type RoleInfo } from '../types'
+import { roleLabel, Roles, type AdminUser, type Facility, type RoleInfo } from '../types'
 import { staffCode } from '../validation'
 import { FormField, PasswordChecklist, useValidatedForm } from '../components/form'
 import { Select } from '../components/Select'
@@ -335,42 +335,7 @@ function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser
           <button className="btn ghost sm" type="button" onClick={onCancel}>Hủy</button>
         </div>
       </form>
-      <ActivityLogTable userId={user.userId} />
     </div>
   )
 }
 
-function ActivityLogTable({ userId }: { userId: number }) {
-  const [logs, setLogs] = useState<ActivityLog[] | null>(null)
-  const [error, setError] = useState('')
-  useEffect(() => {
-    api<ActivityLog[]>(`/api/admin/users/${userId}/activity?take=100`)
-      .then(setLogs)
-      .catch((e) => setError((e as Error).message))
-  }, [userId])
-
-  return (
-    <div className="stack-sm">
-      <b className="row"><Icon name="history" size={16} className="cyan" /> Lịch sử thao tác (do tài khoản này thực hiện)</b>
-      {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
-      {logs && logs.length === 0 && <Empty icon="history">Chưa có thao tác nào được ghi lại.</Empty>}
-      {logs && logs.length > 0 && (
-        <div className="table-scroll">
-          <table>
-            <thead><tr><th>Thời gian</th><th>Hành động</th><th>Chi tiết</th><th>IP</th></tr></thead>
-            <tbody>
-              {logs.map((l) => (
-                <tr key={l.logId}>
-                  <td>{fmtTime(l.createdAt)}</td>
-                  <td className="code">{l.action}</td>
-                  <td>{l.details ?? '—'}</td>
-                  <td><small className="muted">{l.ipAddress ?? '—'}</small></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  )
-}

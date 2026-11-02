@@ -79,21 +79,7 @@ export default function Support() {
       </section>
 
       <div className="container page-body">
-        <div className="dash-grid">
-          <section className="stack-lg">
-            <div className="row between wrap">
-              <h2 className="section-title with-icon"><Icon name="history" size={20} className="cyan" /> Lịch Sử Yêu Cầu {open > 0 && <span className="pill">{open} đang mở</span>}</h2>
-            </div>
-            {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
-            {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
-            <div className="stack">
-              {rows?.map((r) => (
-                <RequestCard key={r.requestId} request={r} open={openId === r.requestId} onToggle={() => setOpenId(openId === r.requestId ? null : r.requestId)} />
-              ))}
-              {rows?.length === 0 && <div className="panel"><Empty icon="phone">Bạn chưa gửi yêu cầu hỗ trợ nào.</Empty></div>}
-            </div>
-          </section>
-
+        <div className="dash-grid form-left">
           <aside className="stack-lg">
             <form className="panel" onSubmit={submit} noValidate>
               <h3 className="panel-title"><Icon name="plus" size={18} className="cyan" /> Gửi Yêu Cầu Mới</h3>
@@ -136,6 +122,20 @@ export default function Support() {
               <div><b>Khẩn cấp?</b><p>Gọi hotline (028) 1234 5678 nếu có cháy, ngập hoặc nghi mất trộm.</p></div>
             </div>
           </aside>
+
+          <section className="stack-lg">
+            <div className="row between wrap">
+              <h2 className="section-title with-icon"><Icon name="history" size={20} className="cyan" /> Lịch Sử Yêu Cầu {open > 0 && <span className="pill">{open} đang mở</span>}</h2>
+            </div>
+            {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+            {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
+            <div className="stack">
+              {rows?.map((r) => (
+                <RequestCard key={r.requestId} request={r} open={openId === r.requestId} onToggle={() => setOpenId(openId === r.requestId ? null : r.requestId)} />
+              ))}
+              {rows?.length === 0 && <div className="panel"><Empty icon="phone">Bạn chưa gửi yêu cầu hỗ trợ nào.</Empty></div>}
+            </div>
+          </section>
         </div>
       </div>
     </>

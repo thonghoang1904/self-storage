@@ -354,7 +354,7 @@ export default function MoveInRegistration() {
                     </button>
                     {people.map((p) => (
                       <button key={p.authorizedPersonId} type="button" className={`person-option ${who === p.authorizedPersonId ? 'active' : ''}`} onClick={() => setWho(p.authorizedPersonId)}>
-                        <span className="radio" /><span className="grow"><b>{p.fullName}</b><small>{p.relationship ?? 'Người được ủy quyền'}{p.phoneNumber && ` · ${p.phoneNumber}`}</small></span>
+                        <span className="radio" /><span className="grow"><b>{p.fullName}</b><small>{p.relationship ?? 'Người vào kho'}{p.phoneNumber && ` · ${p.phoneNumber}`}</small></span>
                       </button>
                     ))}
                   </div>

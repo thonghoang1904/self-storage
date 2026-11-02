@@ -36,15 +36,16 @@ const VISIT_STATE: Record<string, { label: string; tone: string; icon: string }>
 }
 
 /**
- * "Đăng Ký Vào Kho" (/visit, optionally ?contract=): first the customer picks the unit and what the request is for —
- * (1) entering the unit (take out, check, rearrange) or (2) bringing items in — then continues to that form
- * (/my-units/:id/visit or /my-units/:id/move-in).
+ * "Đăng Ký Vào Kho" (/visit, optionally ?contract=): one screen — pick the unit on the left, then click what to do
+ * on the right, which opens that form directly (/my-units/:id/visit or /my-units/:id/move-in). Below the two
+ * actions, the chosen unit's upcoming registrations (GET /api/contracts/{id}/visit-registrations) so the customer
+ * sees what is already booked before booking again.
  */
 const REQUEST_KINDS = [
-  { key: 'visit', icon: 'calendar', title: 'Đăng ký vào kho', text: 'Vào kho để lấy đồ ra, kiểm tra hoặc sắp xếp lại đồ.',
-    points: ['Chọn ngày, giờ vào và giờ rời kho', 'Chọn người đến: bạn hoặc người được ủy quyền', 'Xuất trình CCCD tại cổng khi đến'] },
-  { key: 'move-in', icon: 'package', title: 'Đăng ký đưa đồ vào kho', text: 'Mang đồ mới vào kho, khai báo trước để nhân viên chuẩn bị.',
-    points: ['Khai báo danh sách đồ, kích thước, số lượng', 'Lịch chuyển đồ, phương tiện, người phụ', 'Người vào kho xuất trình CCCD tại cổng'] },
+  { key: 'visit', icon: 'calendar', title: 'Vào kho', text: 'Lấy đồ ra, kiểm tra hoặc sắp xếp lại đồ trong kho.',
+    points: ['Chọn ngày, giờ vào và giờ rời kho', 'Bạn hoặc người vào kho đã thêm', 'Xuất trình CCCD tại cổng'] },
+  { key: 'move-in', icon: 'package', title: 'Đưa đồ vào kho', text: 'Mang đồ mới vào, khai báo trước để nhân viên chuẩn bị.',
+    points: ['Danh sách đồ, kích thước, số lượng', 'Lịch chuyển đồ, phương tiện, người phụ', 'Xuất trình CCCD tại cổng'] },
 ] as const
 
 export function VisitHub() {
@@ -53,16 +54,23 @@ export function VisitHub() {
   const [error, setError] = useState('')
   const [params] = useSearchParams()
   const [chosen, setChosen] = useState<number | null>(() => Number(params.get('contract')) || null)
-  const [kind, setKind] = useState<'visit' | 'move-in' | null>(null)
-  const [tried, setTried] = useState(false)
+  const [booked, setBooked] = useState<VisitRegistration[] | null>(null)
   useEffect(() => {
     api<Contract[]>('/api/contracts/my').then(setContracts).catch((e) => setError((e as Error).message))
   }, [])
+  const usable = (contracts ?? []).filter((c) => c.status === 'Active' || c.status === 'Renewed')
+  const current = usable.find((c) => c.contractId === chosen) ?? usable[0]
+  const currentId = current?.contractId
+  useEffect(() => {
+    if (!currentId) return
+    setBooked(null)
+    api<VisitRegistration[]>(`/api/contracts/${currentId}/visit-registrations`).then(setBooked).catch(() => setBooked([]))
+  }, [currentId])
+
   if (!contracts) {
     return <div className="container page-body">{error ? <p className="alert bad"><Icon name="alert" size={16} />{error}</p> : <p className="muted">Đang tải hợp đồng…</p>}</div>
   }
-  const usable = contracts.filter((c) => c.status === 'Active' || c.status === 'Renewed')
-  if (usable.length === 0) {
+  if (!current) {
     return (
       <div className="container page-body stack">
         <h1>Đăng ký vào kho</h1>
@@ -71,12 +79,9 @@ export function VisitHub() {
       </div>
     )
   }
-  const current = usable.find((c) => c.contractId === chosen) ?? usable[0]
-  const next = () => {
-    setTried(true)
-    if (!kind) return
-    navigate(`/my-units/${current.contractId}/${kind}`)
-  }
+  const now = new Date().toISOString().slice(0, 16)
+  const upcoming = (booked ?? []).filter((r) => (r.status === 'Pending' || r.status === 'Approved') && r.scheduledExitAt.slice(0, 16) >= now)
+    .sort((x, y) => x.scheduledEntryAt.localeCompare(y.scheduledEntryAt))
 
   return (
     <>
@@ -85,52 +90,61 @@ export function VisitHub() {
           <div className="grow">
             <nav className="crumbs"><Link to="/my-units">Kho Của Tôi</Link><span>/</span><b>Đăng ký vào kho</b></nav>
             <h1>Đăng ký vào kho</h1>
-            <p>Chọn kho và loại yêu cầu, sau đó điền thông tin ở bước tiếp theo. Nhân viên cổng chỉ cho vào khi lịch đã được duyệt.</p>
+            <p>Chọn kho, rồi chọn việc bạn cần làm. Nhân viên cổng chỉ cho vào khi lịch đã được duyệt.</p>
           </div>
         </div>
       </section>
-      <div className="container page-body stack-lg">
-        <ol className="journey">
-          <li className="active"><span>1</span>Chọn loại yêu cầu</li>
-          <li className="later"><span>2</span>Điền thông tin</li>
-          <li className="later"><span>3</span>Nhân viên duyệt</li>
-        </ol>
-
-        <section className="panel stack">
-          <div><h2 className="panel-title">Kho của bạn</h2><p className="muted">{usable.length > 1 ? 'Chọn kho muốn đăng ký.' : 'Yêu cầu áp dụng cho kho này.'}</p></div>
-          <div className="contract-picker" role="radiogroup" aria-label="Chọn kho">
-            {usable.map((c) => (
-              <button key={c.contractId} type="button" role="radio" aria-checked={c.contractId === current.contractId}
-                className={c.contractId === current.contractId ? 'active' : ''} onClick={() => setChosen(c.contractId)}>
-                <b>Kho {c.unitCode}</b><small>{c.facilityName} · {c.contractNumber}</small>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="panel stack">
-          <div><h2 className="panel-title">Bạn muốn làm gì?</h2><p className="muted">Chọn một trong hai loại yêu cầu.</p></div>
-          <div className="request-kinds" role="radiogroup" aria-label="Loại yêu cầu">
-            {REQUEST_KINDS.map((k, i) => (
-              <button key={k.key} type="button" role="radio" aria-checked={kind === k.key}
-                className={`request-kind ${kind === k.key ? 'active' : ''}`} onClick={() => { setKind(k.key); setTried(false) }}>
-                <span className="request-kind-top">
-                  <span className="tile-icon"><Icon name={k.icon} size={20} /></span>
-                  <span className="request-kind-no">{i + 1}</span>
+      <div className="container page-body">
+        <div className="visit-hub">
+          <section className="panel stack">
+            <h2 className="panel-title with-icon"><span className="step-no">1</span> Chọn kho</h2>
+            <div className="unit-choices" role="radiogroup" aria-label="Chọn kho">
+              {usable.map((c) => (
+                <button key={c.contractId} type="button" role="radio" aria-checked={c.contractId === current.contractId}
+                  className={`unit-choice ${c.contractId === current.contractId ? 'active' : ''}`} onClick={() => setChosen(c.contractId)}>
+                  <span className="tile-icon"><Icon name="package" size={18} /></span>
+                  <span className="grow"><b>Kho {c.unitCode}</b><small>{c.facilityName}</small><small>Hết hạn {fmtDate(c.endDate)}</small></span>
                   <span className="radio" />
-                </span>
-                <b>{k.title}</b>
-                <span className="muted">{k.text}</span>
-                <ul>{k.points.map((t) => <li key={t}><Icon name="check" size={13} /> {t}</li>)}</ul>
-              </button>
-            ))}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <div className="stack-lg">
+            <section className="panel stack">
+              <h2 className="panel-title with-icon"><span className="step-no">2</span> Bạn cần làm gì với kho {current.unitCode}?</h2>
+              <div className="request-kinds">
+                {REQUEST_KINDS.map((k) => (
+                  <button key={k.key} type="button" className="request-kind" onClick={() => navigate(`/my-units/${current.contractId}/${k.key}`)}>
+                    <span className="request-kind-top">
+                      <span className="tile-icon"><Icon name={k.icon} size={20} /></span>
+                      <Icon name="arrowRight" size={18} className="cyan" />
+                    </span>
+                    <b>{k.title}</b>
+                    <span className="muted">{k.text}</span>
+                    <ul>{k.points.map((t) => <li key={t}><Icon name="check" size={13} /> {t}</li>)}</ul>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="panel stack-sm">
+              <h3 className="panel-title with-icon"><Icon name="clock" size={17} className="cyan" /> Lịch sắp tới của kho {current.unitCode}</h3>
+              {booked === null && <p className="muted">Đang tải…</p>}
+              {booked && upcoming.length === 0 && <p className="muted">Chưa có lịch nào. Chọn một việc ở trên để đăng ký.</p>}
+              {upcoming.map((r) => {
+                const st = VISIT_STATE[r.status] ?? { label: r.status, tone: 'muted', icon: 'clock' }
+                return (
+                  <div key={r.visitRegistrationId} className="info-row">
+                    <span><b>{dmy(r.scheduledEntryAt)} · {hhmm(r.scheduledEntryAt)}–{hhmm(r.scheduledExitAt)}</b><br />
+                      <small className="muted">{r.purpose.startsWith(MOVE_IN_PREFIX) ? 'Đưa đồ vào kho' : r.purpose} · {r.visitorName}</small></span>
+                    <span className={`badge ${st.tone}`}>{st.label}</span>
+                  </div>
+                )
+              })}
+            </section>
           </div>
-          {tried && !kind && <small className="field-error" role="alert"><Icon name="alert" size={12} /> Vui lòng chọn một loại yêu cầu</small>}
-          <div className="row between wrap">
-            <Link to="/my-units" className="btn outline">Quay lại</Link>
-            <button type="button" className="btn primary" onClick={next}>Tiếp tục <Icon name="arrowRight" size={16} /></button>
-          </div>
-        </section>
+        </div>
       </div>
     </>
   )
@@ -348,18 +362,18 @@ export default function VisitRegistrationPage({ contractId, picker }: { contract
                 </section>
 
                 <section className="panel form-section">
-                  <div className="section-head"><span className="step-no">02</span><div><h3>Người đến kho</h3><p className="muted">Bạn hoặc người được ủy quyền trên hợp đồng. CCCD phải trùng với hồ sơ.</p></div></div>
+                  <div className="section-head"><span className="step-no">02</span><div><h3>Người đến kho</h3><p className="muted">Bạn hoặc người vào kho đã thêm trên hợp đồng. CCCD phải trùng với hồ sơ.</p></div></div>
                   <div className="person-picker">
                     <button type="button" className={`person-option ${who == null ? 'active' : ''}`} onClick={() => setWho(null)}>
                       <span className="radio" /><span className="grow"><b>{user?.fullName}</b><small>Chủ hợp đồng</small></span>
                     </button>
                     {people.map((p) => (
                       <button key={p.authorizedPersonId} type="button" className={`person-option ${who === p.authorizedPersonId ? 'active' : ''}`} onClick={() => setWho(p.authorizedPersonId)}>
-                        <span className="radio" /><span className="grow"><b>{p.fullName}</b><small>{p.relationship ?? 'Người được ủy quyền'} · SĐT {p.phoneNumber}</small></span>
+                        <span className="radio" /><span className="grow"><b>{p.fullName}</b><small>{p.relationship ?? 'Người vào kho'} · SĐT {p.phoneNumber}</small></span>
                       </button>
                     ))}
                   </div>
-                  {people.length === 0 && <p className="hint"><Icon name="users" size={15} /> Muốn người khác vào thay bạn? <Link to={`/my-units?contract=${c.contractId}&tab=people`} className="link">Thêm người được ủy quyền</Link></p>}
+                  {people.length === 0 && <p className="hint"><Icon name="users" size={15} /> Muốn người khác vào thay bạn? <Link to={`/my-units?contract=${c.contractId}&tab=people`} className="link">Thêm người vào kho</Link></p>}
                   <label className={`field ${fieldErr.citizenId ? 'has-error' : ''}`}><span>Số CCCD của người đến kho *</span>
                     <input id="visit-citizenId" value={citizenId} inputMode="numeric" maxLength={12} onChange={(e) => { setCitizenId(cid.keep(e.target.value)); clearErr('citizenId') }} placeholder="Nhập đủ 12 số trên thẻ CCCD" required aria-invalid={fieldErr.citizenId ? true : undefined} />
                     <FieldNote text={cid.hint ?? fieldErr.citizenId} />

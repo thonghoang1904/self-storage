@@ -15,6 +15,8 @@ import { Select } from '../components/Select'
  */
 
 const PRIORITY_ORDER = ['Urgent', 'High', 'Medium', 'Low']
+type StatusTab = 'active' | 'Open' | 'InProgress' | 'Resolved' | 'Closed' | 'all'
+const STATUS_TABS: [StatusTab, string][] = [['active', 'Cần xử lý'], ['Open', 'Mới gửi'], ['InProgress', 'Đang xử lý'], ['Resolved', 'Đã xử lý'], ['Closed', 'Đã đóng'], ['all', 'Tất cả']]
 
 export default function StaffSupport() {
   const { facilityId } = useStaffFacility()
@@ -42,9 +44,8 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
   const [rows, setRows] = useState<SupportRequest[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [q, setQ] = useState('')
-  const [status, setStatus] = useState<'active' | 'Open' | 'InProgress' | 'Resolved' | 'Closed' | 'all'>('active')
+  const [status, setStatus] = useState<StatusTab>('active')
   const [priority, setPriority] = useState('all')
-  const [category, setCategory] = useState('all')
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
@@ -62,13 +63,12 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
   const shown = useMemo(() => rows
     .filter((r) => status === 'all' ? true : status === 'active' ? r.status === 'Open' || r.status === 'InProgress' : r.status === status)
     .filter((r) => priority === 'all' || r.priority === priority)
-    .filter((r) => category === 'all' || r.category === category)
     .filter((r) => {
       const s = q.trim().toLowerCase()
       return !s || [r.requestCode, r.title, r.unitCode, r.description, r.customerName ?? ''].some((v) => v.toLowerCase().includes(s))
     })
     .sort((a, b) => PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority) || a.createdAt.localeCompare(b.createdAt)),
-  [rows, status, priority, category, q])
+  [rows, status, priority, q])
 
   useEffect(() => {
     if (!shown.some((r) => r.requestId === selectedId)) setSelectedId(shown[0]?.requestId ?? null)
@@ -87,7 +87,6 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
             ? 'Toàn bộ yêu cầu hỗ trợ của khách ở mọi cơ sở: theo dõi, phản hồi khách và xử lý thay khi cần.'
             : 'Tiếp nhận yêu cầu hỗ trợ của khách tại cơ sở, làm theo các bước xử lý và cập nhật tiến độ cho khách.'}</p>
         </div>
-        <button className="btn outline" onClick={() => void load()}><Icon name="refresh" size={15} /> Làm mới</button>
       </div>
 
       <div className="stat-grid">
@@ -97,11 +96,18 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
         <Metric icon="check" tone="ok" label="Đã xử lý / đóng" value={count('Resolved') + count('Closed')} note="đã hoàn tất các bước xử lý" />
       </div>
 
-      <div className="panel filter-bar">
+      {/* Status as a tab bar (same pattern as the cancellation and contract pages), then search and priority. */}
+      <div className="panel filter-bar support-filter">
+        <div className="segmented" role="tablist" aria-label="Trạng thái yêu cầu">
+          {STATUS_TABS.map(([k, label]) => {
+            const n = k === 'all' ? rows.length : k === 'active' ? count('Open') + count('InProgress') : count(k)
+            return <button key={k} type="button" role="tab" aria-selected={status === k} className={status === k ? 'active' : ''} onClick={() => setStatus(k)}>{label}{n > 0 && <span className="count-pill">{n}</span>}</button>
+          })}
+        </div>
         <div className="filter-controls">
           <span className="input-wrap grow-2">
             <Icon name="search" size={16} className="input-lead" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={admin ? 'Tìm mã yêu cầu, tiêu đề, kho, khách…' : 'Tìm mã yêu cầu, tiêu đề, kho…'} />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={admin ? 'Tìm yêu cầu, kho, khách…' : 'Tìm yêu cầu, kho…'} />
           </span>
           {admin && (
             <Select value={facilityId ?? ''} onChange={(e) => onFacility?.(e.target.value ? Number(e.target.value) : null)} aria-label="Cơ sở">
@@ -109,24 +115,11 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
               {facilities.map((f) => <option key={f.facilityId} value={f.facilityId}>{f.facilityName}</option>)}
             </Select>
           )}
-          <Select value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
-            <option value="active">Cần xử lý</option>
-            <option value="Open">Mới gửi</option>
-            <option value="InProgress">Đang xử lý</option>
-            <option value="Resolved">Đã xử lý</option>
-            <option value="Closed">Đã đóng</option>
-            <option value="all">Tất cả trạng thái</option>
-          </Select>
-          <Select value={priority} onChange={(e) => setPriority(e.target.value)}>
+          <Select value={priority} onChange={(e) => setPriority(e.target.value)} aria-label="Mức độ">
             <option value="all">Mọi mức độ</option>
             {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{SupportPriorities[p].label}</option>)}
           </Select>
-          <Select value={category} onChange={(e) => setCategory(e.target.value)}>
-            <option value="all">Mọi loại sự cố</option>
-            {Object.entries(SupportCategories).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </Select>
         </div>
-        <button className="btn ghost" onClick={() => { setQ(''); setStatus('active'); setPriority('all'); setCategory('all') }}><Icon name="x" size={15} /> Xóa bộ lọc</button>
       </div>
 
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
