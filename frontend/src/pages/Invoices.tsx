@@ -6,7 +6,6 @@ import { PayButtons, TYPE_ICON, useCheckout } from '../components/checkout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { Facility, Invoice, Reservation } from '../types'
 import { Select } from '../components/Select'
-import { StatCard, scrollToList } from '../components/StatCard'
 
 export default function Invoices() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
@@ -97,15 +96,18 @@ export default function Invoices() {
   const tabMatch = (i: Invoice) => (tab === 'due' ? isPayable(i) || pinned(i) : tab === 'paid' ? i.status === 'Paid' : tab === 'overdue' ? i.status === 'Overdue' : true)
   const shown = ordered.filter((i) => tabMatch(i) && (!type || i.invoiceType === type))
   const types = [...new Set(invoices.map((i) => i.invoiceType))]
-  const pickTab = (t: typeof tab) => { setTab(tab === t ? 'all' : t); setType(''); scrollToList('invoice-list') }
+  const pickTab = (t: typeof tab) => { setTab(tab === t ? 'all' : t); setType('') }
+  const dueTotal = due.reduce((n, i) => n + i.totalAmount, 0)
+  const paidTotal = invoices.filter((i) => i.status === 'Paid').reduce((n, i) => n + i.totalAmount, 0)
+  // The payable invoice due first: what the customer should pay next.
+  const nextDue = [...due].sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0]
 
   return (
     <>
     <section className="page-hero">
       <div className="container">
-        <span className="eyebrow dark"><i />Tài khoản khách hàng</span>
-        <h1>Hóa Đơn & Thanh Toán</h1>
-        <p>Theo dõi tiền cọc, tiền thuê hằng tháng, gia hạn và phụ phí; thanh toán trực tuyến qua VNPay hoặc tại quầy.</p>
+        <h1>Thanh Toán</h1>
+        <p>Tiền cọc, tiền thuê, gia hạn và phụ phí của bạn. Thanh toán trực tuyến qua VNPay.</p>
       </div>
     </section>
     <div className="container page-body">
@@ -125,26 +127,38 @@ export default function Invoices() {
           ? <p className="alert bad"><Icon name="alert" size={16} />Giao dịch chưa thành công hoặc đã bị hủy; hóa đơn vẫn chờ thanh toán, bạn có thể thanh toán lại.</p>
           : <p className="alert ok">Đã quay lại từ cổng thanh toán. Trạng thái được cập nhật khi cổng thanh toán xác nhận; bấm Làm mới nếu hóa đơn vẫn đang chờ.</p>)}
 
-      <div className="stat-grid two">
-        <StatCard icon="wallet" tone={due.length ? 'warn' : 'ok'} label="Cần thanh toán" value={fmtMoney(due.reduce((n, i) => n + i.totalAmount, 0))}
-          note={due.length ? `${due.length} hóa đơn chưa thanh toán` : 'Không có khoản nào cần trả'} active={tab === 'due'} onClick={() => pickTab('due')} />
-        <StatCard icon="alert" tone={overdue.length ? 'bad' : 'ok'} label="Quá hạn" value={overdue.length}
-          note={overdue.length ? 'Thanh toán sớm để tránh khóa kho' : 'Bạn đang thanh toán đúng hạn'} active={tab === 'overdue'} onClick={() => pickTab('overdue')} />
-      </div>
+      {/* what is owed right now, then the running totals */}
+      <section className={`pay-summary ${overdue.length ? 'bad' : due.length ? 'warn' : 'ok'}`}>
+        <button type="button" className={`pay-due ${tab === 'due' ? 'active' : ''}`} onClick={() => pickTab('due')}>
+          <span className="pay-due-icon"><Icon name={overdue.length ? 'alert' : due.length ? 'wallet' : 'check'} size={22} /></span>
+          <span className="grow">
+            <small>{due.length ? 'Cần thanh toán' : 'Bạn đã thanh toán hết'}</small>
+            <b>{fmtMoney(dueTotal)}</b>
+            <small>{overdue.length ? `${overdue.length} hóa đơn quá hạn, thanh toán sớm để tránh khóa kho`
+              : nextDue ? `${due.length} hóa đơn · hạn gần nhất ${fmtDate(nextDue.dueDate)}` : 'Không có khoản nào cần trả'}</small>
+          </span>
+        </button>
+        <div className="pay-stats">
+          <button type="button" className={tab === 'overdue' ? 'active' : ''} onClick={() => pickTab('overdue')}><small>Quá hạn</small><b className={overdue.length ? 'danger-text' : ''}>{overdue.length}</b></button>
+          <button type="button" className={tab === 'paid' ? 'active' : ''} onClick={() => pickTab('paid')}><small>Đã thanh toán</small><b>{fmtMoney(paidTotal)}</b></button>
+          <button type="button" className={tab === 'all' ? 'active' : ''} onClick={() => pickTab('all')}><small>Tổng hóa đơn</small><b>{invoices.length}</b></button>
+        </div>
+      </section>
 
-      <div className="panel filter-bar">
+      <div className="dash-grid pay-grid">
+      <div className="stack">
+      <div className="invoice-toolbar">
         <div className="segmented" role="tablist">
           <button className={tab === 'due' ? 'active' : ''} onClick={() => setTab('due')}>Cần thanh toán{due.length > 0 && <span className="count-pill">{due.length}</span>}</button>
           <button className={tab === 'paid' ? 'active' : ''} onClick={() => setTab('paid')}>Đã thanh toán</button>
           <button className={tab === 'all' ? 'active' : ''} onClick={() => setTab('all')}>Tất cả</button>
         </div>
-        <div className="row">
-          <Select id="invoice-type" value={type} onChange={(e) => setType(e.target.value)} aria-label="Loại hóa đơn">
-            <option value="">Mọi loại hóa đơn</option>
-            {types.map((t) => <option key={t} value={t}>{invoiceTypeName(t)}</option>)}
-          </Select>
-          <button className="btn outline sm" onClick={() => { setLoading(true); void load() }} disabled={loading}><Icon name="refresh" size={14} /> Làm mới</button>
-        </div>
+        <span className="grow" />
+        <Select id="invoice-type" value={type} onChange={(e) => setType(e.target.value)} aria-label="Loại hóa đơn">
+          <option value="">Mọi loại hóa đơn</option>
+          {types.map((t) => <option key={t} value={t}>{invoiceTypeName(t)}</option>)}
+        </Select>
+        <button className="icon-btn" title="Làm mới" aria-label="Làm mới" onClick={() => { setLoading(true); void load() }} disabled={loading}><Icon name="refresh" size={16} /></button>
       </div>
 
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
@@ -170,7 +184,7 @@ export default function Invoices() {
                   <b>{fmtMoney(invoice.totalAmount)}</b>
                   <StatusBadge status={invoice.status} />
                 </span>
-                <span className="invoice-more">Chi tiết <Icon name="arrowRight" size={14} /></span>
+                <span className="invoice-more"><Icon name="arrowRight" size={16} /></span>
               </Link>
               {payable && (
                 <div className="invoice-body">
@@ -199,7 +213,11 @@ export default function Invoices() {
         {!loading && shown.length === 0 && (
           <div className="panel"><Empty icon="wallet">{tab === 'due' ? 'Bạn không có hóa đơn nào cần thanh toán.' : invoices.length ? 'Không có hóa đơn nào khớp bộ lọc.' : 'Bạn chưa có hóa đơn.'}</Empty></div>
         )}
+      </div>
+      </div>
+      <aside className="stack-lg pay-aside">
         <PaymentHistory refreshKey={invoices} />
+      </aside>
       </div>
     </div>
     </>
@@ -256,40 +274,36 @@ function PaymentHistory({ refreshKey }: { refreshKey: unknown }) {
       setBusyId(null)
     }
   }
-  const shown = open ? rows : rows.slice(0, 5)
+  const shown = open ? rows : rows.slice(0, 6)
   return (
     <section className="panel stack">
       <div>
         <h2 className="panel-title"><Icon name="history" size={18} className="cyan" /> Lịch sử thanh toán</h2>
-        <p className="muted">Mọi lần thanh toán của bạn, mới nhất ở trên.</p>
+        <p className="muted">Mới nhất ở trên.</p>
       </div>
       {msg && <p className={`alert ${msg.tone}`}><Icon name={msg.tone === 'ok' ? 'check' : 'alert'} size={16} />{msg.text}</p>}
-      <div className="table-scroll">
-        <table>
-          <thead><tr><th>Thời gian</th><th>Hóa đơn</th><th>Hình thức</th><th className="right">Số tiền</th><th>Trạng thái</th><th /></tr></thead>
-          <tbody>
-            {shown.map((p) => {
-              const st = PAY_STATUS[p.status] ?? { label: p.status, tone: 'muted' }
-              const pending = p.status === 'Pending'
-              const canCancel = pending && Date.now() - new Date(p.paymentDate).getTime() >= CANCEL_AFTER_MS
-              return (
-                <tr key={p.paymentId}>
-                  <td>{fmtTime(p.paymentDate)}</td>
-                  <td><Link to={`/invoices/${p.invoiceId}`} className="link">{p.invoiceNumber}</Link></td>
-                  <td>{PAY_METHOD[p.paymentMethod] ?? p.paymentMethod}{p.transactionCode && <><br /><small className="muted code">{p.transactionCode}</small></>}</td>
-                  <td className="right"><b>{fmtMoney(p.amountPaid)}</b></td>
-                  <td><span className={`badge ${st.tone}`}>{st.label}</span>{p.paymentNotes && <><br /><small className="muted">{p.paymentNotes}</small></>}</td>
-                  <td className="right">
-                    {canCancel && <button className="btn outline sm" disabled={busyId !== null} onClick={() => void cancel(p)}>{busyId === p.paymentId ? 'Đang hủy…' : 'Hủy giao dịch'}</button>}
-                    {pending && !canCancel && <small className="muted">Chờ cổng thanh toán; hủy được sau {fmtTime(new Date(new Date(p.paymentDate).getTime() + CANCEL_AFTER_MS).toISOString())}</small>}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-      {rows.length > 5 && <button className="btn ghost sm self-start" onClick={() => setOpen(!open)}>{open ? 'Thu gọn' : `Xem tất cả ${rows.length} giao dịch`}</button>}
+      <ul className="pay-hist">
+        {shown.map((p) => {
+          const st = PAY_STATUS[p.status] ?? { label: p.status, tone: 'muted' }
+          const pending = p.status === 'Pending'
+          const canCancel = pending && Date.now() - new Date(p.paymentDate).getTime() >= CANCEL_AFTER_MS
+          return (
+            <li key={p.paymentId}>
+              <div className="row between">
+                <Link to={`/invoices/${p.invoiceId}`} className="link code">{p.invoiceNumber}</Link>
+                <b>{fmtMoney(p.amountPaid)}</b>
+              </div>
+              <div className="row between">
+                <small className="muted">{fmtTime(p.paymentDate)} · {PAY_METHOD[p.paymentMethod] ?? p.paymentMethod}</small>
+                <span className={`badge ${st.tone}`}>{st.label}</span>
+              </div>
+              {canCancel && <button className="btn outline sm self-start" disabled={busyId !== null} onClick={() => void cancel(p)}>{busyId === p.paymentId ? 'Đang hủy…' : 'Hủy giao dịch'}</button>}
+              {pending && !canCancel && <small className="muted">Chờ cổng thanh toán; hủy được sau {fmtTime(new Date(new Date(p.paymentDate).getTime() + CANCEL_AFTER_MS).toISOString())}</small>}
+            </li>
+          )
+        })}
+      </ul>
+      {rows.length > 6 && <button className="btn ghost sm self-start" onClick={() => setOpen(!open)}>{open ? 'Thu gọn' : `Xem tất cả ${rows.length} giao dịch`}</button>}
     </section>
   )
 }

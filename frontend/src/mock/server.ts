@@ -6,7 +6,7 @@
  */
 import type {
   AccessIssue, ActivityLog, EarlyReturnQuote, EarlyReturnRequest, AdminUser, AdminContract, EmailOutboxMessage, OperationsReportRow, CancellationRequest, CancellationRefund, ExtraChargeInvoice, FacilityStaff, FacilityWorkQueue, FacilityTaskContract, FacilityReport, OperationsReport, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
-  OverdueSummary, Person, Renewal, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate, VisitRegistration, RentalPolicy, FeeConfiguration, Promotion, ContractSuspension, SecuritySettings, LoginSession, AccountProfile, AccountActivity,
+  OverdueSummary, Person, Renewal, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate, VisitRegistration, RentalPolicy, FeeConfiguration, Promotion, SecuritySettings, LoginSession, AccountProfile, AccountActivity,
 } from '../types'
 import { Roles } from '../types'
 
@@ -59,8 +59,6 @@ interface Db {
   extraCharges?: Xtra[]
   /** EmailOutboxMessages: invoice and receipt emails (sent by a worker in the real backend). */
   emails?: (EmailOutboxMessage & { emailOutboxMessageId: number })[]
-  /** Awaiting backend (docs/API-cho-backend.md): contract suspensions and account security. */
-  suspensions?: ContractSuspension[]
   security?: Record<number, SecuritySettings>
   sessions?: Record<number, LoginSession[]>
 }
@@ -832,7 +830,6 @@ const routes: [string, RegExp, Handler][] = [
       LOGIN: ['Login', 'Đăng nhập', 'Success'], LOGIN_FAILED: ['Login', 'Đăng nhập thất bại', 'Failed'],
       PASSWORD_CHANGED: ['Password', 'Đổi mật khẩu', 'Success'], PASSWORD_CHANGE_FAILED: ['Password', 'Đổi mật khẩu thất bại', 'Failed'],
       SECURITY_SETTINGS: ['Settings', 'Đổi cài đặt bảo mật', 'Success'], SESSION_REVOKED: ['Session', 'Đăng xuất thiết bị', 'Warning'],
-      SUSPENSION_REQUESTED: ['Contract', 'Gửi yêu cầu tạm ngưng hợp đồng', 'Success'],
     }
     const seeded: AccountActivity[] = [
       { logId: -2, category: 'Login', action: 'Đăng nhập', details: 'Safari · iPhone', ipAddress: '113.161.20.4', createdAt: localIso(addDays(new Date(), -2)), result: 'Success' },
@@ -842,45 +839,6 @@ const routes: [string, RegExp, Handler][] = [
       const [category, action, result] = label[l.action] ?? ['Login', l.action, 'Success']
       return { logId: l.logId, category, action, details: l.details, ipAddress: l.ipAddress, createdAt: l.createdAt, result }
     }), ...seeded].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 100)
-  }],
-
-  // ---- contract suspension (awaiting backend; spec in docs/API-cho-backend.md)
-  ['GET', /^\/api\/contracts\/(\d+)\/suspensions$/, (m, { token }) => {
-    const c = ownContract(currentUser(token), Number(m[1]))
-    return (db.suspensions ?? []).filter((x) => x.contractId === c.contractId).sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))
-  }],
-  ['POST', /^\/api\/contracts\/(\d+)\/suspensions$/, (m, { token, body }) => {
-    const me = currentUser(token)
-    requireRole(me, [Roles.Customer])
-    const c = ownContract(me, Number(m[1]))
-    const start = String(body.startDate ?? ''), end = String(body.endDate ?? '')
-    const reason = String(body.reason ?? '').trim()
-    if (c.status !== 'Active') throw conflict('Chỉ hợp đồng đang hoạt động mới tạm ngưng được')
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || end < start) throw bad('Ngày tạm ngưng không hợp lệ')
-    if (start < dateOnly(addDays(new Date(), 3))) throw bad('Ngày bắt đầu phải sau hôm nay ít nhất 3 ngày')
-    const days = Math.round((new Date(`${end}T00:00:00`).getTime() - new Date(`${start}T00:00:00`).getTime()) / 86400000) + 1
-    if (days < 30 || days > 90) throw bad('Thời gian tạm ngưng từ 30 đến 90 ngày')
-    if (end >= c.endDate) throw bad('Ngày kết thúc tạm ngưng phải trước ngày hết hạn hợp đồng')
-    if (!reason) throw bad('Vui lòng chọn lý do tạm ngưng')
-    if ((db.suspensions ?? []).some((x) => x.contractId === c.contractId && ['Pending', 'Approved', 'Active'].includes(x.status))) throw conflict('Hợp đồng đã có yêu cầu tạm ngưng đang xử lý')
-    if (db.renewals.some((r) => r.contractId === c.contractId && r.status === 'Pending')) throw conflict('Hợp đồng đang có yêu cầu gia hạn chờ thanh toán')
-    const x: ContractSuspension = {
-      suspensionId: nextId(), contractId: c.contractId, startDate: start, endDate: end, days, reason,
-      notes: (body.notes as string | null)?.trim() || null, status: 'Pending',
-      holdingFee: Math.round((c.monthlyRentFee / 30) * days * 0.3 / 1000) * 1000,
-      newEndDate: dateOnly(addDays(new Date(`${c.endDate}T00:00:00`), days)), requestedAt: localIso(new Date()), reviewNotes: null,
-    }
-    ;(db.suspensions ??= []).push(x)
-    addLog(me.userId, 'SUSPENSION_REQUESTED', `Hợp đồng ${c.contractNumber}: ${start} → ${end}`)
-    return x
-  }],
-  ['DELETE', /^\/api\/contracts\/(\d+)\/suspensions\/(\d+)$/, (m, { token }) => {
-    const c = ownContract(currentUser(token), Number(m[1]))
-    const x = (db.suspensions ?? []).find((s) => s.suspensionId === Number(m[2]) && s.contractId === c.contractId)
-    if (!x) throw notFound('Không tìm thấy yêu cầu tạm ngưng')
-    if (x.status !== 'Pending') throw conflict('Chỉ hủy được yêu cầu đang chờ duyệt')
-    x.status = 'Cancelled'
-    return null
   }],
 
   ['POST', /^\/api\/auth\/forgot-password$/, (_m, { body }) => {

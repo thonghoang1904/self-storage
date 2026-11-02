@@ -1134,7 +1134,7 @@ small.center { text-align: center; }
 @media (max-width: 1000px) { .policy-layout, .contract-strip { grid-template-columns: 1fr; } .policy-aside { position: static; } }
 @media print { .policy-aside, .policy-success .row { display: none !important; } }
 
-/* ---------- renew / suspend / security (Figma 96:10226, 96:10415, 96:10597) ---------- */
+/* ---------- renew / security (Figma 96:10226, 96:10597) ---------- */
 .month-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px; }
 .month-grid button { height: 44px; border: 1.5px solid var(--border); border-radius: 10px; background: #fff; font: inherit; font-weight: 700; color: var(--text); cursor: pointer; }
 .month-grid button:hover:not(:disabled) { border-color: var(--cyan); }
@@ -1458,12 +1458,33 @@ a.stat-link { text-decoration: none; color: inherit; }
 @media (max-width: 1100px) { .my-unit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .my-unit-grid { grid-template-columns: 1fr; } .order-cards { grid-template-columns: 1fr; } }
 
-/* ---------- Tạm ngưng hợp đồng ---------- */
-.suspend-reasons { display: flex; flex-wrap: wrap; gap: 8px; }
-.suspend-reasons button { padding: 8px 14px; border: 1px solid var(--border); border-radius: 99px; background: #fff; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--text); cursor: pointer; }
-.suspend-reasons button.active { border-color: var(--cyan); background: var(--cyan-50); color: var(--cyan-600); }
-.suspend-reasons button:disabled, .segmented button:disabled { opacity: .55; cursor: not-allowed; }
-.suspend-impacts { list-style: none; margin: 4px 0; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; border-radius: var(--radius); background: var(--bg-tint); font-size: 13px; color: var(--text); }
-.suspend-impacts li { display: flex; gap: 8px; align-items: flex-start; }
-.suspend-impacts svg { color: var(--muted); flex: none; margin-top: 2px; }
-.center-self { align-self: center; }
+/* ---------- Hóa đơn & thanh toán (khách) ---------- */
+.pay-summary { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 0; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 24px; }
+.pay-due { display: flex; align-items: center; gap: 16px; padding: 22px 24px; border: 0; background: var(--ok-bg); font: inherit; text-align: left; cursor: pointer; color: var(--text); }
+.pay-summary.warn .pay-due { background: #fff7e6; }
+.pay-summary.bad .pay-due { background: var(--bad-bg); }
+.pay-due .grow { display: flex; flex-direction: column; gap: 2px; }
+.pay-due b { font-family: var(--font-head); font-size: 30px; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.pay-due small { font-size: 13px; font-weight: 600; color: var(--muted); }
+.pay-due small:first-child { color: var(--text); }
+.pay-due-icon { width: 48px; height: 48px; flex: none; display: grid; place-items: center; border-radius: 14px; background: #fff; color: var(--ok); }
+.pay-summary.warn .pay-due-icon { color: var(--warn); }
+.pay-summary.bad .pay-due-icon { color: var(--bad); }
+.pay-due.active { box-shadow: inset 0 -3px 0 var(--cyan); }
+.pay-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.pay-stats button { display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 16px 18px; border: 0; border-left: 1px solid var(--border); background: #fff; font: inherit; text-align: left; cursor: pointer; }
+.pay-stats button:hover, .pay-due:hover { filter: brightness(.98); }
+.pay-stats button.active { box-shadow: inset 0 -3px 0 var(--cyan); }
+.pay-stats small { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.pay-stats b { font-size: 18px; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.invoice-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.invoice-toolbar .select-btn { width: auto; min-width: 180px; }
+.pay-grid .invoice-head { grid-template-columns: 42px minmax(0, 1fr) auto auto 20px; padding: 14px 18px; }
+.pay-grid .invoice-more { color: var(--muted); }
+.pay-aside { position: sticky; top: 90px; }
+.pay-hist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.pay-hist li { display: flex; flex-direction: column; gap: 6px; padding: 12px 0; border-top: 1px solid var(--border); font-size: 14px; }
+.pay-hist li:first-child { border-top: 0; padding-top: 0; }
+.pay-hist b { font-variant-numeric: tabular-nums; }
+@media (max-width: 1000px) { .pay-aside { position: static; } }
+@media (max-width: 760px) { .pay-summary { grid-template-columns: 1fr; } .pay-stats button:first-child { border-left: 0; } .pay-stats { border-top: 1px solid var(--border); } }

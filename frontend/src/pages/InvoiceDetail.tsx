@@ -112,7 +112,7 @@ export default function InvoiceDetail() {
       <section className="page-hero detail-hero">
         <div className="container">
           <div className="grow">
-            <nav className="crumbs"><Link to="/invoices">Hóa Đơn & Thanh Toán</Link><span>/</span><b>{invoice.invoiceNumber}</b></nav>
+            <nav className="crumbs"><Link to="/invoices">Thanh Toán</Link><span>/</span><b>{invoice.invoiceNumber}</b></nav>
             <h1>{typeName}{period && <span className="hero-sub"> · kỳ {period}</span>}</h1>
             <div className="row wrap hero-meta">
               <StatusBadge status={invoice.status} />

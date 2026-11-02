@@ -265,7 +265,6 @@ export default function ContractDetail() {
                 <button type="button" onClick={() => setAccessTab('people')}><Icon name="users" size={16} /><span>Người vào kho<small>{people.length} người được phép vào</small></span><Icon name="arrowRight" size={14} /></button>
                 <button type="button" onClick={() => setAccessTab('history')}><Icon name="shield" size={16} /><span>Nhật ký vào kho<small>Lần gần nhất: {lastVisit ? fmtTime(lastVisit.entryTime) : 'chưa có'}</small></span><Icon name="arrowRight" size={14} /></button>
                 {!ended && <Link to={`/support?contract=${c.contractId}`}><Icon name="alert" size={16} /><span>Báo sự cố<small>Gửi yêu cầu hỗ trợ</small></span><Icon name="arrowRight" size={14} /></Link>}
-                {!ended && <Link to={`/my-units/${c.contractId}/suspend`}><Icon name="clock" size={16} /><span>Tạm ngưng hợp đồng<small>30–90 ngày</small></span><Icon name="arrowRight" size={14} /></Link>}
                 <Link to={`/my-units/${c.contractId}/policy`}><Icon name="clipboard" size={16} /><span>Chính sách hợp đồng<small>Điều khoản đang áp dụng</small></span><Icon name="arrowRight" size={14} /></Link>
               </nav>
               {canReturnEarly

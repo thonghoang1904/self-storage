@@ -714,32 +714,7 @@ export interface OperationsReportRow {
   netRevenue: number
 }
 
-// ---- awaiting backend (spec in docs/API-cho-backend.md): contract suspension and account security
-
-/** Customer asks to pause a contract for a while (no access, holding fee instead of rent, end date pushed back). */
-export interface ContractSuspension {
-  suspensionId: number
-  contractId: number
-  startDate: string
-  endDate: string
-  days: number
-  reason: string
-  notes: string | null
-  /** Pending | Approved | Rejected | Cancelled | Active | Completed */
-  status: string
-  holdingFee: number
-  newEndDate: string
-  requestedAt: string
-  reviewNotes: string | null
-}
-export const SuspensionStatuses: Record<string, { label: string; tone: 'ok' | 'warn' | 'bad' | 'info' | 'muted' }> = {
-  Pending: { label: 'Chờ duyệt', tone: 'warn' },
-  Approved: { label: 'Đã duyệt', tone: 'ok' },
-  Active: { label: 'Đang tạm ngưng', tone: 'info' },
-  Completed: { label: 'Đã kết thúc', tone: 'muted' },
-  Rejected: { label: 'Bị từ chối', tone: 'bad' },
-  Cancelled: { label: 'Đã hủy', tone: 'muted' },
-}
+// ---- awaiting backend (spec in docs/API-cho-backend.md): account security
 
 export interface SecuritySettings {
   accessAlerts: boolean

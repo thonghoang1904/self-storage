@@ -10,47 +10,7 @@ Quy ước chung giống các API hiện có:
 
 ---
 
-## 1. Tạm ngưng hợp đồng giữa kỳ — Figma 96:10415, màn `/my-units/:id/suspend`
-
-Quy tắc frontend đang áp dụng (đề xuất, backend chốt lại):
-
-| Quy tắc | Giá trị |
-|---|---|
-| Số ngày tạm ngưng | 30 – 90 ngày (tính cả ngày đầu và ngày cuối) |
-| Ngày bắt đầu | sớm nhất là hôm nay + 3 ngày |
-| Ngày kết thúc | trước `Contract.EndDate` |
-| Phí giữ kho | `round(MonthlyRentFee / 30 × số ngày × 30% / 1000) × 1000` |
-| Ngày hết hạn mới (khi được duyệt) | `EndDate + số ngày` |
-| Điều kiện | hợp đồng `Active`; không có yêu cầu tạm ngưng `Pending/Approved/Active`; không có gia hạn `Pending` |
-| Trong thời gian tạm ngưng | cổng từ chối vào kho; không phát hành hóa đơn `MONTHLY_RENT`; thay bằng 1 hóa đơn phí giữ kho |
-
-### Bảng gợi ý `ContractSuspensions`
-`SuspensionID, ContractID, StartDate, EndDate, Days, Reason NVARCHAR(100), Notes NVARCHAR(500) NULL, Status VARCHAR(20) ('Pending','Approved','Rejected','Cancelled','Active','Completed'), HoldingFee, NewEndDate, RequestedAt, ReviewedByStaffID NULL, ReviewedAt NULL, ReviewNotes NVARCHAR(500) NULL, InvoiceID NULL`
-
-### API phía khách (Customer, chỉ hợp đồng của mình)
-- `GET /api/contracts/{id}/suspensions` → `ContractSuspensionDto[]`, mới nhất trước.
-- `POST /api/contracts/{id}/suspensions`
-  - Body: `{ startDate, endDate, reason: string (bắt buộc, ≤100), notes?: string (≤500) }`.
-  - Trả về `ContractSuspensionDto` với `status = "Pending"`.
-  - Lỗi 400 khi sai quy tắc ngày. Lỗi 409 khi đã có yêu cầu đang xử lý hoặc đang có gia hạn chờ thanh toán.
-- `DELETE /api/contracts/{id}/suspensions/{suspensionId}` → 204. Chỉ hủy được khi đang `Pending` (lỗi 409 nếu không).
-
-`ContractSuspensionDto`:
-```json
-{ "suspensionId": 1, "contractId": 1, "startDate": "2026-10-29", "endDate": "2026-12-12", "days": 45,
-  "reason": "Đi công tác / học tập xa", "notes": null, "status": "Pending", "holdingFee": 540000,
-  "newEndDate": "2027-06-10", "requestedAt": "2026-10-26T17:08:00", "reviewNotes": null }
-```
-
-### Phía nhân viên (chưa có màn, làm sau)
-- `GET /api/facilities/{facilityId}/suspensions?status=Pending`
-- `POST /api/facilities/{facilityId}/suspensions/{id}/review`
-  - Body: `{ approve: bool, notes?: string }`. Khi từ chối thì `notes` bắt buộc.
-  - Khi duyệt: lập hóa đơn phí giữ kho; tới ngày bắt đầu thì chuyển `Active` (khóa ra vào); hết thời gian thì `Completed` và cộng ngày vào `EndDate`.
-
----
-
-## 2. Bảo mật tài khoản — Figma 96:10597, màn `/account/security` (đã bỏ phần OTP)
+## 1. Bảo mật tài khoản — Figma 96:10597, màn `/account/security` (đã bỏ phần OTP)
 
 Đăng nhập là đủ (mọi vai trò), chỉ thao tác trên tài khoản của chính mình.
 
@@ -77,17 +37,17 @@ Nhật ký ra vào kho và thanh toán trên màn này lấy từ API có sẵn 
 
 ---
 
-## 3. Gia hạn hợp đồng giữa kỳ — Figma 96:10226, màn `/my-units/:id/renew`
+## 2. Gia hạn hợp đồng giữa kỳ — Figma 96:10226, màn `/my-units/:id/renew`
 Dùng API có sẵn (`GET/POST /api/contracts/{id}/renewals`), không cần làm thêm.
 `RenewalDto.InvoiceId` đã được dùng để mở thẳng hóa đơn gia hạn.
 
-## 4. Xác nhận policy hợp đồng — Figma 96:11044 / 110:362, màn `/my-units/:id/policy`
+## 3. Xác nhận policy hợp đồng — Figma 96:11044 / 110:362, màn `/my-units/:id/policy`
 Hiện lưu xác nhận trên trình duyệt. Nếu muốn lưu vào database:
 - `POST /api/contracts/{id}/policy-acknowledgements`, body `{ termsVersion }`.
 - `GET` cùng đường dẫn, trả `{ acknowledgedAt, termsVersion } | null`.
 
 ---
 
-## 5. Admin xem được toàn bộ — đã sửa backend trong commit này
+## 4. Admin xem được toàn bộ — đã sửa backend trong commit này
 - `OperationsManagementController`: quyền đổi từ `OpsManager` thành `OpsManager + Admin`. Admin vào được Quản lý cơ sở, Giá, Chính sách thuê, Phí và Khuyến mãi (mục "Cài Đặt" và "Kho Lưu Trữ" của Admin).
 - API mới `GET /api/operations/facilities/{facilityId}/units` (OpsManager, Admin): trả mọi kho của cơ sở kèm trạng thái, dùng lại `StorageUnitDto`. API danh mục công khai chỉ trả kho còn trống.

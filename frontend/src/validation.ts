@@ -186,7 +186,7 @@ export function amountError(value: number, label: string, min: number, max = 1_0
 }
 
 // ------------------------------------------------------------------ string-returning helpers ('' = valid)
-// Used by the contract, move-in, renewal, suspension and staff forms. They apply the same rules as above,
+// Used by the contract, move-in, renewal and staff forms. They apply the same rules as above,
 // so every form shows the same messages.
 
 const msg = (e: string | null) => e ?? ''
