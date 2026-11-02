@@ -288,14 +288,8 @@ export default function ContractDetail() {
       </div>
 
       {accessTab && (
-        <Modal wide title={`Kho ${c.unitCode} · ${c.facilityName}`} onClose={() => { setAccessTab(null); void load() }}>
-          <div className="stack">
-            <div className="tabs">
-              <button className={accessTab === 'people' ? 'active' : ''} onClick={() => setAccessTab('people')}><Icon name="users" size={16} /> Người vào kho</button>
-              <button className={accessTab === 'history' ? 'active' : ''} onClick={() => setAccessTab('history')}><Icon name="history" size={16} /> Nhật ký vào kho</button>
-            </div>
-            {accessTab === 'people' ? <AuthorizedPeople contractId={c.contractId} /> : <History contractId={c.contractId} />}
-          </div>
+        <Modal wide title={`${accessTab === 'people' ? 'Người vào kho' : 'Nhật ký vào kho'} · Kho ${c.unitCode}`} onClose={() => { setAccessTab(null); void load() }}>
+          {accessTab === 'people' ? <AuthorizedPeople contractId={c.contractId} /> : <History contractId={c.contractId} />}
         </Modal>
       )}
     </>

@@ -161,16 +161,9 @@ export default function MyUnits() {
         </section>
 
         {open && (
-          <Modal wide onClose={() => setOpenId(null)} title={<>Kho {open.unitCode} · {open.facilityName}</>}>
+          <Modal wide onClose={() => setOpenId(null)} title={`${tab === 'people' ? 'Người vào kho' : 'Lịch sử ra vào'} · Kho ${open.unitCode}`}>
             <div className="stack">
-              <div className="row between wrap">
-                <small className="muted">HĐ {open.contractNumber} · {fmtDate(open.startDate)} – {fmtDate(open.endDate)}</small>
-                <StatusBadge status={open.status} />
-              </div>
-              <div className="tabs">
-                <button className={tab === 'people' ? 'active' : ''} onClick={() => setTab('people')}><Icon name="users" size={16} /> Người vào kho</button>
-                <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}><Icon name="history" size={16} /> Lịch sử ra vào</button>
-              </div>
+              <small className="muted">{open.facilityName} · HĐ {open.contractNumber} · {fmtDate(open.startDate)} – {fmtDate(open.endDate)}</small>
               {tab === 'people' ? <AuthorizedPeople contractId={open.contractId} /> : <History contractId={open.contractId} />}
             </div>
           </Modal>
