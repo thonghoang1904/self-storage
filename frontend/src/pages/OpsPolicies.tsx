@@ -96,7 +96,7 @@ export default function OpsPolicies() {
       <div className="stat-grid">
         <Summary icon="clipboard" tone="info" label="Chính sách đang áp dụng" value={current ? `Cọc ${pct(current.depositPercent)}` : '—'}
           note={current ? current.policyName : 'Chưa có chính sách hiệu lực'} />
-        <Summary icon="wallet" tone="warn" label="Biểu phí dịch vụ" value={`${fees.length} loại phí`} note={`${fees.filter((f) => f.calculationMethod !== 'Fixed').length} loại tính theo ngày/%`} />
+        <Summary icon="wallet" tone="warn" label="Phí dịch vụ" value={`${fees.length} loại phí`} note={`${fees.filter((f) => f.calculationMethod !== 'Fixed').length} loại tính theo ngày/%`} />
         <Summary icon="card" tone="ok" label="Khuyến mãi đang chạy" value={String(running)} note={`${promos.length} chương trình đã tạo`} />
         <Summary icon="package" tone="info" label="Giá thuê theo tháng" value={prices.length ? `${fmtShort(Math.min(...prices))} – ${fmtShort(Math.max(...prices))}` : '—'} note={`${types.length} loại kho`} />
       </div>
