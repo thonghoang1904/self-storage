@@ -4,6 +4,7 @@ import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { AdminContract, Facility } from '../types'
 import { Select } from '../components/Select'
+import { Modal } from '../components/Modal'
 
 /**
  * System administrator: contracts across all facilities, view only (AdminContractsController).
@@ -87,17 +88,16 @@ export default function AdminContracts() {
       <section className="panel">
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Số hợp đồng</th><th>Khách hàng</th><th>Cơ sở · kho</th><th>Thời hạn</th><th className="right">Giá thuê</th><th>Trạng thái</th><th /></tr></thead>
+            <thead><tr><th>Số hợp đồng</th><th>Khách hàng</th><th>Cơ sở · kho</th><th>Thời hạn</th><th className="right">Giá thuê</th><th>Trạng thái</th></tr></thead>
             <tbody>
               {rows.map((c) => (
-                <tr key={c.contractId} className={openId === c.contractId ? 'selected' : ''}>
-                  <td className="code"><button type="button" className="link-btn" title="Xem chi tiết hợp đồng" onClick={() => setOpenId(openId === c.contractId ? null : c.contractId)}>{c.contractNumber}</button></td>
+                <tr key={c.contractId}>
+                  <td className="code"><button type="button" className="link-btn" title="Xem chi tiết hợp đồng" onClick={() => setOpenId(c.contractId)}>{c.contractNumber}</button></td>
                   <td><b>{c.customerName}</b><br /><small className="muted">{c.customerEmail} · {c.customerPhoneNumber}</small></td>
                   <td>{c.facilityName}<br /><small className="muted">Kho {c.unitCode}</small></td>
                   <td>{fmtDate(c.startDate)} – {fmtDate(c.endDate)}</td>
                   <td className="right money">{fmtMoney(c.monthlyRentFee)}</td>
                   <td><StatusBadge status={c.status} /></td>
-                  <td className="right"><button className="btn ghost sm" onClick={() => setOpenId(openId === c.contractId ? null : c.contractId)}>{openId === c.contractId ? 'Đóng' : 'Chi tiết'}</button></td>
                 </tr>
               ))}
             </tbody>
@@ -114,7 +114,7 @@ export default function AdminContracts() {
         </div>
       </section>
 
-      {openId && <div id="contract-panel" className="scroll-target"><ContractPanel key={openId} contractId={openId} onClose={() => setOpenId(null)} /></div>}
+      {openId && <ContractPanel key={openId} contractId={openId} onClose={() => setOpenId(null)} />}
     </div>
   )
 }
@@ -129,23 +129,16 @@ function ContractPanel({ contractId, onClose }: { contractId: number; onClose: (
       setC(x)
     }).catch((e) => setError((e as Error).message))
   }, [contractId])
-  // The contract opens under the table: bring it into view (again once loaded) so "Chi tiết" visibly opens it.
-  const loaded = c !== null
-  useEffect(() => {
-    document.getElementById('contract-panel')?.scrollIntoView({ block: 'start' })
-  }, [contractId, loaded])
-
-  if (!c) return <section className="panel">{error ? <p className="alert bad"><Icon name="alert" size={16} />{error}</p> : <p className="muted">Đang tải hợp đồng…</p>}</section>
+  if (!c) return (
+    <Modal title="Hợp đồng" onClose={onClose} wide>
+      {error ? <p className="alert bad"><Icon name="alert" size={16} />{error}</p> : <p className="muted">Đang tải hợp đồng…</p>}
+    </Modal>
+  )
 
   return (
-    <section className="panel admin-contract">
-      <div className="panel-head wrap">
-        <div>
-          <h2 className="panel-title">{c.contractNumber} <StatusBadge status={c.status} /></h2>
-          <p className="muted">Ký ngày {fmtTime(c.signedDate)}</p>
-        </div>
-        <button className="icon-btn" aria-label="Đóng" onClick={onClose}><Icon name="x" /></button>
-      </div>
+    <Modal title={<>{c.contractNumber} <StatusBadge status={c.status} /></>} onClose={onClose} wide>
+      <div className="stack-lg admin-contract">
+      <p className="muted">Ký ngày {fmtTime(c.signedDate)}</p>
       <dl className="kv-grid">
         <div><dt>Khách hàng</dt><dd>{c.customerName}</dd></div>
         <div><dt>Liên hệ</dt><dd>{c.customerEmail} · {c.customerPhoneNumber}</dd></div>
@@ -161,6 +154,7 @@ function ContractPanel({ contractId, onClose }: { contractId: number; onClose: (
           <p className="support-desc">{c.termsConditions}</p>
         </div>
       )}
-    </section>
+      </div>
+    </Modal>
   )
 }
