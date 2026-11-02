@@ -1453,10 +1453,6 @@ a.stat-link { text-decoration: none; color: inherit; }
 
 /* ---------- Kho của tôi: summary row, per-card shortcuts to people / entry history ---------- */
 .mu-summary { margin-bottom: 8px; }
-.my-unit-links { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.my-unit-links button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 8px; border: 1px solid var(--border); border-radius: 10px; background: #fff; font: inherit; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; }
-.my-unit-links button:hover { border-color: var(--cyan); color: var(--cyan-600); background: var(--cyan-25); }
-.my-unit-links button svg { color: var(--cyan); }
 .my-unit-actions { margin-top: 0; }
 .my-unit-term { margin-top: auto; }
 @media (max-width: 1100px) { .my-unit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

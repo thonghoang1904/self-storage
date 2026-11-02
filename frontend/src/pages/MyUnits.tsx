@@ -32,7 +32,7 @@ export default function MyUnits() {
   const [contracts, setContracts] = useState<Contract[] | null>(null)
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [openId, setOpenId] = useState<number | null>(null)
-  const [tab, setTab] = useState<'people' | 'history'>(wantedTab ?? 'people')
+  const tab = wantedTab ?? 'people'
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -54,7 +54,6 @@ export default function MyUnits() {
   // The unit whose term ends first: what the customer most likely has to act on next.
   const soonest = current?.filter((c) => c.status !== 'Overdue').sort((a, b) => a.endDate.localeCompare(b.endDate))[0]
   const overdue = current?.filter((c) => c.status === 'Overdue').length ?? 0
-  const openPanel = (id: number, t: 'people' | 'history') => { setTab(t); setOpenId(id) }
 
   return (
     <>
@@ -139,12 +138,8 @@ export default function MyUnits() {
                       {(c.status === 'Active' || c.status === 'Renewed') && <Link to={`/visit?contract=${c.contractId}`} className="btn primary sm"><Icon name="calendar" size={14} /> Vào kho</Link>}
                       {c.status === 'Active' && <Link to={`/my-units/${c.contractId}/renew`} className="btn outline sm"><Icon name="refresh" size={14} /> Gia hạn</Link>}
                     </div>
-                    <div className="my-unit-links">
-                      <button type="button" onClick={() => openPanel(c.contractId, 'people')}><Icon name="users" size={14} /> Người vào kho</button>
-                      <button type="button" onClick={() => openPanel(c.contractId, 'history')}><Icon name="history" size={14} /> Lịch sử ra vào</button>
-                    </div>
                     <div className="my-unit-foot">
-                      <Link to={`/my-units/${c.contractId}`} className="link with-icon">Chi tiết hợp đồng <Icon name="arrowRight" size={14} /></Link>
+                      <Link to={`/my-units/${c.contractId}`} className="link with-icon">Chi tiết <Icon name="arrowRight" size={14} /></Link>
                       {c.status === 'Active' && left > 0 && <Link to={`/my-units/${c.contractId}?return=early`} className="danger-text link-plain">Trả kho sớm</Link>}
                     </div>
                   </div>
