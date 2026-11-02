@@ -1457,3 +1457,13 @@ a.stat-link { text-decoration: none; color: inherit; }
 .my-unit-term { margin-top: auto; }
 @media (max-width: 1100px) { .my-unit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .my-unit-grid { grid-template-columns: 1fr; } .order-cards { grid-template-columns: 1fr; } }
+
+/* ---------- Tạm ngưng hợp đồng ---------- */
+.suspend-reasons { display: flex; flex-wrap: wrap; gap: 8px; }
+.suspend-reasons button { padding: 8px 14px; border: 1px solid var(--border); border-radius: 99px; background: #fff; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--text); cursor: pointer; }
+.suspend-reasons button.active { border-color: var(--cyan); background: var(--cyan-50); color: var(--cyan-600); }
+.suspend-reasons button:disabled, .segmented button:disabled { opacity: .55; cursor: not-allowed; }
+.suspend-impacts { list-style: none; margin: 4px 0; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; border-radius: var(--radius); background: var(--bg-tint); font-size: 13px; color: var(--text); }
+.suspend-impacts li { display: flex; gap: 8px; align-items: flex-start; }
+.suspend-impacts svg { color: var(--muted); flex: none; margin-top: 2px; }
+.center-self { align-self: center; }

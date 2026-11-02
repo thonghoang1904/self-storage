@@ -140,7 +140,7 @@ export default function ContractPolicy() {
 
   return (
     <>
-      <Hero c={c} crumb="Chính sách hợp đồng" title="Xem trước chính sách của hợp đồng" subtitle={`Xem lại điều khoản đang áp dụng cho hợp đồng ${c.contractNumber}.`} />
+      <Hero c={c} crumb="Chính sách hợp đồng" title="Chính sách hợp đồng" subtitle={`Điều khoản đang áp dụng cho hợp đồng ${c.contractNumber}.`} />
       <div className="container page-body">
         <ContractStrip c={c} unitType={unitType} />
 
@@ -196,12 +196,12 @@ export default function ContractPolicy() {
 
           <aside className="stack-lg policy-aside">
             <section className="panel stack-sm">
-              <h3 className="panel-title">Phiên bản của bản xem trước</h3>
+              <h3 className="panel-title">Phiên bản chính sách</h3>
               <div className="info-row"><span className="muted">Mã hợp đồng</span><b>{c.contractNumber}</b></div>
               <div className="info-row"><span className="muted">Phiên bản điều khoản</span><b>{TERMS_VERSION}</b></div>
               <div className="info-row"><span className="muted">Hiệu lực từ</span><b>{fmtDate(c.startDate)}</b></div>
               <hr />
-              <small className="muted">Bản xem trước tóm tắt các điều khoản chính. Toàn văn áp dụng chung cho mọi hợp đồng ở trang Điều khoản.</small>
+              <small className="muted">Trang này tóm tắt các điều khoản chính. Toàn văn áp dụng chung cho mọi hợp đồng ở trang Điều khoản.</small>
               <Link to={termsHref({ back: `/my-units/${c.contractId}/policy${from ? `?from=${from}` : ''}`, label: 'Quay lại chính sách hợp đồng', ...(from && BACK[from] ? { next: backTo, nextLabel: back.label.replace('Quay lại', 'Tiếp tục') } : {}) })} className="btn outline block"><Icon name="file" size={15} /> Xem toàn văn điều khoản</Link>
               <Link to={backTo} className="btn primary block"><Icon name="arrowRight" size={15} className="flip" /> {back.label}</Link>
             </section>

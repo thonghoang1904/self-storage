@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, ApiError, fmtDate, fmtMoney, fmtTime } from '../api'
-import { Empty, Icon } from '../components/ui'
+import { Icon } from '../components/ui'
 import { SuspensionStatuses, type ContractSuspension } from '../types'
 import { localToday } from '../validation'
 import { ContractStrip, Hero, Loading, useContract } from './ContractPolicy'
-import { Select } from '../components/Select'
 
 /**
  * Figma "Tạm ngưng hợp đồng giữa kỳ" (96:10415): the customer asks to pause a contract for a period.
@@ -25,13 +24,12 @@ const addDays = (iso: string, n: number) => { const d = new Date(`${iso}T00:00:0
 export const holdingFee = (monthly: number, n: number) => Math.round((monthly / 30) * n * SUSPEND_RULES.holdingPercent / 100 / 1000) * 1000
 
 const notReady = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.status === 405)
-const NOT_READY = 'Chức năng tạm ngưng đang được hoàn thiện. Bạn có thể gửi yêu cầu qua mục Hỗ trợ trong lúc chờ.'
+const NOT_SENT = 'Chưa gửi được yêu cầu tạm ngưng. Vui lòng thử lại sau hoặc liên hệ cơ sở.'
 
 export default function ContractSuspend() {
   const id = Number(useParams().id)
   const { c, renewals, unitType, error } = useContract(id)
   const [rows, setRows] = useState<ContractSuspension[]>([])
-  const [apiMissing, setApiMissing] = useState(false)
   const first = localToday(SUSPEND_RULES.noticeDays)
   const [start, setStart] = useState(first)
   const [end, setEnd] = useState(addDays(first, SUSPEND_RULES.minDays - 1))
@@ -42,8 +40,8 @@ export default function ContractSuspend() {
   const [msg, setMsg] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null)
 
   const load = useCallback(() => api<ContractSuspension[]>(`/api/contracts/${id}/suspensions`)
-    .then((r) => { setRows(r); setApiMissing(false) })
-    .catch((e) => { if (notReady(e)) setApiMissing(true) }), [id])
+    .then(setRows)
+    .catch(() => setRows([])), [id])
   useEffect(() => { void load() }, [load])
 
   if (!c) return <Loading error={error} />
@@ -82,7 +80,7 @@ export default function ContractSuspend() {
       setNotes('')
       await load()
     } catch (e) {
-      setMsg({ tone: 'bad', text: notReady(e) ? NOT_READY : (e as Error).message })
+      setMsg({ tone: 'bad', text: notReady(e) ? NOT_SENT : (e as Error).message })
     } finally {
       setBusy(false)
     }
@@ -100,20 +98,15 @@ export default function ContractSuspend() {
 
   const step = !open ? 1 : open.status === 'Pending' ? 2 : 3
 
+  const lengths = [SUSPEND_RULES.minDays, 60, SUSPEND_RULES.maxDays]
+  const pickLength = (k: number) => { setEnd(addDays(start, k - 1)); setMsg(null) }
+  const nOk = n >= SUSPEND_RULES.minDays && n <= SUSPEND_RULES.maxDays
+
   return (
     <>
-      <Hero c={c} crumb="Tạm ngưng" title="Tạm ngưng hợp đồng giữa kỳ" subtitle={`Đề nghị tạm ngưng hợp đồng ${c.contractNumber} trong một khoảng thời gian; đồ vẫn được giữ an toàn trong kho.`} />
+      <Hero c={c} crumb="Tạm ngưng" title="Tạm ngưng hợp đồng" subtitle={`Tạm dừng thuê kho ${c.unitCode} một thời gian, đồ vẫn được giữ trong kho.`} />
       <div className="container page-body">
         <ContractStrip c={c} unitType={unitType} />
-
-        <div className="notice warn-notice">
-          <span className="notice-icon warn"><Icon name="alert" size={16} /></span>
-          <div>
-            <b>Điều kiện tạm ngưng</b>
-            <p>Tạm ngưng từ {SUSPEND_RULES.minDays} đến {SUSPEND_RULES.maxDays} ngày, bắt đầu sau ít nhất {SUSPEND_RULES.noticeDays} ngày kể từ khi gửi và kết thúc trước ngày hết hạn. Trong thời gian tạm ngưng không vào kho được, thay tiền thuê bằng phí giữ kho {SUSPEND_RULES.holdingPercent}%, và ngày hết hạn được cộng thêm số ngày tạm ngưng.</p>
-          </div>
-        </div>
-        {apiMissing && <p className="alert warn"><Icon name="clock" size={16} />{NOT_READY}</p>}
 
         <ol className="journey">
           <li className={step > 1 ? 'done' : 'active'}><span>{step > 1 ? <Icon name="check" size={14} /> : 1}</span>Gửi đề nghị</li>
@@ -126,7 +119,7 @@ export default function ContractSuspend() {
         <div className="policy-layout">
           <div className="stack-lg">
             <section className="panel stack">
-              <div><h2 className="panel-title">Thông tin yêu cầu tạm ngưng</h2><p className="muted">Chọn khoảng thời gian và lý do tạm ngưng.</p></div>
+              <div><h2 className="panel-title">Thời gian tạm ngưng</h2><p className="muted">Từ {SUSPEND_RULES.minDays} đến {SUSPEND_RULES.maxDays} ngày, bắt đầu từ {fmtDate(first)} trở đi và kết thúc trước {fmtDate(c.endDate)}.</p></div>
               {!eligible && (
                 <p className="alert warn"><Icon name="alert" size={16} />
                   {c.status !== 'Active' ? 'Chỉ hợp đồng đang hoạt động mới tạm ngưng được.'
@@ -134,74 +127,74 @@ export default function ContractSuspend() {
                     : 'Hợp đồng đang có yêu cầu gia hạn chờ thanh toán; hoàn tất gia hạn trước khi tạm ngưng.'}
                 </p>
               )}
-              <div className="form-grid">
-                <label className="field"><span>Ngày bắt đầu tạm ngưng *</span><input type="date" value={start} min={first} max={c.endDate} disabled={!eligible} onChange={(e) => setStart(e.target.value)} /></label>
-                <label className="field"><span>Ngày kết thúc *</span><input type="date" value={end} min={start} max={c.endDate} disabled={!eligible} onChange={(e) => setEnd(e.target.value)} /></label>
+              <div className="segmented self-start">
+                {lengths.map((k) => <button key={k} type="button" disabled={!eligible} className={n === k ? 'active' : ''} onClick={() => pickLength(k)}>{k} ngày</button>)}
               </div>
-              <span className={`badge ${n >= SUSPEND_RULES.minDays && n <= SUSPEND_RULES.maxDays ? 'info' : 'bad'} self-start`}>{n} ngày tạm ngưng</span>
-              <label className="field"><span>Lý do tạm ngưng *</span>
-                <Select value={reason} disabled={!eligible} onChange={(e) => setReason(e.target.value)}>{REASONS.map((r) => <option key={r}>{r}</option>)}</Select>
-              </label>
-              <label className="field"><span>Ghi chú thêm{reason === 'Khác' ? ' *' : ''}</span>
-                <textarea rows={3} maxLength={500} value={notes} disabled={!eligible} onChange={(e) => setNotes(e.target.value)} placeholder="vd: Đi công tác nước ngoài 2 tháng, cần giữ đồ trong kho" />
-              </label>
-              <label className="check-line">
-                <input type="checkbox" checked={agree} disabled={!eligible} onChange={(e) => { setAgree(e.target.checked); setMsg(null) }} />
-                <span>Tôi hiểu trong thời gian tạm ngưng sẽ không vào kho được và đồng ý trả phí giữ kho theo đề nghị.</span>
-              </label>
+              <div className="form-grid">
+                <label className="field"><span>Ngày bắt đầu *</span><input type="date" value={start} min={first} max={c.endDate} disabled={!eligible} onChange={(e) => { setStart(e.target.value); setMsg(null) }} /></label>
+                <label className="field"><span>Ngày kết thúc *</span><input type="date" value={end} min={start} max={c.endDate} disabled={!eligible} onChange={(e) => { setEnd(e.target.value); setMsg(null) }} /></label>
+              </div>
+              <small className={nOk ? 'muted' : 'danger-text'}>Đang chọn <b>{n} ngày</b>{!nOk && ` · cần từ ${SUSPEND_RULES.minDays} đến ${SUSPEND_RULES.maxDays} ngày`}</small>
             </section>
 
             <section className="panel stack">
-              <h2 className="panel-title">Ảnh hưởng cần được hai bên thống nhất</h2>
-              <div className="impact-item"><span className="notice-icon bad"><Icon name="lock" size={16} /></span><div><b>Quyền truy cập kho</b><p>Từ {fmtDate(start)} đến {fmtDate(end)}, chủ hợp đồng và người được ủy quyền không vào kho được. Cần lấy đồ gấp: hủy tạm ngưng hoặc liên hệ cơ sở.</p></div></div>
-              <div className="impact-item"><span className="notice-icon warn"><Icon name="wallet" size={16} /></span><div><b>Thanh toán</b><p>Không phát hành hóa đơn tiền thuê trong thời gian tạm ngưng. Thay vào đó là phí giữ kho {fmtMoney(fee)} ({SUSPEND_RULES.holdingPercent}% tiền thuê), thanh toán trước ngày bắt đầu.</p></div></div>
-              <div className="impact-item"><span className="notice-icon info"><Icon name="calendar" size={16} /></span><div><b>Thời hạn hợp đồng</b><p>Ngày hết hạn dời từ {fmtDate(c.endDate)} sang {fmtDate(newEnd)} (cộng {n} ngày). Tiền cọc {fmtMoney(c.depositPaid)} giữ nguyên.</p></div></div>
+              <h2 className="panel-title">Lý do</h2>
+              <div className="suspend-reasons">
+                {REASONS.map((r) => <button key={r} type="button" disabled={!eligible} className={reason === r ? 'active' : ''} onClick={() => setReason(r)}>{r}</button>)}
+              </div>
+              <label className="field"><span>Ghi chú thêm{reason === 'Khác' ? ' *' : ' (không bắt buộc)'}</span>
+                <textarea rows={3} maxLength={500} value={notes} disabled={!eligible} onChange={(e) => setNotes(e.target.value)} placeholder="vd: Đi công tác nước ngoài 2 tháng, cần giữ đồ trong kho" />
+              </label>
             </section>
 
-            <section className="panel stack-sm">
-              <h3 className="panel-title"><Icon name="history" size={18} className="cyan" /> Yêu cầu tạm ngưng đã gửi</h3>
-              {rows.map((r) => {
-                const st = SuspensionStatuses[r.status] ?? { label: r.status, tone: 'muted' as const }
-                return (
-                  <div key={r.suspensionId} className="visit-row">
-                    <span className={`notice-icon ${st.tone}`}><Icon name="clock" size={15} /></span>
-                    <div className="grow">
-                      <b>{fmtDate(r.startDate)} – {fmtDate(r.endDate)} · {r.days} ngày · phí giữ kho {fmtMoney(r.holdingFee)}</b>
-                      <small className="muted block">{r.reason}{r.notes && ` · ${r.notes}`} · gửi {fmtTime(r.requestedAt)}</small>
-                      {r.reviewNotes && <small className="muted block">Ghi chú nhân viên: {r.reviewNotes}</small>}
+            {rows.length > 0 && (
+              <section className="panel stack-sm">
+                <h3 className="panel-title"><Icon name="history" size={18} className="cyan" /> Yêu cầu đã gửi</h3>
+                {rows.map((r) => {
+                  const st = SuspensionStatuses[r.status] ?? { label: r.status, tone: 'muted' as const }
+                  return (
+                    <div key={r.suspensionId} className="visit-row">
+                      <span className={`notice-icon ${st.tone}`}><Icon name="clock" size={15} /></span>
+                      <div className="grow">
+                        <b>{fmtDate(r.startDate)} – {fmtDate(r.endDate)} · {r.days} ngày · phí giữ kho {fmtMoney(r.holdingFee)}</b>
+                        <small className="muted block">{r.reason}{r.notes && ` · ${r.notes}`} · gửi {fmtTime(r.requestedAt)}</small>
+                        {r.reviewNotes && <small className="muted block">Ghi chú nhân viên: {r.reviewNotes}</small>}
+                      </div>
+                      <span className={`badge ${st.tone}`}>{st.label}</span>
+                      {r.status === 'Pending' && <button type="button" className="btn ghost sm danger-text" onClick={() => void cancel(r)}>Hủy</button>}
                     </div>
-                    <span className={`badge ${st.tone}`}>{st.label}</span>
-                    {r.status === 'Pending' && <button type="button" className="btn ghost sm danger-text" onClick={() => void cancel(r)}>Hủy</button>}
-                  </div>
-                )
-              })}
-              {rows.length === 0 && <Empty icon="calendar">Chưa có yêu cầu tạm ngưng nào.</Empty>}
-            </section>
+                  )
+                })}
+              </section>
+            )}
           </div>
 
           <aside className="stack-lg policy-aside">
             <section className="panel stack-sm quote-card">
-              <h3 className="panel-title">Điều kiện đề nghị</h3>
-              <span className="badge warn self-start">Đề nghị · chờ duyệt</span>
-              <div className="info-row"><span className="muted">Bắt đầu</span><b>{fmtDate(start)}</b></div>
-              <div className="info-row"><span className="muted">Kết thúc</span><b>{fmtDate(end)}</b></div>
+              <h3 className="panel-title">Tóm tắt</h3>
+              <div className="info-row"><span className="muted">Tạm ngưng</span><b>{fmtDate(start)} – {fmtDate(end)}</b></div>
               <div className="info-row"><span className="muted">Số ngày</span><b>{n} ngày</b></div>
               <div className="quote-total warn">
-                <small>Phí giữ kho đề xuất</small>
+                <small>Phí giữ kho</small>
                 <b>{fmtMoney(fee)}</b>
-                <small>{SUSPEND_RULES.holdingPercent}% × {fmtMoney(Math.round(c.monthlyRentFee / 30))}/ngày × {n} ngày</small>
+                <small>{SUSPEND_RULES.holdingPercent}% tiền thuê · thay cho tiền thuê các ngày tạm ngưng</small>
               </div>
               <div className="info-row"><span className="muted">Tiết kiệm so với tiền thuê</span><b className="ok-text">{fmtMoney(Math.max(0, saved))}</b></div>
-              <div className="info-row"><span className="muted">Hết hạn mới dự kiến</span><b>{fmtDate(newEnd)}</b></div>
+              <div className="info-row"><span className="muted">Hết hạn mới</span><b>{fmtDate(newEnd)}</b></div>
+              <ul className="suspend-impacts">
+                <li><Icon name="lock" size={14} /> Không vào kho được trong thời gian tạm ngưng</li>
+                <li><Icon name="wallet" size={14} /> Phí giữ kho thanh toán trước ngày bắt đầu</li>
+                <li><Icon name="calendar" size={14} /> Hết hạn dời thêm {n} ngày, tiền cọc giữ nguyên</li>
+              </ul>
+              <label className="check-line">
+                <input type="checkbox" checked={agree} disabled={!eligible} onChange={(e) => { setAgree(e.target.checked); setMsg(null) }} />
+                <span>Tôi đồng ý với các điều trên.</span>
+              </label>
               <button type="button" className="btn primary block" disabled={busy || !eligible} onClick={() => void submit()}>
                 <Icon name="clock" size={16} /> {busy ? 'Đang gửi…' : 'Gửi đề nghị tạm ngưng'}
               </button>
-              <Link to={`/my-units/${c.contractId}`} className="btn ghost block">Hủy / Quay lại hợp đồng</Link>
-            </section>
-            <section className="panel stack-sm">
-              <h3 className="panel-title">Trước khi xác nhận</h3>
-              <p className="muted">Nhân viên sẽ kiểm tra công nợ và lịch hẹn của kho trước khi duyệt. Hóa đơn chưa thanh toán cần được thanh toán trước.</p>
-              <Link to={`/my-units/${c.contractId}/policy?from=suspend`} className="btn outline block"><Icon name="clipboard" size={15} /> Xem chính sách hợp đồng</Link>
+              <Link to={`/my-units/${c.contractId}`} className="btn ghost block">Quay lại hợp đồng</Link>
+              <Link to={`/my-units/${c.contractId}/policy?from=suspend`} className="link with-icon center-self"><Icon name="clipboard" size={14} /> Xem chính sách hợp đồng</Link>
             </section>
           </aside>
         </div>
