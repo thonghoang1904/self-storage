@@ -1345,3 +1345,15 @@ a.user-chip:hover { background: var(--bg-tint); }
 .visit-hub .request-kind-top { justify-content: space-between; }
 .unit-choice .radio { flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%; border: 2px solid #c3ced6; }
 .unit-choice.active .radio { border: 5px solid var(--cyan); }
+
+/* Header account menu (click the name). */
+.user-menu { position: relative; }
+.user-menu > .user-chip { border: 0; background: none; font: inherit; color: inherit; cursor: pointer; border-radius: 999px; padding: 2px 10px 2px 2px; transition: background .15s; text-align: left; }
+.user-menu > .user-chip:hover, .user-menu > .user-chip[aria-expanded="true"] { background: var(--bg-tint); }
+.user-menu .chevron { color: var(--muted); transition: transform .15s; }
+.user-menu .chevron.down { transform: rotate(90deg); }
+.user-menu .chevron.up { transform: rotate(-90deg); }
+.user-menu-list { position: absolute; right: 0; top: calc(100% + 8px); min-width: 220px; padding: 6px; background: #fff; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 16px 40px rgba(11, 19, 43, .16); z-index: 60; display: flex; flex-direction: column; }
+.user-menu-list a, .user-menu-list button { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; border: 0; background: none; font: inherit; font-weight: 600; font-size: 14px; color: var(--text-strong); text-decoration: none; text-align: left; cursor: pointer; }
+.user-menu-list a:hover, .user-menu-list button:hover { background: var(--bg-tint); }
+.user-menu-list button { border-top: 1px solid var(--border); border-radius: 0 0 8px 8px; margin-top: 4px; }

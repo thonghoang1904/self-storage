@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type MouseEvent, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { api, IS_DEMO } from '../api'
 import { useAuth } from '../auth'
@@ -30,6 +30,44 @@ export function DemoBar() {
 
 // ------------------------------------------------------------------ customer portal (top navigation + footer)
 
+/**
+ * Click the name in the header: a small menu with account information, security & log (customers) and sign out.
+ * Closes on a click outside, Escape or page change.
+ */
+function UserMenu() {
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => setOpen(false), [pathname])
+  useEffect(() => {
+    if (!open) return
+    const close = (e: globalThis.MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false) }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc) }
+  }, [open])
+  if (!user) return null
+  return (
+    <div className="user-menu" ref={box}>
+      <button type="button" className="user-chip" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="avatar">{initials(user.fullName)}</span>
+        <span className="user-chip-text"><b>{user.fullName}</b><small>{user.username}</small></span>
+        <Icon name="arrowRight" size={14} className={`chevron ${open ? 'up' : 'down'}`} />
+      </button>
+      {open && (
+        <div className="user-menu-list" role="menu">
+          <Link to="/account/profile" role="menuitem"><Icon name="user" size={16} /> Thông tin tài khoản</Link>
+          {user.role === Roles.Customer && <Link to="/account/security" role="menuitem"><Icon name="shield" size={16} /> Bảo mật &amp; nhật ký</Link>}
+          <button type="button" role="menuitem" className="danger-text" onClick={() => { setOpen(false); logout(); navigate('/') }}><Icon name="logout" size={16} /> Đăng xuất</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 const initials = (name: string) => name.split(' ').filter(Boolean).slice(-2).map((w) => w[0]).join('').toUpperCase()
 
 /** The portal logo opens the home page with a full reload, so every count and notice is fetched again. */
@@ -41,7 +79,7 @@ function goHomeFresh(e: MouseEvent<HTMLAnchorElement>) {
 }
 
 export function PortalHeader() {
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const { pathname } = useLocation()
@@ -78,12 +116,8 @@ export function PortalHeader() {
           <div className="portal-nav-actions">
             {user ? (
               <>
+                <UserMenu />
                 <NotificationBell />
-                <Link to="/account/profile" className="user-chip" title="Sửa thông tin tài khoản">
-                  <span className="avatar">{initials(user.fullName)}</span>
-                  <span className="user-chip-text"><b>{user.fullName}</b><small>{user.username}</small></span>
-                </Link>
-                <button className="btn outline sm" onClick={() => { logout(); navigate('/') }}>Đăng Xuất</button>
               </>
             ) : (
               <>
