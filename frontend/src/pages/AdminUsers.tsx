@@ -43,7 +43,6 @@ export default function AdminUsers() {
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [q, setQ] = useState('')
   const [roleFilter, setRoleFilter] = useState('staff')
-  const [status, setStatus] = useState('all')
   const [page, setPage] = useState(1)
   const [creating, setCreating] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -77,12 +76,13 @@ export default function AdminUsers() {
 
   const shown = useMemo(() => users
     .filter((u) => isStaffAccount(u) && (roleFilter === 'staff' || u.roleId === Number(roleFilter)))
-    .filter((u) => status === 'all' || u.status === status)
+    // A deleted employee is an Inactive account (the API keeps it for history): it no longer appears here.
+    .filter((u) => u.status !== 'Inactive')
     .filter((u) => {
       const s = q.trim().toLowerCase()
       if (!s) return true
       return [staffCode(u.userId), String(u.userId), u.username, u.fullName, u.email, u.phoneNumber, u.citizenId ?? ''].some((v) => v.toLowerCase().includes(s))
-    }), [users, roleFilter, status, q])
+    }), [users, roleFilter, q])
   const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE))
   const current = Math.min(page, pages)
   const pageRows = shown.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE)
@@ -92,10 +92,10 @@ export default function AdminUsers() {
   const editing = users.find((u) => u.userId === editId)
 
   const deactivate = async (u: AdminUser) => {
-    if (!window.confirm(`Cho nghỉ việc và khóa tài khoản ${u.fullName}? Tài khoản sẽ không đăng nhập được nữa.`)) return
+    if (!window.confirm(`Xóa nhân viên ${u.fullName}? Tài khoản sẽ không đăng nhập được nữa và không còn trong danh sách.`)) return
     try {
       await api(`/api/admin/users/${u.userId}/status`, { method: 'PUT', body: { status: 'Inactive' } })
-      await done(`Đã khóa tài khoản ${u.username}.`)
+      await done(`Đã xóa nhân viên ${u.fullName} (${u.username}).`)
     } catch (e) {
       setNotice('')
       setError((e as Error).message)
@@ -122,12 +122,8 @@ export default function AdminUsers() {
             <option value="staff">Vai Trò: Tất Cả Nhân Sự</option>
             {roles.filter((r) => PICKABLE_ROLES.includes(r.roleName)).map((r) => <option key={r.roleId} value={r.roleId}>Vai Trò: {roleLabel(r.roleName)}</option>)}
           </Select>
-          <Select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }} aria-label="Trạng thái">
-            <option value="all">Trạng Thái: Tất Cả</option>
-            {STAFF_STATUSES.map((k) => <option key={k} value={k}>Trạng Thái: {STATUS[k].label}</option>)}
-          </Select>
         </div>
-        <button className="btn ghost" onClick={() => { setQ(''); setRoleFilter('staff'); setStatus('all'); setPage(1) }}>Đặt lại bộ lọc</button>
+        <button className="btn ghost" onClick={() => { setQ(''); setRoleFilter('staff'); setPage(1) }}>Đặt lại bộ lọc</button>
       </div>
 
       {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
@@ -168,7 +164,7 @@ export default function AdminUsers() {
                         )}
                         <button className="icon-action" title="Sửa vai trò, trạng thái và xem lịch sử" aria-label={`Sửa ${u.fullName}`}
                           onClick={() => { setNotice(''); setCreating(false); setEditId(editId === u.userId ? null : u.userId) }}><Icon name="edit" size={14} /></button>
-                        <button className="icon-action danger" title={isMe ? 'Không thể tự khóa tài khoản của mình' : 'Cho nghỉ việc, khóa tài khoản'} aria-label={`Khóa ${u.fullName}`}
+                        <button className="icon-action danger" title={isMe ? 'Không thể tự xóa tài khoản của mình' : 'Xóa nhân viên'} aria-label={`Xóa ${u.fullName}`}
                           disabled={isMe || u.status === 'Inactive'} onClick={() => void deactivate(u)}><Icon name="trash" size={14} /></button>
                       </div>
                     </td>

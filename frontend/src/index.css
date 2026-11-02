@@ -1387,3 +1387,6 @@ a.stat-link { text-decoration: none; color: inherit; }
 .stat-chip.warn svg { color: var(--warn); }
 .stat-chip:disabled { cursor: default; }
 .stat-chips .btn { align-self: center; }
+/* Overview trend chart: the plot box is fixed at 200px and the dots are placed in %, so the svg must keep that
+   height (the revenue chart's ".line-chart svg { height: auto }" above must not apply here). */
+.line-plot svg { height: 200px; overflow: hidden; }
