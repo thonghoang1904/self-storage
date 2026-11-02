@@ -4,7 +4,7 @@ import { api, fmtDate } from '../api'
 import { daysUntil, fetchContracts } from '../consoleData'
 import { Badge, Empty, Icon } from '../components/ui'
 import { Roles, type AdminContract, type AdminUser, type Facility, type RoleInfo } from '../types'
-import { Metric } from './FacilityOverview'
+import { StatCard, scrollToList } from '../components/StatCard'
 import { Pager } from './AdminStorage'
 import { Select } from '../components/Select'
 
@@ -59,7 +59,10 @@ export default function AdminCustomers() {
   }), [users, contracts])
 
   const term = search.trim().toLowerCase()
-  const shown = rows.filter((r) => (!standing || r.standing === standing)
+  // Besides the four standings, the cards filter on: active accounts, customers renting anything, and the ones needing action.
+  const matches = (r: Row) => !standing ? true : standing === 'active' ? r.user.status === 'Active'
+    : standing === 'any' ? r.contracts.length > 0 : standing === 'attention' ? r.standing === 'overdue' || r.standing === 'soon' : r.standing === standing
+  const shown = rows.filter((r) => matches(r)
     && (!facilityId || r.contracts.some((c) => c.facilityId === Number(facilityId)))
     && (!term || [r.user.fullName, r.user.email, r.user.phoneNumber, r.user.username, ...r.contracts.map((c) => c.contractNumber)]
       .some((v) => v.toLowerCase().includes(term))))
@@ -73,6 +76,7 @@ export default function AdminCustomers() {
   const overdue = rows.filter((r) => r.standing === 'overdue').length
   const soon = rows.filter((r) => r.standing === 'soon').length
   const loading = !users || !contracts
+  const pick = (k: string) => { setStanding(standing === k ? '' : k); setSearch(''); setPage(1); scrollToList('customer-list') }
 
   return (
     <div className="stack-xl">
@@ -84,10 +88,11 @@ export default function AdminCustomers() {
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
 
       <div className="stat-grid">
-        <Metric icon="users" tone="info" label="Khách hàng đang hoạt động" value={String(active)} note={`${rows.length} tài khoản khách hàng`} />
-        <Metric icon="file" tone="ok" label="Hợp đồng hiệu lực" value={String(liveContracts)} note={renting ? `${liveContracts} hợp đồng / ${renting} khách đang thuê` : 'chưa có khách đang thuê'} />
-        <Metric icon="package" tone="info" label="Khách đang thuê kho" value={String(renting)} note={`${rows.length - renting} khách chưa thuê kho`} />
-        <Metric icon="alert" tone={overdue + soon ? 'bad' : 'ok'} label="Cần xử lý" value={String(overdue + soon)} note={`${overdue} quá hạn • ${soon} sắp hết hạn`} />
+        {/* Each card filters the customer list to what it counts; clicking the active card again shows everyone. */}
+        <StatCard icon="users" tone="info" label="Khách hàng đang hoạt động" value={active} note={`${rows.length} tài khoản khách hàng`} active={standing === 'active'} onClick={() => pick('active')} />
+        <StatCard icon="file" tone="ok" label="Hợp đồng hiệu lực" value={liveContracts} note={renting ? `${liveContracts} hợp đồng / ${renting} khách đang thuê` : 'chưa có khách đang thuê'} active={standing === 'any'} onClick={() => pick('any')} />
+        <StatCard icon="package" tone="info" label="Khách đang thuê kho" value={renting} note={`${rows.length - renting} khách chưa thuê kho`} active={standing === 'any'} onClick={() => pick('any')} />
+        <StatCard icon="alert" tone={overdue + soon ? 'bad' : 'ok'} label="Cần xử lý" value={overdue + soon} note={`${overdue} quá hạn • ${soon} sắp hết hạn`} active={standing === 'attention'} onClick={() => pick('attention')} />
       </div>
 
       <div className="panel filter-bar">
@@ -98,6 +103,9 @@ export default function AdminCustomers() {
           </span>
           <Select value={standing} onChange={filter(setStanding)} aria-label="Tình trạng">
             <option value="">Tình trạng: Tất cả</option>
+            <option value="active">Tài khoản đang hoạt động</option>
+            <option value="any">Đang có hợp đồng</option>
+            <option value="attention">Cần xử lý</option>
             {Object.entries(STANDING).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
           </Select>
           <Select value={facilityId} onChange={filter(setFacilityId)} aria-label="Cơ sở">
@@ -108,7 +116,7 @@ export default function AdminCustomers() {
         <button className="btn outline" onClick={() => { setSearch(''); setStanding(''); setFacilityId(''); setPage(1) }}>Đặt lại bộ lọc</button>
       </div>
 
-      <section className="panel">
+      <section className="panel" id="customer-list">
         <div>
           <h2 className="panel-title">Danh sách khách hàng</h2>
           <p className="muted">Mỗi khách hiện hợp đồng cần chú ý nhất: quá hạn trước, rồi hợp đồng hết hạn sớm nhất.</p>

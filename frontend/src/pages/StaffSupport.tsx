@@ -7,6 +7,7 @@ import type { Facility } from '../types'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import { SupportCategories, SupportPriorities, type SupportChecklistItem, type SupportRequest, type SupportUpdate } from '../types'
 import { Select } from '../components/Select'
+import { StatCard, scrollToList } from '../components/StatCard'
 
 /**
  * Figma "support-incident-management": metrics, filters, ticket list on the left and the selected
@@ -15,7 +16,7 @@ import { Select } from '../components/Select'
  */
 
 const PRIORITY_ORDER = ['Urgent', 'High', 'Medium', 'Low']
-type StatusTab = 'active' | 'Open' | 'InProgress' | 'Resolved' | 'Closed' | 'all'
+type StatusTab = 'active' | 'Open' | 'InProgress' | 'Resolved' | 'Closed' | 'done' | 'all'
 const STATUS_TABS: [StatusTab, string][] = [['active', 'Cần xử lý'], ['Open', 'Mới gửi'], ['InProgress', 'Đang xử lý'], ['Resolved', 'Đã xử lý'], ['Closed', 'Đã đóng'], ['all', 'Tất cả']]
 
 export default function StaffSupport() {
@@ -61,8 +62,9 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
   useEffect(() => { void load() }, [load])
 
   const shown = useMemo(() => rows
-    .filter((r) => status === 'all' ? true : status === 'active' ? r.status === 'Open' || r.status === 'InProgress' : r.status === status)
-    .filter((r) => priority === 'all' || r.priority === priority)
+    .filter((r) => status === 'all' ? true : status === 'active' ? r.status === 'Open' || r.status === 'InProgress'
+      : status === 'done' ? r.status === 'Resolved' || r.status === 'Closed' : r.status === status)
+    .filter((r) => priority === 'all' || (priority === 'urgent' ? r.priority === 'Urgent' || r.priority === 'High' : r.priority === priority))
     .filter((r) => {
       const s = q.trim().toLowerCase()
       return !s || [r.requestCode, r.title, r.unitCode, r.description, r.customerName ?? ''].some((v) => v.toLowerCase().includes(s))
@@ -76,6 +78,14 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
 
   const selected = rows.find((r) => r.requestId === selectedId) ?? null
   const count = (s: string) => rows.filter((r) => r.status === s).length
+  const is = (st: StatusTab, pr: string) => status === st && priority === pr
+  const pick = (st: StatusTab, pr: string) => {
+    const same = is(st, pr)
+    setStatus(same ? 'active' : st)
+    setPriority(same ? 'all' : pr)
+    setQ('')
+    scrollToList('ticket-list')
+  }
   const urgent = rows.filter((r) => (r.priority === 'Urgent' || r.priority === 'High') && (r.status === 'Open' || r.status === 'InProgress')).length
 
   return (
@@ -90,10 +100,11 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
       </div>
 
       <div className="stat-grid">
-        <Metric icon="alert" tone="warn" label="Mới gửi" value={count('Open')} note="chưa ai tiếp nhận" />
-        <Metric icon="refresh" tone="info" label="Đang xử lý" value={count('InProgress')} note="đã có nhân viên phụ trách" />
-        <Metric icon="lock" tone="bad" label="Khẩn cấp / Cao" value={urgent} note="nên ưu tiên trước" />
-        <Metric icon="check" tone="ok" label="Đã xử lý / đóng" value={count('Resolved') + count('Closed')} note="đã hoàn tất các bước xử lý" />
+        {/* Each card filters the list to what it counts; clicking the active card again goes back to "Cần xử lý". */}
+        <StatCard icon="alert" tone="warn" label="Mới gửi" value={count('Open')} note="chưa ai tiếp nhận" active={is('Open', 'all')} onClick={() => pick('Open', 'all')} />
+        <StatCard icon="refresh" tone="info" label="Đang xử lý" value={count('InProgress')} note="đã có nhân viên phụ trách" active={is('InProgress', 'all')} onClick={() => pick('InProgress', 'all')} />
+        <StatCard icon="lock" tone="bad" label="Khẩn cấp / Cao" value={urgent} note="nên ưu tiên trước" active={is('active', 'urgent')} onClick={() => pick('active', 'urgent')} />
+        <StatCard icon="check" tone="ok" label="Đã xử lý / đóng" value={count('Resolved') + count('Closed')} note="đã hoàn tất các bước xử lý" active={is('done', 'all')} onClick={() => pick('done', 'all')} />
       </div>
 
       {/* Status as a tab bar (same pattern as the cancellation and contract pages), then search and priority. */}
@@ -117,6 +128,7 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
           )}
           <Select value={priority} onChange={(e) => setPriority(e.target.value)} aria-label="Mức độ">
             <option value="all">Mọi mức độ</option>
+            <option value="urgent">Khẩn cấp và Cao</option>
             {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{SupportPriorities[p].label}</option>)}
           </Select>
         </div>
@@ -124,7 +136,7 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
 
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
 
-      <div className="ticket-workspace">
+      <div className="ticket-workspace" id="ticket-list">
         <section className="panel">
           <div>
             <h2 className="panel-title">Danh sách yêu cầu</h2>
@@ -150,16 +162,6 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
           ? <TicketDetail key={selected.requestId} ticket={selected} onChanged={load} base={base} admin={admin} />
           : <section className="panel"><Empty icon="clipboard">Chọn một yêu cầu để xem chi tiết.</Empty></section>}
       </div>
-    </div>
-  )
-}
-
-function Metric({ icon, tone, label, value, note }: { icon: string; tone: string; label: string; value: number; note: string }) {
-  return (
-    <div className="stat-card">
-      <div className="row between"><span className="muted">{label}</span><span className={`stat-icon ${tone}`}><Icon name={icon} size={17} /></span></div>
-      <b className="stat-value">{value}</b>
-      <small className={`stat-note ${tone}`}>{note}</small>
     </div>
   )
 }

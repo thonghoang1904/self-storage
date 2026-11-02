@@ -7,6 +7,7 @@ import { DenyReasons, type AccessRecord, type Person, type VisitCandidate, type 
 import { CITIZEN_ID_FILTER } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
 import { Select } from '../components/Select'
+import { StatCard, scrollToList } from '../components/StatCard'
 
 const REFRESH_MS = 5000
 const hhmm = (iso: string) => iso.slice(11, 16)
@@ -32,6 +33,7 @@ export default function Gate() {
   const [candidates, setCandidates] = useState<VisitCandidate[] | null>(null)
   const [inside, setInside] = useState<AccessRecord[]>([])
   const [today, setToday] = useState<AccessRecord[]>([])
+  const [logFilter, setLogFilter] = useState<'' | 'Granted' | 'Denied'>('')
   const [regs, setRegs] = useState<VisitRegistration[]>([])
   const [error, setError] = useState('')
   const [notice, setNotice] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null)
@@ -128,6 +130,8 @@ export default function Gate() {
 
   const granted = today.filter((r) => r.result === 'Granted').length
   const denied = today.filter((r) => r.result === 'Denied').length
+  const logShown = logFilter ? today.filter((r) => r.result === logFilter) : today
+  const pickLog = (k: '' | 'Granted' | 'Denied') => { setLogFilter(logFilter === k ? '' : k); scrollToList('gate-log') }
   const exited = today.filter((r) => r.exitTime).length
 
   return (
@@ -140,10 +144,11 @@ export default function Gate() {
       </div>
 
       <div className="stat-grid">
-        <StatCard icon="users" tone="info" label="Đang ở trong kho" value={inside.length} note="Cập nhật mỗi 5 giây" />
-        <StatCard icon="door" tone="ok" label="Lượt vào hôm nay" value={granted} note={`${exited} lượt đã ra`} />
-        <StatCard icon="alert" tone="bad" label="Từ chối hôm nay" value={denied} note="Đã ghi lý do vào nhật ký" />
-        <StatCard icon="history" tone="warn" label="Tổng lượt hôm nay" value={today.length} note={fmtDate(new Date().toISOString())} />
+        {/* Clicking a card jumps to its list; the log cards also filter today's log (click again for all). */}
+        <StatCard icon="users" tone="info" label="Đang ở trong kho" value={inside.length} note="Cập nhật mỗi 5 giây" onClick={() => scrollToList('gate-inside')} />
+        <StatCard icon="door" tone="ok" label="Lượt vào hôm nay" value={granted} note={`${exited} lượt đã ra`} active={logFilter === 'Granted'} onClick={() => pickLog('Granted')} />
+        <StatCard icon="alert" tone="bad" label="Từ chối hôm nay" value={denied} note="Đã ghi lý do vào nhật ký" active={logFilter === 'Denied'} onClick={() => pickLog('Denied')} />
+        <StatCard icon="history" tone="warn" label="Tổng lượt hôm nay" value={today.length} note={fmtDate(new Date().toISOString())} onClick={() => pickLog('')} />
       </div>
 
       <section className="panel">
@@ -177,7 +182,7 @@ export default function Gate() {
 
       <section className="panel">
         <div className="panel-head">
-          <h3 className="panel-title">Đang ở trong kho <span className="pill">{inside.length}</span></h3>
+          <h3 className="panel-title" id="gate-inside">Đang ở trong kho <span className="pill">{inside.length}</span></h3>
         </div>
         <div className="table-scroll">
           <table>
@@ -200,12 +205,13 @@ export default function Gate() {
       </section>
 
       <section className="panel">
-        <h3 className="panel-title">Nhật ký hôm nay <span className="pill">{today.length}</span></h3>
+        <h3 className="panel-title" id="gate-log">Nhật ký hôm nay <span className="pill">{logShown.length}{logFilter ? ` / ${today.length}` : ''}</span>
+          {logFilter && <button type="button" className="link-btn link" onClick={() => setLogFilter('')}> · {logFilter === 'Granted' ? 'Chỉ lượt vào' : 'Chỉ lượt từ chối'} ×</button>}</h3>
         <div className="table-scroll">
           <table>
             <thead><tr><th>Giờ</th><th>Kho</th><th>Người</th><th>Kết quả</th><th>Ra lúc</th><th>Nhân viên</th></tr></thead>
             <tbody>
-              {today.map((r) => (
+              {logShown.map((r) => (
                 <tr key={r.accessRecordId}>
                   <td>{fmtTime(r.entryTime)}</td>
                   <td><span className="unit-code">{r.unitCode}</span></td>
@@ -219,19 +225,9 @@ export default function Gate() {
               ))}
             </tbody>
           </table>
-          {today.length === 0 && <Empty icon="history">Chưa có lượt nào hôm nay.</Empty>}
+          {logShown.length === 0 && <Empty icon="history">{today.length ? 'Không có lượt nào khớp.' : 'Chưa có lượt nào hôm nay.'}</Empty>}
         </div>
       </section>
-    </div>
-  )
-}
-
-function StatCard({ icon, tone, label, value, note }: { icon: string; tone: string; label: string; value: number; note: string }) {
-  return (
-    <div className="stat-card">
-      <div className="row between"><span className="muted">{label}</span><span className={`stat-icon ${tone}`}><Icon name={icon} size={17} /></span></div>
-      <b className="stat-value">{value}</b>
-      <small className={`stat-note ${tone}`}>{note}</small>
     </div>
   )
 }

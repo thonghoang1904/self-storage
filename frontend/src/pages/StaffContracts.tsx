@@ -6,6 +6,7 @@ import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { Invoice, OverdueSummary, Renewal, StaffContract } from '../types'
 import { Select } from '../components/Select'
+import { StatCard, scrollToList } from '../components/StatCard'
 
 /** Figma "renewals-overdue": metrics, filters, one table of contracts to renew or collect, collection rule. */
 
@@ -35,6 +36,7 @@ const KIND_LABEL: Record<Kind, { label: string; tone: 'ok' | 'warn' | 'bad' | 'i
   ended: { label: 'Đã kết thúc', tone: 'muted' },
 }
 const PAGE_SIZE = 8
+const endingSoon = (r: { kind: Kind; daysLeft: number }) => r.kind === 'ending' || (r.kind === 'renewal' && r.daysLeft <= 7)
 
 export default function StaffContracts() {
   const { facilityId } = useStaffFacility()
@@ -43,7 +45,7 @@ export default function StaffContracts() {
   const [overdue, setOverdue] = useState<OverdueSummary[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [q, setQ] = useState('')
-  const [kind, setKind] = useState<'open' | Kind | 'all'>('all')
+  const [kind, setKind] = useState<'open' | 'live' | 'soon' | Kind | 'all'>('all')
   const [within, setWithin] = useState<'all' | '7' | '30'>('all')
   const [page, setPage] = useState(1)
   const [error, setError] = useState('')
@@ -89,7 +91,8 @@ export default function StaffContracts() {
   }), [contracts, renewals, overdue, invoices])
 
   const shown = rows
-    .filter((r) => kind === 'all' ? true : kind === 'open' ? r.kind !== 'active' && r.kind !== 'ended' : r.kind === kind)
+    .filter((r) => kind === 'all' ? true : kind === 'open' ? r.kind !== 'active' && r.kind !== 'ended'
+      : kind === 'live' ? r.kind !== 'ended' : kind === 'soon' ? endingSoon(r) : r.kind === kind)
     .filter((r) => within === 'all' || (r.kind !== 'ended' && r.daysLeft <= Number(within)))
     .filter((r) => {
       const s = q.trim().toLowerCase()
@@ -130,6 +133,8 @@ export default function StaffContracts() {
   }
 
   const active = rows.filter((r) => r.kind !== 'ended').length
+  // A card shows the rows it counts; clicking the active card again shows everything.
+  const pick = (k: typeof kind) => { setKind(kind === k ? 'all' : k); setWithin('all'); setQ(''); setPage(1); scrollToList('contract-list') }
   const lateFees = overdue.reduce((s, o) => s + o.accumulatedLateFee, 0)
 
   return (
@@ -143,10 +148,12 @@ export default function StaffContracts() {
       </div>
 
       <div className="stat-grid">
-        <Metric icon="clipboard" tone="info" label="Hợp đồng hiệu lực" value={String(active)} note="tại cơ sở này" />
-        <Metric icon="refresh" tone="warn" label="Chờ thu phí gia hạn" value={String(renewals.length)} note={renewals.length ? `${fmtMoney(renewals.reduce((s, r) => s + r.renewalFee, 0))} cần thu` : 'không có yêu cầu'} />
-        <Metric icon="calendar" tone="ok" label="Hết hạn trong 7 ngày" value={String(rows.filter((r) => r.kind === 'ending' || (r.kind === 'renewal' && r.daysLeft <= 7)).length)} note="nhắc khách gia hạn hoặc trả kho" />
-        <Metric icon="lock" tone="bad" label="Quá hạn · đang khóa" value={String(overdue.length)} note={overdue.length ? `${fmtMoney(lateFees)} phí đã tính` : 'không có kho bị khóa'} />
+        <StatCard icon="clipboard" tone="info" label="Hợp đồng hiệu lực" value={active} note="tại cơ sở này" active={kind === 'live'} onClick={() => pick('live')} />
+        <StatCard icon="refresh" tone="warn" label="Chờ thu phí gia hạn" value={renewals.length} note={renewals.length ? `${fmtMoney(renewals.reduce((s, r) => s + r.renewalFee, 0))} cần thu` : 'không có yêu cầu'}
+          active={kind === 'renewal'} onClick={() => pick('renewal')} />
+        <StatCard icon="calendar" tone="ok" label="Hết hạn trong 7 ngày" value={rows.filter(endingSoon).length} note="nhắc khách gia hạn hoặc trả kho" active={kind === 'soon'} onClick={() => pick('soon')} />
+        <StatCard icon="lock" tone="bad" label="Quá hạn · đang khóa" value={overdue.length} note={overdue.length ? `${fmtMoney(lateFees)} phí đã tính` : 'không có kho bị khóa'}
+          active={kind === 'overdue'} onClick={() => pick('overdue')} />
       </div>
 
       <div className="panel filter-bar">
@@ -158,6 +165,8 @@ export default function StaffContracts() {
           <Select value={kind} onChange={(e) => { setKind(e.target.value as typeof kind); setPage(1) }}>
             <option value="all">Tất cả trạng thái</option>
             <option value="open">Cần xử lý</option>
+            <option value="live">Hợp đồng hiệu lực</option>
+            <option value="soon">Hết hạn trong 7 ngày</option>
             <option value="renewal">Chờ thu phí gia hạn</option>
             <option value="ending">Sắp hết hạn</option>
             <option value="overdue">Quá hạn</option>
@@ -177,7 +186,7 @@ export default function StaffContracts() {
       {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
 
-      <section className="panel">
+      <section className="panel" id="contract-list">
         <div>
           <h2 className="panel-title">Danh sách gia hạn & quá hạn</h2>
           <p className="muted">Xác nhận thu phí gia hạn khi khách đã thanh toán tại quầy; kho quá hạn chuyển sang kiểm tra trả kho.</p>
@@ -256,16 +265,6 @@ export default function StaffContracts() {
         </div>
         <Link to="/staff-return" className="btn outline"><Icon name="door" size={15} /> Mở kiểm tra trả kho</Link>
       </div>
-    </div>
-  )
-}
-
-function Metric({ icon, tone, label, value, note }: { icon: string; tone: string; label: string; value: string; note: string }) {
-  return (
-    <div className="stat-card">
-      <div className="row between"><span className="muted">{label}</span><span className={`stat-icon ${tone}`}><Icon name={icon} size={17} /></span></div>
-      <b className="stat-value">{value}</b>
-      <small className={`stat-note ${tone}`}>{note}</small>
     </div>
   )
 }

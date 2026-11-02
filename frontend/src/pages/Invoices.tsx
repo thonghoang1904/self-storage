@@ -6,6 +6,7 @@ import { PayButtons, TYPE_ICON, useCheckout } from '../components/checkout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { Facility, Invoice, Reservation } from '../types'
 import { Select } from '../components/Select'
+import { StatCard, scrollToList } from '../components/StatCard'
 
 export default function Invoices() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
@@ -87,15 +88,16 @@ export default function Invoices() {
   const isPayable = (i: Invoice) => i.status === 'Unpaid' || i.status === 'Overdue'
   const due = invoices.filter(isPayable)
   const overdue = invoices.filter((i) => i.status === 'Overdue')
-  const [tab, setTab] = useState<'due' | 'paid' | 'all'>('all')
+  const [tab, setTab] = useState<'due' | 'paid' | 'overdue' | 'all'>('all')
   const [type, setType] = useState('')
   useEffect(() => { if (!loading && due.length) setTab('due') }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
   // Just paid here (or the deposit of the reservation just made): kept on the "Cần thanh toán" tab once paid, so the next
   // step (pick-up time) stays visible. The other tabs and the type filter still apply to it.
   const pinned = (i: Invoice) => isNew(i)
-  const tabMatch = (i: Invoice) => (tab === 'due' ? isPayable(i) || pinned(i) : tab === 'paid' ? i.status === 'Paid' : true)
+  const tabMatch = (i: Invoice) => (tab === 'due' ? isPayable(i) || pinned(i) : tab === 'paid' ? i.status === 'Paid' : tab === 'overdue' ? i.status === 'Overdue' : true)
   const shown = ordered.filter((i) => tabMatch(i) && (!type || i.invoiceType === type))
   const types = [...new Set(invoices.map((i) => i.invoiceType))]
+  const pickTab = (t: typeof tab) => { setTab(tab === t ? 'all' : t); setType(''); scrollToList('invoice-list') }
 
   return (
     <>
@@ -124,16 +126,10 @@ export default function Invoices() {
           : <p className="alert ok">Đã quay lại từ cổng thanh toán. Trạng thái được cập nhật khi cổng thanh toán xác nhận; bấm Làm mới nếu hóa đơn vẫn đang chờ.</p>)}
 
       <div className="stat-grid two">
-        <div className="stat-card">
-          <div className="row between"><span className="muted">Cần thanh toán</span><span className="stat-icon warn"><Icon name="wallet" size={17} /></span></div>
-          <b className="stat-value">{fmtMoney(due.reduce((n, i) => n + i.totalAmount, 0))}</b>
-          <small className={`stat-note ${due.length ? 'warn' : 'ok'}`}>{due.length ? `${due.length} hóa đơn chưa thanh toán` : 'Không có khoản nào cần trả'}</small>
-        </div>
-        <div className="stat-card">
-          <div className="row between"><span className="muted">Quá hạn</span><span className={`stat-icon ${overdue.length ? 'bad' : 'ok'}`}><Icon name="alert" size={17} /></span></div>
-          <b className="stat-value">{overdue.length}</b>
-          <small className={`stat-note ${overdue.length ? 'bad' : 'ok'}`}>{overdue.length ? 'Thanh toán sớm để tránh khóa kho' : 'Bạn đang thanh toán đúng hạn'}</small>
-        </div>
+        <StatCard icon="wallet" tone={due.length ? 'warn' : 'ok'} label="Cần thanh toán" value={fmtMoney(due.reduce((n, i) => n + i.totalAmount, 0))}
+          note={due.length ? `${due.length} hóa đơn chưa thanh toán` : 'Không có khoản nào cần trả'} active={tab === 'due'} onClick={() => pickTab('due')} />
+        <StatCard icon="alert" tone={overdue.length ? 'bad' : 'ok'} label="Quá hạn" value={overdue.length}
+          note={overdue.length ? 'Thanh toán sớm để tránh khóa kho' : 'Bạn đang thanh toán đúng hạn'} active={tab === 'overdue'} onClick={() => pickTab('overdue')} />
       </div>
 
       <div className="panel filter-bar">
@@ -154,7 +150,7 @@ export default function Invoices() {
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
       {loading && <p className="muted">Đang tải hóa đơn…</p>}
 
-      <div className="invoice-list">
+      <div className="invoice-list" id="invoice-list">
         {shown.map((invoice) => {
           const payable = isPayable(invoice)
           const period = invoice.billingPeriodStart && invoice.billingPeriodEnd ? `Kỳ ${fmtDate(invoice.billingPeriodStart)} – ${fmtDate(invoice.billingPeriodEnd)}` : null

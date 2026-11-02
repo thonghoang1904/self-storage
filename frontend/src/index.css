@@ -432,9 +432,9 @@ td .select-btn { height: 36px; width: auto; min-width: 120px; font-size: 13px; }
 .stat-grid.three { grid-template-columns: repeat(3, 1fr); }
 .stat-grid.two { grid-template-columns: repeat(2, 1fr); }
 .stat-card { display: flex; flex-direction: column; gap: 10px; padding: 20px; border-radius: var(--radius-lg); background: #fff; border: 1px solid var(--border); box-shadow: var(--shadow); font-size: 14px; }
-button.stat-filter { font: inherit; color: inherit; text-align: left; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
-button.stat-filter:hover { border-color: var(--cyan); }
-button.stat-filter.active { border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-50), var(--shadow); }
+.stat-filter { font: inherit; color: inherit; text-align: left; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.stat-filter:hover { border-color: var(--cyan); }
+.stat-filter.active { border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-50), var(--shadow); }
 .stat-icon { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; }
 .stat-icon.ok { background: var(--ok-bg); color: var(--ok); }
 .stat-icon.warn { background: var(--warn-bg); color: var(--warn); }
@@ -1357,3 +1357,4 @@ a.user-chip:hover { background: var(--bg-tint); }
 .user-menu-list a, .user-menu-list button { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; border: 0; background: none; font: inherit; font-weight: 600; font-size: 14px; color: var(--text-strong); text-decoration: none; text-align: left; cursor: pointer; }
 .user-menu-list a:hover, .user-menu-list button:hover { background: var(--bg-tint); }
 .user-menu-list button { border-top: 1px solid var(--border); border-radius: 0 0 8px 8px; margin-top: 4px; }
+a.stat-link { text-decoration: none; color: inherit; }

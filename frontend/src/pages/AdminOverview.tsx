@@ -26,9 +26,9 @@ export function AdminSystemPanels() {
   return (
     <>
       <div className="stat-grid three">
-        <Metric icon="users" tone="info" label="Tài khoản khách" value={String(customers.length)} note={`${customers.filter((u) => u.status !== 'Active').length} tài khoản bị khóa`} />
-        <Metric icon="user" tone="info" label="Tài khoản nhân viên" value={String(staff.length)} note={`${staff.filter((u) => u.roleName === Roles.Staff).length} nhân viên cơ sở`} />
-        <Metric icon="alert" tone={report?.openSupportRequests ? 'warn' : 'ok'} label="Yêu cầu hỗ trợ mở" value={String(report?.openSupportRequests ?? 0)} note={`${report?.maintenanceUnits ?? 0} kho bảo trì · ${report?.overdueLockedUnits ?? 0} kho khóa`} />
+        <Metric icon="users" tone="info" label="Tài khoản khách" value={String(customers.length)} to="/admin/customers" note={`${customers.filter((u) => u.status !== 'Active').length} tài khoản bị khóa`} />
+        <Metric icon="user" tone="info" label="Tài khoản nhân viên" value={String(staff.length)} to="/admin/users" note={`${staff.filter((u) => u.roleName === Roles.Staff).length} nhân viên cơ sở`} />
+        <Metric icon="alert" tone={report?.openSupportRequests ? 'warn' : 'ok'} label="Yêu cầu hỗ trợ mở" value={String(report?.openSupportRequests ?? 0)} to="/admin/support" note={`${report?.maintenanceUnits ?? 0} kho bảo trì · ${report?.overdueLockedUnits ?? 0} kho khóa`} />
       </div>
 
       <section className="panel">

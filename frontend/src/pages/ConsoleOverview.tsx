@@ -62,17 +62,17 @@ export default function ConsoleOverview({ admin }: { admin: boolean }) {
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
 
       <div className="stat-grid">
-        <Metric icon="wallet" tone={change !== null && change < 0 ? 'warn' : 'ok'} label="Doanh thu tháng này" value={fmtMoney(current?.netRevenue ?? 0)}
+        <Metric icon="wallet" tone={change !== null && change < 0 ? 'warn' : 'ok'} label="Doanh thu tháng này" value={fmtMoney(current?.netRevenue ?? 0)} to={admin ? '/admin/revenue' : undefined}
           note={change === null ? 'Tính đến hôm nay, đã trừ tiền hoàn'
             : `${change >= 0 ? '+' : ''}${change.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}% so với cả tháng trước`} />
-        <Metric icon="package" tone={locked ? 'bad' : 'info'} label="Kho đang sử dụng" value={current ? `${occupied} / ${current.totalUnits}` : '—'}
+        <Metric icon="package" tone={locked ? 'bad' : 'info'} label="Kho đang sử dụng" value={current ? `${occupied} / ${current.totalUnits}` : '—'} to={admin ? '/admin/storage' : undefined}
           note={current ? `Còn ${current.availableUnits} kho trống · ${current.maintenanceUnits} bảo trì${locked ? ` · ${locked} khóa quá hạn` : ''}` : ''} />
         {admin
-          ? <Metric icon="users" tone={overdueContracts ? 'bad' : 'info'} label="Khách hàng đang thuê" value={contracts ? String(customers) : '—'}
+          ? <Metric icon="users" tone={overdueContracts ? 'bad' : 'info'} label="Khách hàng đang thuê" value={contracts ? String(customers) : '—'} to="/admin/customers"
             note={`${current?.activeContracts ?? 0} hợp đồng hiệu lực${overdueContracts ? ` · ${overdueContracts} quá hạn` : ''}`} />
           : <Metric icon="clipboard" tone={current?.overdueContracts ? 'bad' : 'ok'} label="Hợp đồng hiệu lực" value={String(current?.activeContracts ?? 0)}
             note={current?.overdueContracts ? `${current.overdueContracts} hợp đồng quá hạn` : 'không có hợp đồng quá hạn'} />}
-        <Metric icon="phone" tone={openTickets ? 'warn' : 'ok'} label="Yêu cầu hỗ trợ" value={String(openTickets)}
+        <Metric icon="phone" tone={openTickets ? 'warn' : 'ok'} label="Yêu cầu hỗ trợ" value={String(openTickets)} to={admin ? '/admin/support' : undefined}
           note={openTickets ? `${openTickets} yêu cầu chờ xử lý` : 'Không có yêu cầu nào chờ xử lý'} />
       </div>
 

@@ -30,7 +30,7 @@ export default function StaffBilling() {
   const location = useLocation()
   const initialQ = new URLSearchParams(location.search).get('q') ?? ''
   const [q, setQ] = useState(initialQ)
-  const [status, setStatus] = useState<'due' | 'Unpaid' | 'Overdue' | 'Paid' | 'Cancelled' | 'all'>(() => (initialQ ? 'all' : 'due'))
+  const [status, setStatus] = useState<'due' | 'Unpaid' | 'Overdue' | 'Paid' | 'Cancelled' | 'paidToday' | 'all'>(() => (initialQ ? 'all' : 'due'))
   const [type, setType] = useState('all')
   const [page, setPage] = useState(1)
   const [error, setError] = useState('')
@@ -65,7 +65,8 @@ export default function StaffBilling() {
   }, [contracts, reservations])
 
   const shown = useMemo(() => invoices
-    .filter((i) => status === 'all' ? true : status === 'due' ? i.status === 'Unpaid' || i.status === 'Overdue' : i.status === status)
+    .filter((i) => status === 'all' ? true : status === 'due' ? i.status === 'Unpaid' || i.status === 'Overdue'
+      : status === 'paidToday' ? i.payments.some((p) => p.status === 'Success' && p.paymentDate.slice(0, 10) === localToday()) : i.status === status)
     .filter((i) => type === 'all' || i.invoiceType === type)
     .filter((i) => {
       const s = q.trim().toLowerCase()
@@ -79,6 +80,14 @@ export default function StaffBilling() {
 
   const due = invoices.filter((i) => i.status === 'Unpaid' || i.status === 'Overdue')
   const today = localToday()
+  const pick = (s: typeof status, t: string) => {
+    const same = status === s && type === t
+    setStatus(same && s !== 'due' ? 'due' : s)
+    setType(same ? 'all' : t)
+    setQ('')
+    setPage(1)
+    setTimeout(() => document.getElementById('invoice-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30)
+  }
   const paidToday = invoices.flatMap((i) => i.payments).filter((p) => p.status === 'Success' && p.paymentDate.slice(0, 10) === today)
 
   return (
@@ -92,10 +101,15 @@ export default function StaffBilling() {
       </div>
 
       <div className="stat-grid">
-        <Metric icon="wallet" tone="warn" label="Chờ thanh toán" value={String(due.length)} note={`${fmtMoney(due.reduce((s, i) => s + i.totalAmount, 0))} cần thu`} />
-        <Metric icon="alert" tone="bad" label="Quá hạn thanh toán" value={String(invoices.filter((i) => i.status === 'Overdue').length)} note="cần nhắc khách" />
-        <Metric icon="check" tone="ok" label="Đã thu hôm nay" value={String(paidToday.length)} note={fmtMoney(paidToday.reduce((s, p) => s + p.amountPaid, 0))} />
-        <Metric icon="refresh" tone="info" label="Hóa đơn gia hạn chờ thu" value={String(due.filter((i) => i.invoiceType === 'RENEWAL').length)} note="thu xong là tự gia hạn" />
+        {/* Each card filters the list below to what it counts; clicking the active card again shows everything due. */}
+        <Metric icon="wallet" tone="warn" label="Chờ thanh toán" value={String(due.length)} note={`${fmtMoney(due.reduce((s, i) => s + i.totalAmount, 0))} cần thu`}
+          active={status === 'due' && type === 'all'} onClick={() => pick('due', 'all')} />
+        <Metric icon="alert" tone="bad" label="Quá hạn thanh toán" value={String(invoices.filter((i) => i.status === 'Overdue').length)} note="cần nhắc khách"
+          active={status === 'Overdue' && type === 'all'} onClick={() => pick('Overdue', 'all')} />
+        <Metric icon="check" tone="ok" label="Đã thu hôm nay" value={String(paidToday.length)} note={fmtMoney(paidToday.reduce((s, p) => s + p.amountPaid, 0))}
+          active={status === 'paidToday'} onClick={() => pick('paidToday', 'all')} />
+        <Metric icon="refresh" tone="info" label="Hóa đơn gia hạn chờ thu" value={String(due.filter((i) => i.invoiceType === 'RENEWAL').length)} note="thu xong là tự gia hạn"
+          active={status === 'due' && type === 'RENEWAL'} onClick={() => pick('due', 'RENEWAL')} />
       </div>
 
       <div className="panel filter-bar">
@@ -110,6 +124,7 @@ export default function StaffBilling() {
             <option value="Unpaid">Chưa thanh toán</option>
             <option value="Overdue">Quá hạn</option>
             <option value="Paid">Đã thanh toán</option>
+            <option value="paidToday">Đã thu hôm nay</option>
             <option value="Cancelled">Đã hủy</option>
           </Select>
           <Select value={type} onChange={(e) => { setType(e.target.value); setPage(1) }}>
@@ -125,7 +140,7 @@ export default function StaffBilling() {
 
       {facilityId && <RefundDuePanel facilityId={facilityId} onDone={async (msg) => { setNotice(msg); await load() }} />}
 
-      <section className="panel">
+      <section className="panel" id="invoice-list">
         <div>
           <h2 className="panel-title">Danh sách hóa đơn</h2>
           <p className="muted">Khách tự thanh toán bằng chuyển khoản (VNPay); hóa đơn tự chuyển "Đã thanh toán" khi tiền về.</p>
@@ -183,13 +198,13 @@ export default function StaffBilling() {
   )
 }
 
-function Metric({ icon, tone, label, value, note }: { icon: string; tone: string; label: string; value: string; note: string }) {
+function Metric({ icon, tone, label, value, note, active, onClick }: { icon: string; tone: string; label: string; value: string; note: string; active: boolean; onClick: () => void }) {
   return (
-    <div className="stat-card">
+    <button type="button" className={`stat-card stat-filter ${active ? 'active' : ''}`} onClick={onClick} aria-pressed={active}>
       <div className="row between"><span className="muted">{label}</span><span className={`stat-icon ${tone}`}><Icon name={icon} size={17} /></span></div>
       <b className="stat-value">{value}</b>
       <small className={`stat-note ${tone}`}>{note}</small>
-    </div>
+    </button>
   )
 }
 

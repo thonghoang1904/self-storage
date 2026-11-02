@@ -155,12 +155,14 @@ function WorkColumn({ icon, title, count, link, linkLabel, children }: { icon: s
   )
 }
 
-export function Metric({ icon, tone, label, value, note }: { icon: string; tone: string; label: string; value: string; note: string }) {
-  return (
-    <div className="stat-card">
+/** Number card; with `to` the whole card opens that page (overview cards lead to the list they summarise). */
+export function Metric({ icon, tone, label, value, note, to }: { icon: string; tone: string; label: string; value: string; note: string; to?: string }) {
+  const body = (
+    <>
       <div className="row between"><span className="muted">{label}</span><span className={`stat-icon ${tone}`}><Icon name={icon} size={17} /></span></div>
       <b className="stat-value">{value}</b>
       <small className={`stat-note ${tone}`}>{note}</small>
-    </div>
+    </>
   )
+  return to ? <Link to={to} className="stat-card stat-filter stat-link">{body}</Link> : <div className="stat-card">{body}</div>
 }
