@@ -227,7 +227,7 @@ export default function ContractDetail() {
               <div className="row between wrap">
                 <div>
                   <h3 className="panel-title">Lịch Thanh Toán & Hóa Đơn</h3>
-                  <p className="muted">Thanh toán trực tuyến qua VNPay hoặc tại quầy cơ sở.</p>
+                  <p className="muted">Thanh toán trực tuyến qua VNPay.</p>
                 </div>
                 <Link to="/invoices" className="btn soft sm"><Icon name="card" size={14} /> Quản lý thanh toán</Link>
               </div>
@@ -317,7 +317,7 @@ function RenewalPanel({ contract: c, renewals, onChanged }: { contract: Detail; 
     setNotice('')
     try {
       await api(`/api/contracts/${c.contractId}/renewals`, { body: { extensionMonths: months } })
-      setNotice('Đã gửi yêu cầu gia hạn và tạo hóa đơn. Thanh toán ở mục Hóa Đơn hoặc tại quầy để hoàn tất.')
+      setNotice('Đã gửi yêu cầu gia hạn và tạo hóa đơn. Thanh toán ở mục Thanh Toán để hoàn tất.')
       await onChanged()
     } catch (e) {
       setError((e as Error).message)
@@ -333,7 +333,7 @@ function RenewalPanel({ contract: c, renewals, onChanged }: { contract: Detail; 
           <span className="notice-icon warn"><Icon name="wallet" size={16} /></span>
           <div>
             <b>Yêu cầu gia hạn {pending.extensionMonths} tháng đang chờ thanh toán</b>
-            <p>Phí {fmtMoney(pending.renewalFee)} — thanh toán ở <Link to="/invoices" className="link">Hóa Đơn</Link> hoặc tại quầy trước 20:00 ngày {fmtDate(pending.oldEndDate)}. Sau khi thanh toán, ngày hết hạn đổi thành <b>{fmtDate(pending.newEndDate)}</b>.</p>
+            <p>Phí {fmtMoney(pending.renewalFee)} — thanh toán ở mục <Link to="/invoices" className="link">Thanh Toán</Link> trước 20:00 ngày {fmtDate(pending.oldEndDate)}. Sau khi thanh toán, ngày hết hạn đổi thành <b>{fmtDate(pending.newEndDate)}</b>.</p>
           </div>
         </div>
       ) : windowOpen ? (

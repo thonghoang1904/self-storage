@@ -105,7 +105,7 @@ export default function Invoices() {
       <div className="container">
         <span className="eyebrow dark"><i />Tài khoản khách hàng</span>
         <h1>Thanh Toán</h1>
-        <p>Theo dõi tiền cọc, tiền thuê hằng tháng, gia hạn và phụ phí; thanh toán trực tuyến qua VNPay hoặc tại quầy.</p>
+        <p>Theo dõi tiền cọc, tiền thuê hằng tháng, gia hạn và phụ phí; thanh toán trực tuyến qua VNPay.</p>
       </div>
     </section>
     <div className="container page-body">

@@ -461,8 +461,9 @@ function paymentRows() {
 /** Invoices derived from deposits and renewals (the demo keeps no separate invoice table). */
 function allInvoices(): { customerId: number; facilityId: number; invoice: Invoice }[] {
   const payments = (id: number, amount: number, p: Paid | undefined, fallbackAt: string, note: string) => [{
-    paymentId: id, paymentMethod: p?.method ?? 'Cash', transactionCode: p?.code ?? null, amountPaid: amount,
-    paymentDate: p?.at ?? fallbackAt, status: 'Success', paymentNotes: p && p.staffId === null ? `Thanh toán trực tuyến ${p.method} đã được xác nhận.` : note, receivedByStaff: p && p.staffId === null ? null : userById(p?.staffId ?? 3).fullName,
+    // Customers pay online only: seeded payments without a recorded method are VNPay, confirmed by the gateway.
+    paymentId: id, paymentMethod: p?.method ?? 'VNPay', transactionCode: p?.code ?? null, amountPaid: amount,
+    paymentDate: p?.at ?? fallbackAt, status: 'Success', paymentNotes: !p || p.staffId === null ? `Thanh toán trực tuyến ${p?.method ?? 'VNPay'} đã được xác nhận.` : note, receivedByStaff: !p || p.staffId === null ? null : userById(p.staffId ?? 3).fullName,
   }]
   const now = localIso(new Date())
   const fromRsv = db.reservations.map((r) => {

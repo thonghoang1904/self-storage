@@ -100,7 +100,7 @@ export default function ContractRenew() {
                   ['calendar', 'Thời gian gửi yêu cầu', `Gia hạn bất cứ lúc nào khi hợp đồng còn hiệu lực, chậm nhất 20:00 ngày ${fmtDate(c.endDate)}. Mỗi lần gia hạn từ 1 đến 12 tháng.`],
                   ['refresh', 'Thời hạn mới', 'Thời hạn mới cộng tiếp từ ngày hết hạn hiện tại, nên gia hạn sớm không mất ngày nào.'],
                   ['wallet', 'Phí gia hạn', `Phí = số tháng × ${fmtMoney(c.monthlyRentFee)} (giá thuê hiện tại của hợp đồng). Tiền cọc ${fmtMoney(c.depositPaid)} giữ nguyên, không phải đóng thêm.`],
-                  ['file', 'Hóa đơn & hiệu lực', 'Gửi yêu cầu xong, hệ thống tạo hóa đơn gia hạn. Ngày hết hạn mới chỉ có hiệu lực sau khi hóa đơn được thanh toán (VNPay hoặc tại quầy).'],
+                  ['file', 'Hóa đơn & hiệu lực', 'Gửi yêu cầu xong, hệ thống tạo hóa đơn gia hạn. Ngày hết hạn mới chỉ có hiệu lực sau khi hóa đơn được thanh toán qua VNPay.'],
                   ['alert', 'Chưa thanh toán kịp', `Nếu chưa thanh toán trước 20:00 ngày ${fmtDate(c.endDate)}, yêu cầu gia hạn hết hiệu lực và hợp đồng giữ ngày hết hạn cũ; quá hạn trả kho sẽ tính phí lưu kho theo ngày.`],
                   ['shield', 'Một yêu cầu mỗi lần', 'Mỗi hợp đồng chỉ có một yêu cầu gia hạn đang chờ thanh toán. Hợp đồng đang quá hạn hoặc kho bị khóa cần xử lý trước khi gia hạn.'],
                 ].map(([icon, title, text]) => (
@@ -115,7 +115,7 @@ export default function ContractRenew() {
                 <input type="checkbox" checked={agree} disabled={!!pending || !open} onChange={(e) => { setAgree(e.target.checked); setMsg(null) }} />
                 <span>Tôi đã đọc chính sách gia hạn và đồng ý thanh toán phí gia hạn theo báo giá.</span>
               </label>
-              <small className="muted">Sau khi gửi, hệ thống tạo hóa đơn gia hạn; thanh toán qua VNPay hoặc tại quầy.</small>
+              <small className="muted">Sau khi gửi, hệ thống tạo hóa đơn gia hạn; thanh toán qua VNPay.</small>
             </section>
 
             {renewals.length > 0 && (

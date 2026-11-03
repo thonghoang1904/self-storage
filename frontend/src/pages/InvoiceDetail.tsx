@@ -212,7 +212,7 @@ export default function InvoiceDetail() {
               </dl>
               {payable && <>
                 <PayButtons invoiceId={invoice.invoiceId} startingInvoiceId={startingInvoiceId} startCheckout={(i) => void startCheckout(i)} />
-                <small className="muted">Hoặc thanh toán tiền mặt / chuyển khoản tại quầy{facilityName ? ` cơ sở ${facilityName}` : ''}, đọc mã <b className="code">{invoice.invoiceNumber}</b> cho nhân viên.</small>
+                <small className="muted">Hóa đơn tự chuyển sang Đã thanh toán sau khi VNPay xác nhận.</small>
               </>}
             </section>
 

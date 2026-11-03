@@ -20,7 +20,7 @@ function sections(c: ContractDetail, hours?: string): Section[] {
     {
       id: 'pay', icon: 'wallet', title: 'Thanh toán & tiền cọc',
       body: [
-        `Tiền thuê ${fmtMoney(c.monthlyRentFee)}/tháng, hóa đơn phát hành theo từng kỳ một tháng kể từ ngày bắt đầu ${fmtDate(c.startDate)}; thanh toán trực tuyến qua VNPay hoặc tại quầy.`,
+        `Tiền thuê ${fmtMoney(c.monthlyRentFee)}/tháng, hóa đơn phát hành theo từng kỳ một tháng kể từ ngày bắt đầu ${fmtDate(c.startDate)}; thanh toán trực tuyến qua VNPay.`,
         `Tiền cọc ${fmtMoney(c.depositPaid)} được giữ suốt thời hạn hợp đồng và hoàn lại khi trả kho, sau khi đối soát phí phát sinh.`,
       ],
     },
