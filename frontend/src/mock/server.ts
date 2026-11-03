@@ -180,7 +180,7 @@ function seed(): Db {
       { updateId: 4, requestId: 3, updatedByUserId: 4, actionMessage: 'Khách hàng đã gửi yêu cầu hỗ trợ', previousStatus: null, newStatus: 'Open', createdAt: localIso(addDays(atToday(10, 0), -5)) },
       { updateId: 5, requestId: 3, updatedByUserId: 3, actionMessage: 'Đã gửi hóa đơn qua email của bạn.', previousStatus: 'Open', newStatus: 'Resolved', createdAt: localIso(addDays(atToday(15, 0), -4)) },
     ],
-    overdues: [{ overdueId: 1, contractId: 4, daysOverdue: 2, accumulatedLateFee: 200000, lockAppliedAt: localIso(addDays(atToday(20, 0), -2)), resolvedAt: null }],
+    overdues: [{ overdueId: 1, contractId: 4, daysOverdue: 2, accumulatedLateFee: 160000, lockAppliedAt: localIso(addDays(atToday(20, 0), -2)), resolvedAt: null }],
   }
 }
 

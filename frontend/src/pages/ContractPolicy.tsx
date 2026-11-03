@@ -3,7 +3,7 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { Icon, splitTypeName, StatusBadge } from '../components/ui'
 import { ContractUnitArt } from '../components/unitPhoto'
-import { ExtraChargeFees, LATE_FEE_PER_DAY, type ContractDetail, type Facility, type Renewal, type StorageUnit } from '../types'
+import { ExtraChargeFees, type ContractDetail, type Facility, type Renewal, type StorageUnit } from '../types'
 import { TERMS_VERSION, termsHref } from './Terms'
 
 /**
@@ -35,7 +35,7 @@ function sections(c: ContractDetail, hours?: string): Section[] {
       id: 'return', icon: 'key', title: 'Trả kho, quá hạn & hoàn cọc',
       body: [
         `Trả kho trước 20:00 ngày ${fmtDate(c.endDate)}. Nhân viên kiểm tra kho cùng khách, đối soát phí và hoàn phần cọc còn lại.`,
-        `Quá 24 giờ kể từ 20:00 ngày hết hạn, kho bị khóa và tính phí lưu kho quá hạn ${fmtMoney(LATE_FEE_PER_DAY)}/ngày theo bảng phí hiện hành, cấn trừ vào tiền cọc; phần vượt cọc lập thành hóa đơn.`,
+        `Quá 24 giờ kể từ 20:00 ngày hết hạn, kho bị khóa và tính phí mỗi ngày bằng tiền thuê tháng / 30 (${fmtMoney(Math.round(c.monthlyRentFee / 30))}/ngày), cấn trừ vào tiền cọc; phần vượt cọc lập thành hóa đơn.`,
       ],
     },
     {
@@ -146,7 +146,7 @@ export default function ContractPolicy() {
           <div className="cd-tile"><small>Tiền thuê</small><b>{fmtMoney(c.monthlyRentFee)}<span>/tháng</span></b><small className="muted">Hóa đơn theo từng tháng</small></div>
           <div className="cd-tile"><small>Tiền cọc</small><b>{fmtMoney(c.depositPaid)}</b><small className="muted">Hoàn lại khi trả kho</small></div>
           <div className="cd-tile"><small>Hết hạn</small><b>{fmtDate(c.endDate)}</b><small className="muted">Trả kho hoặc gia hạn trước 20:00</small></div>
-          <div className="cd-tile"><small>Phí quá hạn</small><b>{fmtMoney(LATE_FEE_PER_DAY)}<span>/ngày</span></b><small className="muted">Theo bảng phí hiện hành</small></div>
+          <div className="cd-tile"><small>Phí quá hạn</small><b>{fmtMoney(Math.round(c.monthlyRentFee / 30))}<span>/ngày</span></b><small className="muted">Tiền thuê tháng / 30</small></div>
         </div>
 
         {pending && (
@@ -173,7 +173,7 @@ export default function ContractPolicy() {
                     {ExtraChargeFees.filter((f) => !f.perDay).map((f) => (
                       <div key={f.feeTypeId}><span>{f.feeName}</span><b>{fmtMoney(f.defaultAmount)}</b></div>
                     ))}
-                    <div><span>Phí lưu kho quá hạn</span><b>{fmtMoney(LATE_FEE_PER_DAY)} / ngày</b></div>
+                    <div><span>Phí lưu kho quá hạn (tiền thuê / 30)</span><b>{fmtMoney(Math.round(c.monthlyRentFee / 30))} / ngày</b></div>
                     <small className="muted">Chỉ thu khi có sự việc thực tế và được nhân viên lập hóa đơn.</small>
                   </div>
                 ) : (

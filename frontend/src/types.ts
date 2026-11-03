@@ -245,10 +245,6 @@ export const ExtraChargeFees = [
   { feeTypeId: 4, feeCode: 'CLEANING_FEE', feeName: 'Phí vệ sinh sau trả kho', defaultAmount: 200000, perDay: false },
   { feeTypeId: 5, feeCode: 'LOCK_REPLACE_FEE', feeName: 'Phí thay mới ổ khóa thông minh', defaultAmount: 500000, perDay: false },
 ]
-/** Daily overdue storage fee (LATE_FEE_DAILY). The backend charges this flat amount per day for every unit size
- *  (OverdueService, DailyRate); customers cannot read the fee table, so pages show the seeded default. */
-export const LATE_FEE_PER_DAY = ExtraChargeFees.find((f) => f.feeCode === 'LATE_FEE_DAILY')!.defaultAmount
-
 
 export interface Invoice {
   invoiceId: number

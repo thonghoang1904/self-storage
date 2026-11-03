@@ -5,7 +5,7 @@ import { useAuth } from '../auth'
 import { FormField } from '../components/form'
 import { Badge, Empty, Icon, StatusBadge, UnitArt, splitTypeName } from '../components/ui'
 import { photoVariant } from '../components/unitPhoto'
-import { LATE_FEE_PER_DAY, type AccessRecord, type ContractDetail as Detail, EarlyReturnQuote, EarlyReturnRequest, Facility, Invoice, Person, Renewal, StorageUnit, UnitType } from '../types'
+import type { AccessRecord, ContractDetail as Detail, EarlyReturnQuote, EarlyReturnRequest, Facility, Invoice, Person, Renewal, StorageUnit, UnitType } from '../types'
 import { textError } from '../validation'
 import { Modal } from '../components/Modal'
 import { AuthorizedPeople, History } from './MyUnits'
@@ -163,7 +163,7 @@ export default function ContractDetail() {
         {locked && (
           <section className="panel alert-panel">
             <h3 className="panel-title"><Icon name="lock" size={18} /> Kho đang bị khóa do quá hạn</h3>
-            <p className="muted">Kho bị khóa sau 24 giờ kể từ 20:00 ngày hết hạn. Phí lưu kho quá hạn tính {fmtMoney(LATE_FEE_PER_DAY)}/ngày và được cấn trừ vào tiền cọc. Vui lòng đến cơ sở để trả kho.</p>
+            <p className="muted">Kho bị khóa sau 24 giờ kể từ 20:00 ngày hết hạn. Phí lưu kho quá hạn tính mỗi ngày bằng phí tháng / 30 và được cấn trừ vào tiền cọc. Vui lòng đến cơ sở để trả kho.</p>
             <dl className="summary-lines">
               <div><dt>Phí quá hạn đã tính</dt><dd>{fmtMoney(c.accumulatedLateFee)}</dd></div>
               <div><dt>Cọc còn lại sau cấn trừ</dt><dd>{fmtMoney(c.depositBalance)}</dd></div>

@@ -4,7 +4,7 @@ import { localToday } from '../validation'
 import { api, fmtDate, fmtMoney } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
-import { LATE_FEE_PER_DAY, type Invoice, type OverdueSummary, type Renewal, type StaffContract } from '../types'
+import type { Invoice, OverdueSummary, Renewal, StaffContract } from '../types'
 import { Select } from '../components/Select'
 import { StatChip, scrollToList } from '../components/StatCard'
 import { ContractDialog } from './FacilityContracts'
@@ -262,7 +262,7 @@ export default function StaffContracts() {
       <div className="panel collection-note">
         <div>
           <b>Quy định thu phí quá hạn</b>
-          <p className="muted">Sau 24 giờ kể từ 20:00 ngày hết hạn, kho tự khóa và tính phí lưu kho quá hạn {fmtMoney(LATE_FEE_PER_DAY)}/ngày (theo bảng phí), cấn trừ vào tiền cọc. Phần vượt cọc lập hóa đơn khi trả kho.</p>
+          <p className="muted">Sau 24 giờ kể từ 20:00 ngày hết hạn, kho tự khóa và tính phí mỗi ngày = phí tháng / 30, cấn trừ vào tiền cọc. Phần vượt cọc lập hóa đơn khi trả kho.</p>
         </div>
         <Link to="/staff-return" className="btn outline"><Icon name="door" size={15} /> Mở kiểm tra trả kho</Link>
       </div>
