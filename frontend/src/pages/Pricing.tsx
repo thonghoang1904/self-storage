@@ -24,7 +24,7 @@ const FAQS = [
   },
   {
     q: 'Người khác có vào kho thay tôi được không?',
-    a: 'Được, bạn ủy quyền cho bất kỳ ai: người nhà, bạn bè, nhân viên hay bên vận chuyển. Thêm họ trong mục "Kho của tôi"; người đó vào kho bằng CCCD của chính họ, và bạn xem được lịch sử ra vào của từng người.',
+    a: 'Được. Bạn thêm bất kỳ ai làm người vào kho: người nhà, bạn bè, nhân viên hay bên vận chuyển. Thêm họ trong mục "Kho của tôi"; người đó vào kho bằng CCCD của chính họ, và bạn xem được lịch sử ra vào của từng người.',
   },
   {
     q: 'Thủ tục đặt và nhận kho diễn ra thế nào?',

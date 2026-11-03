@@ -65,7 +65,7 @@ export default function AccountSecurity() {
       <div className="container page-body">
         <div className="notice info-notice">
           <span className="notice-icon info"><Icon name="shield" size={16} /></span>
-          <div><b>Kho của bạn được bảo vệ bằng CCCD</b><p>Mỗi lượt vào kho, nhân viên cổng đối chiếu CCCD của chủ hợp đồng hoặc người được ủy quyền. Không dùng mã PIN hay OTP.</p></div>
+          <div><b>Kho của bạn được bảo vệ bằng CCCD</b><p>Mỗi lượt vào kho, nhân viên cổng đối chiếu CCCD của chủ hợp đồng hoặc người vào kho đã đăng ký. Không dùng mã PIN hay OTP.</p></div>
         </div>
 
         <section className="panel stack">

@@ -283,7 +283,7 @@ function RegistrationsPanel({ facilityId, regs, onReview }: { facilityId: number
               <div className="reg-time"><b>{hhmm(r.scheduledEntryAt)} – {hhmm(r.scheduledExitAt)}</b><small className="muted">{dmy(r.scheduledEntryAt)}</small></div>
               <span className="unit-code">{r.unitCode}</span>
               <div className="grow">
-                <b>{r.visitorName}</b> {r.authorizedPersonId != null && <span className="pill muted">Ủy quyền</span>}
+                <b>{r.visitorName}</b> {r.authorizedPersonId != null && <span className="pill muted">Người vào kho</span>}
                 <small className="muted block">HĐ {r.contractNumber} · {r.purpose}</small>
                 <button type="button" className="link-btn" aria-expanded={open} onClick={() => setOpenId(open ? null : r.visitRegistrationId)}>
                   <Icon name={open ? 'x' : 'eye'} size={13} /> {open ? 'Ẩn thông tin' : 'Xem thông tin người đăng ký'}
@@ -350,11 +350,11 @@ function RegistrationDetail({ facilityId, reg }: { facilityId: number; reg: Visi
           {visitor ? (
             <dl className="kv">
               <div><dt>Họ tên</dt><dd>{visitor.fullName}</dd></div>
-              <div><dt>Vai trò</dt><dd>{reg.authorizedPersonId == null ? 'Chủ hợp đồng' : `Người được ủy quyền${visitor.relationship ? ` · ${visitor.relationship}` : ''}`}</dd></div>
+              <div><dt>Vai trò</dt><dd>{reg.authorizedPersonId == null ? 'Chủ hợp đồng' : `Người vào kho${visitor.relationship ? ` · ${visitor.relationship}` : ''}`}</dd></div>
               <div><dt>Số CCCD</dt><dd className="code">{visitor.citizenId ?? '—'}</dd></div>
               <div><dt>Số điện thoại</dt><dd>{visitor.phoneNumber ? <a href={`tel:${visitor.phoneNumber}`} className="link">{visitor.phoneNumber}</a> : '—'}</dd></div>
             </dl>
-          ) : <p className="alert warn"><Icon name="alert" size={15} />{reg.visitorName} không còn trong danh sách ủy quyền của hợp đồng.</p>}
+          ) : <p className="alert warn"><Icon name="alert" size={15} />{reg.visitorName} không còn trong danh sách người vào kho của hợp đồng.</p>}
         </div>
         {reg.authorizedPersonId != null && (
           <div>
@@ -470,7 +470,7 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
           <div><dt>Chủ hợp đồng</dt><dd>{v.customer.fullName}</dd></div>
           <div><dt>Số điện thoại</dt><dd>{v.customer.phoneNumber ?? '—'}</dd></div>
           <div><dt>Trạng thái hợp đồng</dt><dd><StatusBadge status={v.contractStatus} /></dd></div>
-          <div><dt>Người được ủy quyền</dt><dd>{v.authorizedPersons.length || 'Không có'}</dd></div>
+          <div><dt>Người vào kho</dt><dd>{v.authorizedPersons.length || 'Không có'}</dd></div>
         </dl>
         <div className="assigned-unit">
           <span className="unit-code lg">{v.unitCode}</span>
@@ -505,7 +505,7 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
               <span className="radio" />
               <span className="grow">
                 <b>{p.fullName}</b>
-                <small>{p.relationship ?? 'Ủy quyền'} · CCCD {maskId(p.citizenId)}</small>
+                <small>{p.relationship ?? 'Người vào kho'} · CCCD {maskId(p.citizenId)}</small>
               </span>
               {v.peopleInside.includes(p.fullName) && <span className="badge info">Đang trong kho</span>}
             </button>

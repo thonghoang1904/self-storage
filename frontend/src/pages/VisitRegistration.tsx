@@ -355,7 +355,7 @@ export default function VisitRegistrationPage({ contractId, picker }: { contract
                   <p className="hint"><Icon name="package" size={15} /> Mang đồ vào kho? <Link to={`/my-units/${c.contractId}/move-in`} className="link">Dùng Đăng ký đưa đồ vào kho</Link> để khai báo danh sách đồ, phương tiện và người phụ.</p>
                   {purpose === 'Khác' && (
                     <label className={`field ${fieldErr.purpose ? 'has-error' : ''}`}><span>Ghi rõ mục đích *</span>
-                      <input id="visit-purpose" value={otherPurpose} maxLength={255} onChange={(e) => { setOtherPurpose(e.target.value); clearErr('purpose') }} placeholder="vd: Bàn giao chìa khóa cho người được ủy quyền" required aria-invalid={fieldErr.purpose ? true : undefined} />
+                      <input id="visit-purpose" value={otherPurpose} maxLength={255} onChange={(e) => { setOtherPurpose(e.target.value); clearErr('purpose') }} placeholder="vd: Bàn giao đồ cho người vào kho khác" required aria-invalid={fieldErr.purpose ? true : undefined} />
                       <FieldNote text={fieldErr.purpose} />
                     </label>
                   )}
