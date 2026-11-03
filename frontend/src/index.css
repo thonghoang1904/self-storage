@@ -1481,3 +1481,5 @@ a.stat-link { text-decoration: none; color: inherit; }
 .summary-lines.later dd { display: flex; flex-direction: column; align-items: flex-end; }
 .summary-lines.later dd small { font-size: 12px; font-weight: 500; color: var(--muted); }
 .summary-lines .later-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.summary-lines .later-total { padding-top: 10px; border-top: 1px dashed var(--border); } .summary-lines .later-total dt { color: var(--text-strong); font-weight: 700; } .summary-lines .later-total dd { font-size: 16px; font-weight: 800; }
+.summary-lines .later-total dt { display: flex; flex-direction: column; } .summary-lines .later-total dt small { font-size: 12px; font-weight: 500; color: var(--muted); }

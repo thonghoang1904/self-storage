@@ -221,6 +221,7 @@ export default function Rent() {
               <dt className="later-title">Các kỳ sau</dt>
               <div><dt>Tiền thuê tháng đầu</dt><dd>{selected ? fmtMoney(monthly) : '—'}<small>trả ngày nhận kho {fmtDate(startDate)}</small></dd></div>
               {months > 1 && <div><dt>{months - 1} tháng tiếp theo</dt><dd>{selected ? `${fmtMoney(monthly)}/tháng` : '—'}<small>trả đầu mỗi kỳ</small></dd></div>}
+              <div className="later-total"><dt>Tổng dự kiến<small>gói {months} tháng</small></dt><dd>{selected ? fmtMoney(monthly * months) : '—'}<small>chưa gồm cọc (được hoàn)</small></dd></div>
             </dl>
             {error && !signing && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
             <button className="btn primary block lg" disabled={!selected || busy || signing} onClick={openSigning}>
