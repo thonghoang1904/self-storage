@@ -67,7 +67,7 @@ export default function Rent() {
   const facility = facilities.find((f) => f.facilityId === facilityId)
   const selected = availability.find((a) => a.unitTypeId === selectedId)
   const selectedType = types.find((t) => t.unitTypeId === selectedId)
-  const total = selected ? selected.baseMonthlyRate * months : 0
+  const monthly = selected?.baseMonthlyRate ?? 0
 
   const signError = !agreed ? 'Vui lòng đọc và đồng ý với điều khoản hợp đồng' : ''
 
@@ -209,12 +209,19 @@ export default function Rent() {
             </div>
 
             <dl className="summary-lines">
-              <div><dt>Đơn giá</dt><dd>{selected ? `${fmtMoney(selected.baseMonthlyRate)}/tháng` : '—'}</dd></div>
-              <div><dt>Thời gian thuê</dt><dd>{months} tháng</dd></div>
-              <div><dt>Bắt đầu từ</dt><dd>{fmtDate(startDate)}</dd></div>
-              <div><dt>Tiền cọc (1 tháng)</dt><dd>{selected ? fmtMoney(selected.baseMonthlyRate) : '—'}</dd></div>
+              <div><dt>Đơn giá</dt><dd>{selected ? `${fmtMoney(monthly)}/tháng` : '—'}</dd></div>
+              <div><dt>Thời gian thuê</dt><dd>{months} tháng · từ {fmtDate(startDate)}</dd></div>
             </dl>
-            <div className="summary-total"><span>Tạm Tính</span><b>{fmtMoney(total)}</b></div>
+            {/* What is paid now (only the deposit) apart from the rent invoices that come later, one per month. */}
+            <div className="summary-total pay-now">
+              <span>Thanh toán hôm nay<small>Tiền cọc, hoàn lại khi trả kho</small></span>
+              <b>{selected ? fmtMoney(monthly) : '—'}</b>
+            </div>
+            <dl className="summary-lines later">
+              <dt className="later-title">Các kỳ sau</dt>
+              <div><dt>Tiền thuê tháng đầu</dt><dd>{selected ? fmtMoney(monthly) : '—'}<small>trả ngày nhận kho {fmtDate(startDate)}</small></dd></div>
+              {months > 1 && <div><dt>{months - 1} tháng tiếp theo</dt><dd>{selected ? `${fmtMoney(monthly)}/tháng` : '—'}<small>trả đầu mỗi kỳ</small></dd></div>}
+            </dl>
             {error && !signing && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
             <button className="btn primary block lg" disabled={!selected || busy || signing} onClick={openSigning}>
               {signing ? 'Xem điều khoản bên dưới ↓' : 'Tiếp Tục: Điều Khoản Hợp Đồng'}

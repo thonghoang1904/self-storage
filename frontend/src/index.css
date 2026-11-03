@@ -1473,3 +1473,11 @@ a.stat-link { text-decoration: none; color: inherit; }
 .policy-fee-list > div b { white-space: nowrap; color: var(--text-strong); }
 .policy-fee-list small { margin-top: 10px; }
 .policy-sep { margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--border); }
+
+/* ---------- Thuê kho: thanh toán hôm nay / các kỳ sau ---------- */
+.summary-total.pay-now { align-items: center; }
+.summary-total.pay-now span { display: flex; flex-direction: column; gap: 2px; }
+.summary-total.pay-now small { font-family: var(--font-body); font-size: 12px; font-weight: 500; color: var(--muted); }
+.summary-lines.later dd { display: flex; flex-direction: column; align-items: flex-end; }
+.summary-lines.later dd small { font-size: 12px; font-weight: 500; color: var(--muted); }
+.summary-lines .later-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
