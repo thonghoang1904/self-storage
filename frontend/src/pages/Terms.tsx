@@ -1,5 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { fmtMoney } from '../api'
 import { useAuth } from '../auth'
+import { LATE_FEE_PER_DAY } from '../types'
 import { PageHero } from '../components/layout'
 import { Icon } from '../components/ui'
 
@@ -59,7 +61,7 @@ export const TERMS: { title: string; icon: string; items: string[] }[] = [
     items: [
       'Có thể gia hạn sớm bất cứ lúc nào khi hợp đồng còn hiệu lực (chậm nhất 20:00 ngày hết hạn); thời hạn mới cộng tiếp từ ngày hết hạn hiện tại và có hiệu lực sau khi thanh toán phí gia hạn.',
       'Trả kho trước 20:00 ngày hết hạn. Nhân viên kiểm tra kho, đối soát phí và hoàn lại phần cọc còn lại.',
-      'Quá 24 giờ kể từ 20:00 ngày hết hạn, kho bị khóa và tính phí mỗi ngày bằng phí tháng / 30, cấn trừ vào tiền cọc. Phần vượt cọc lập thành hóa đơn.',
+      `Quá 24 giờ kể từ 20:00 ngày hết hạn, kho bị khóa và tính phí lưu kho quá hạn ${fmtMoney(LATE_FEE_PER_DAY)}/ngày theo bảng phí hiện hành, cấn trừ vào tiền cọc. Phần vượt cọc lập thành hóa đơn.`,
     ],
   },
   {

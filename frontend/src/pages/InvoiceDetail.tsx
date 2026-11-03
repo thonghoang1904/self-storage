@@ -5,7 +5,7 @@ import { useAuth } from '../auth'
 import { AppointmentPicker } from '../components/appointment'
 import { INVOICE_TYPE, moneyInWords, PAY_METHOD, PAY_STATUS, PayButtons, TYPE_ICON, useCheckout } from '../components/checkout'
 import { Icon, StatusBadge } from '../components/ui'
-import type { ContractDetail, Facility, Invoice, Reservation } from '../types'
+import { LATE_FEE_PER_DAY, type ContractDetail, type Facility, type Invoice, type Reservation } from '../types'
 import { termsHref } from './Terms'
 
 /**
@@ -25,10 +25,10 @@ const NOTES: Record<string, string[]> = {
   ],
   MONTHLY_RENT: [
     'Tiền thuê thanh toán trước cho từng kỳ một tháng.',
-    'Quá hạn, kho có thể bị khóa và tính phí mỗi ngày bằng phí tháng / 30, cấn trừ vào tiền cọc.',
+    `Quá hạn, kho có thể bị khóa và tính phí lưu kho quá hạn ${fmtMoney(LATE_FEE_PER_DAY)}/ngày, cấn trừ vào tiền cọc.`,
   ],
   RENEWAL: ['Thời hạn hợp đồng được kéo dài sau khi hóa đơn gia hạn được thanh toán.'],
-  OVERDUE_FINE: ['Phí quá hạn là phần vượt quá tiền cọc khi trả kho trễ hạn (phí mỗi ngày = phí tháng / 30).'],
+  OVERDUE_FINE: [`Phí quá hạn là phần vượt quá tiền cọc khi trả kho trễ hạn (phí lưu kho quá hạn ${fmtMoney(LATE_FEE_PER_DAY)}/ngày).`],
   EXTRA_CHARGE: ['Phụ phí theo bảng phí hiện hành của cơ sở (mất chìa khóa, thẻ từ, vệ sinh, thay ổ khóa…).'],
 }
 

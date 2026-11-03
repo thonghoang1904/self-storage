@@ -4,7 +4,7 @@ import { api, fmtMoney } from '../api'
 import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
 import { Icon, splitTypeName, UnitArt } from '../components/ui'
-import { homeFor, type Availability, type Facility, type UnitType } from '../types'
+import { homeFor, LATE_FEE_PER_DAY, type Availability, type Facility, type UnitType } from '../types'
 
 /**
  * Public pricing page, Figma "storage-pricing": every unit type with its real price (GET /api/unit-types),
@@ -32,7 +32,7 @@ const FAQS = [
   },
   {
     q: 'Nếu trả kho trễ hạn thì sao?',
-    a: 'Bạn trả kho từ 20:00 ngày hết hạn. Nếu quá 24 giờ chưa trả hoặc chưa gia hạn, kho bị khóa và tính phí mỗi ngày bằng 1/30 tiền thuê tháng, trừ dần vào tiền cọc.',
+    a: `Bạn trả kho trước 20:00 ngày hết hạn. Nếu quá 24 giờ chưa trả hoặc chưa gia hạn, kho bị khóa và tính phí lưu kho quá hạn ${fmtMoney(LATE_FEE_PER_DAY)}/ngày theo bảng phí hiện hành, trừ dần vào tiền cọc.`,
   },
 ]
 
