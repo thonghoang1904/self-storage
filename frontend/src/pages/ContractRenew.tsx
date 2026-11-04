@@ -67,6 +67,11 @@ export default function ContractRenew() {
           <li className="later"><span>3</span>Gia hạn có hiệu lực</li>
         </ol>
 
+        {pending && (
+          <p className="alert warn"><Icon name="clock" size={16} />
+            <span>Hợp đồng đang có yêu cầu gia hạn <b>{pending.extensionMonths} tháng</b> (gửi {fmtTime(pending.requestedAt)}) chờ thanh toán {fmtMoney(pending.renewalFee)}, nên chưa gửi được yêu cầu mới.
+              Thanh toán trước 20:00 ngày {fmtDate(pending.oldEndDate)} để hoàn tất; muốn đổi số tháng, vui lòng liên hệ cơ sở để hủy yêu cầu này.</span></p>
+        )}
         {msg && <p className={`alert ${msg.tone}`}><Icon name={msg.tone === 'ok' ? 'check' : 'alert'} size={16} />{msg.text}</p>}
 
         <div className="policy-layout">
@@ -76,7 +81,7 @@ export default function ContractRenew() {
               <div className="row between"><b>Số tháng gia hạn</b><span className="badge info">1 – 12 tháng</span></div>
               <div className="month-grid" role="radiogroup" aria-label="Số tháng gia hạn">
                 {MONTHS.map((m) => (
-                  <button key={m} type="button" role="radio" aria-checked={months === m} className={months === m ? 'active' : ''} disabled={!!pending || !open} onClick={() => setMonths(m)}>{m}</button>
+                  <button key={m} type="button" role="radio" aria-checked={(pending ? pending.extensionMonths : months) === m} className={(pending ? pending.extensionMonths : months) === m ? 'active' : ''} disabled={!!pending || !open} onClick={() => setMonths(m)}>{m}</button>
                 ))}
               </div>
               <div className="term-compare">
@@ -143,7 +148,6 @@ export default function ContractRenew() {
               <div className="quote-total">
                 <small>Tổng phí gia hạn</small>
                 <b>{fmtMoney(pending ? pending.renewalFee : fee)}</b>
-                <small>{pending ? pending.extensionMonths : months} × {fmtMoney(c.monthlyRentFee)} · tiền cọc giữ nguyên {fmtMoney(c.depositPaid)}</small>
               </div>
               {pending ? (
                 <Link to={pending.invoiceId ? `/invoices/${pending.invoiceId}` : '/invoices'} className="btn primary block"><Icon name="wallet" size={16} /> Thanh toán phí gia hạn</Link>

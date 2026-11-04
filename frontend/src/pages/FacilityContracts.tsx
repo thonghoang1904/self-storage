@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { api, billingLink, fmtDate, fmtMoney } from '../api'
 import { useStaffFacility } from '../components/layout'
@@ -185,7 +185,8 @@ const INVOICE_TYPE: Record<string, string> = {
  * GET /api/contracts/facilities/{id} for the customer and deposit, GET /api/invoices/facilities/{id} for the invoices.
  */
 export type ContractSummary = Pick<Contract, 'contractId' | 'contractNumber' | 'unitCode' | 'startDate' | 'endDate' | 'monthlyRentFee' | 'status'> & { facilityName?: string }
-export function ContractDialog({ contract: c, facilityId, onClose }: { contract: ContractSummary; facilityId: number; onClose: () => void }) {
+/** `actions`: what staff can do with this contract (renewal, return), shown under the details. */
+export function ContractDialog({ contract: c, facilityId, onClose, actions }: { contract: ContractSummary; facilityId: number; onClose: () => void; actions?: ReactNode }) {
   const [info, setInfo] = useState<StaffContract | null>(null)
   const [invoices, setInvoices] = useState<Invoice[] | null>(null)
   // The invoice opened from the list, shown in place of the contract (back arrow returns).
@@ -241,6 +242,7 @@ export function ContractDialog({ contract: c, facilityId, onClose }: { contract:
           </div>
         )}
       </div>
+      {actions && <div className="row wrap dialog-actions">{actions}</div>}
     </Modal>
   )
 }

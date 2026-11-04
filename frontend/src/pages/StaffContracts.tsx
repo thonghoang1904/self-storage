@@ -106,6 +106,27 @@ export default function StaffContracts() {
   const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE))
   const current = Math.min(page, pages)
   const pageRows = shown.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE)
+  // What staff can do with one contract; shown in the contract dialog (opened from the contract number).
+  const actionsFor = (r: Row) => {
+    const c = r.contract
+    const canReturn = (c.status === 'Active' || c.status === 'Overdue') && new Date(c.returnAppointment) <= new Date()
+    const items = [
+      r.renewal && (
+        <button key="reject" className="btn ghost sm danger-text" disabled={busyId !== null}
+          onClick={() => {
+            if (!window.confirm(`Từ chối yêu cầu gia hạn ${c.contractNumber}? Hóa đơn gia hạn chưa thanh toán sẽ bị hủy.`)) return
+            setViewing(null)
+            act(c.contractId, () => api(`/api/contracts/renewals/${r.renewal!.renewalId}/reject`, { method: 'POST' }), `Đã từ chối yêu cầu gia hạn ${c.contractNumber}.`)
+          }}>
+          Từ chối gia hạn
+        </button>
+      ),
+      canReturn && <Link key="return" to={`/staff-return?contract=${c.contractId}`} className="btn outline sm"><Icon name="door" size={14} /> Trả kho & hoàn cọc</Link>,
+      c.status === 'Terminated' && <Link key="refund" to={`/staff-return?contract=${c.contractId}`} className="btn ghost sm">Hoàn cọc</Link>,
+    ].filter(Boolean)
+    return items.length ? <>{items}</> : undefined
+  }
+  const viewingRow = viewing ? rows.find((x) => x.contract.contractId === viewing.contractId) : undefined
 
   const act = async (id: number, fn: () => Promise<unknown>, done: string) => {
     setError('')
@@ -141,7 +162,7 @@ export default function StaffContracts() {
 
   return (
     <div className="stack-xl">
-      {viewing && facilityId && <ContractDialog contract={viewing} facilityId={facilityId} onClose={() => setViewing(null)} />}
+      {viewing && facilityId && <ContractDialog contract={viewing} facilityId={facilityId} onClose={() => setViewing(null)} actions={viewingRow ? actionsFor(viewingRow) : undefined} />}
       <div className="page-top">
         <div>
           <h1>Gia Hạn & Quá Hạn</h1>
@@ -195,12 +216,11 @@ export default function StaffContracts() {
         </div>
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Mã HĐ</th><th>Khách hàng</th><th>Kho</th><th>Ngày hết hạn</th><th>Thời gian còn lại</th><th>Số tiền cần thu</th><th>Trạng thái</th><th className="right">Thao tác</th></tr></thead>
+            <thead><tr><th>Mã HĐ</th><th>Khách hàng</th><th>Kho</th><th>Ngày hết hạn</th><th>Thời gian còn lại</th><th>Số tiền cần thu</th><th>Trạng thái</th></tr></thead>
             <tbody>
               {pageRows.map((r) => {
                 const c = r.contract
                 const k = KIND_LABEL[r.kind]
-                const canReturn = (c.status === 'Active' || c.status === 'Overdue') && new Date(c.returnAppointment) <= new Date()
                 return (
                   <tr key={c.contractId}>
                     <td className="code"><button type="button" className="link-btn link" onClick={() => setViewing(c)} title="Xem hợp đồng và hóa đơn">{c.contractNumber}</button></td>
@@ -218,28 +238,6 @@ export default function StaffContracts() {
                       {r.overdue && <><br /><small className="muted">Phí quá hạn {fmtMoney(r.overdue.accumulatedLateFee)} · thu khi trả kho</small></>}
                       {r.overdue && <><br /><small className="muted">Cọc còn {fmtMoney(r.overdue.depositBalance)}</small></>}</td>
                     <td><span className={`badge ${k.tone}`}>{k.label}</span></td>
-                    <td className="right">
-                      <span className="row end">
-                        {r.renewal && (
-                          <>
-                            <button className="btn ghost sm danger-text" disabled={busyId !== null}
-                              onClick={() => {
-                                if (!window.confirm(`Từ chối yêu cầu gia hạn ${c.contractNumber}? Hóa đơn gia hạn chưa thanh toán sẽ bị hủy.`)) return
-                                act(c.contractId, () => api(`/api/contracts/renewals/${r.renewal!.renewalId}/reject`, { method: 'POST' }), `Đã từ chối yêu cầu gia hạn ${c.contractNumber}.`)
-                              }}>
-                              Từ chối
-                            </button>
-                          </>
-                        )}
-                        {/* Only when there is an open invoice to collect: the late fee itself is billed at return. */}
-                        {/* Opens the return page with this contract already picked, so staff never copy the code across. */}
-                        {canReturn && <Link to={`/staff-return?contract=${c.contractId}`} className="btn outline sm"><Icon name="door" size={14} /> Trả kho & hoàn cọc</Link>}
-                        {!canReturn && (c.status === 'Active' || c.status === 'Overdue') && (
-                          !r.renewal && !r.bills.length && <small className="muted">Chưa cần xử lý</small>
-                        )}
-                        {c.status === 'Terminated' && <Link to={`/staff-return?contract=${c.contractId}`} className="btn ghost sm">Hoàn cọc</Link>}
-                      </span>
-                    </td>
                   </tr>
                 )
               })}

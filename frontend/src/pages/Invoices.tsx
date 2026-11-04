@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { AppointmentPicker, pickupMissed } from '../components/appointment'
 import { PayButtons, TYPE_ICON, useCheckout } from '../components/checkout'
-import { Empty, Icon, StatusBadge } from '../components/ui'
+import { Empty, Icon, splitTypeName, StatusBadge } from '../components/ui'
 import type { Facility, Invoice, Reservation } from '../types'
 import { Select } from '../components/Select'
 import { StatCard, scrollToList } from '../components/StatCard'
@@ -84,6 +84,16 @@ export default function Invoices() {
     if (fresh) navigate(`/reservations/${fresh.reservationId}/pickup?paid=1`)
   }, [loading, reservations, returnedFromGateway, gatewayResult, navigate])
 
+  // Short, readable line under the invoice type: the deposit names the unit and facility instead of the backend's
+  // "Tiền cọc 100% giá thuê tháng cho đơn RSV-…".
+  const describe = (i: Invoice) => {
+    if (i.invoiceType === 'DEPOSIT') {
+      const r = reservations.find((x) => x.reservationId === i.reservationId)
+      if (r) return `Đặt cọc ${splitTypeName(r.unitTypeName).name} · ${r.facilityName} · đơn ${r.reservationCode}`
+      return i.details[0]?.description.replace(/^Tiền cọc [\d.,]+% giá thuê tháng cho đơn /, 'Đặt cọc đơn ') ?? 'Đặt cọc'
+    }
+    return i.details[0]?.description ?? ''
+  }
   const isNew = (i: Invoice) => !!newReservationId && i.reservationId === newReservationId && i.invoiceType === 'DEPOSIT'
   const isPayable = (i: Invoice) => i.status === 'Unpaid' || i.status === 'Overdue'
   const due = invoices.filter(isPayable)
@@ -160,7 +170,7 @@ export default function Invoices() {
                 <span className={`invoice-icon t-${invoice.invoiceType.toLowerCase()}`}><Icon name={TYPE_ICON[invoice.invoiceType] ?? 'file'} size={18} /></span>
                 <span className="invoice-main">
                   <b>{invoiceTypeName(invoice.invoiceType)}</b>
-                  <small className="muted">{invoice.invoiceNumber} · {period ?? invoice.details[0]?.description}</small>
+                  <small className="muted">{invoice.invoiceNumber} · {period ?? describe(invoice)}</small>
                 </span>
                 <span className="invoice-due">
                   <small className="muted">{payable ? 'Hạn thanh toán' : 'Ngày lập'}</small>

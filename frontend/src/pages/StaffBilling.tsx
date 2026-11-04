@@ -155,14 +155,13 @@ export default function StaffBilling() {
         </div>
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Số hóa đơn</th><th>Khách hàng</th><th>Nội dung</th><th>Hạn thanh toán</th><th>Số tiền</th><th>Trạng thái</th><th className="right">Thao tác</th></tr></thead>
+            <thead><tr><th>Số hóa đơn</th><th>Khách hàng</th><th>Nội dung</th><th>Hạn thanh toán</th><th>Số tiền</th><th>Trạng thái</th></tr></thead>
             <tbody>
               {pageRows.map((inv) => {
                 const r = ref(inv)
                 // A deposit can no longer be taken once its reservation is past the deposit time (the API refuses).
                 const reservation = inv.invoiceType === 'DEPOSIT' && inv.reservationId ? reservations.find((x) => x.reservationId === inv.reservationId) : undefined
                 const lateDeposit = !!reservation && depositMissed(reservation)
-                const payable = (inv.status === 'Unpaid' || inv.status === 'Overdue') && !lateDeposit
                 const paid = inv.payments.find((p) => p.status === 'Success')
                 return (
                   <tr key={inv.invoiceId}>
@@ -171,12 +170,8 @@ export default function StaffBilling() {
                     <td>{inv.details[0]?.description ?? '—'}{r.target && <><br /><small className="muted">{r.target}</small></>}</td>
                     <td>{reservation && reservation.status === 'PendingDeposit' ? fmtTime(depositDueAt(reservation)) : fmtDate(inv.dueDate)}</td>
                     <td className="money">{fmtMoney(inv.totalAmount)}</td>
-                    <td><StatusBadge status={inv.status} />{paid && <><br /><small className="muted">{paid.paymentMethod === 'Cash' ? 'Tiền mặt' : paid.paymentMethod} · {fmtTime(paid.paymentDate)}</small></>}</td>
-                    <td className="right">
-                      {payable
-                        ? <small className={inv.status === 'Overdue' ? 'danger-text' : 'muted'}>{inv.status === 'Overdue' ? 'Quá hạn · chờ khách chuyển khoản' : 'Chờ khách chuyển khoản'}</small>
-                        : lateDeposit ? <small className="danger-text">Quá hạn cọc, khách cần đặt lại</small> : <small className="muted">—</small>}
-                    </td>
+                    <td><StatusBadge status={inv.status} />{paid && <><br /><small className="muted">{paid.paymentMethod === 'Cash' ? 'Tiền mặt' : paid.paymentMethod} · {fmtTime(paid.paymentDate)}</small></>}
+                      {lateDeposit && <><br /><small className="danger-text">Quá hạn cọc, khách cần đặt lại</small></>}</td>
                   </tr>
                 )
               })}

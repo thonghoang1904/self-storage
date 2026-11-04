@@ -1495,3 +1495,4 @@ a.stat-link { text-decoration: none; color: inherit; }
 @media (max-width: 640px) { .facility-card-meta { align-items: flex-start; } }
 .duration-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); } @media (max-width: 520px) { .duration-grid.four { grid-template-columns: 1fr 1fr; } }
 .rent-time .form-grid { grid-template-columns: 1fr 1fr; } @media (max-width: 520px) { .rent-time .form-grid { grid-template-columns: 1fr; } }
+.dialog-actions { padding-top: 14px; border-top: 1px solid var(--border); justify-content: flex-end; }
