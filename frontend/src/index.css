@@ -1483,3 +1483,15 @@ a.stat-link { text-decoration: none; color: inherit; }
 .summary-lines .later-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .summary-lines .later-total { padding-top: 10px; border-top: 1px dashed var(--border); } .summary-lines .later-total dt { color: var(--text-strong); font-weight: 700; } .summary-lines .later-total dd { font-size: 16px; font-weight: 800; }
 .summary-lines .later-total dt { display: flex; flex-direction: column; } .summary-lines .later-total dt small { font-size: 12px; font-weight: 500; color: var(--muted); }
+
+/* ---------- Thuê kho: chọn cơ sở bằng ô chọn + thẻ thông tin ---------- */
+.facility-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.facility-card { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 16px; border: 1.5px solid var(--cyan); border-radius: var(--radius); background: var(--cyan-25); }
+.facility-card .grow { display: flex; flex-direction: column; gap: 2px; min-width: 200px; }
+.facility-card b { color: var(--text-strong); }
+.facility-card small { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12.5px; }
+.facility-card-icon { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 10px; background: #fff; color: var(--cyan-600); }
+.facility-card-meta { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
+@media (max-width: 640px) { .facility-card-meta { align-items: flex-start; } }
+.duration-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); } @media (max-width: 520px) { .duration-grid.four { grid-template-columns: 1fr 1fr; } }
+.rent-time .form-grid { grid-template-columns: 1fr 1fr; } @media (max-width: 520px) { .rent-time .form-grid { grid-template-columns: 1fr; } }

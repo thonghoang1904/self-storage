@@ -359,7 +359,7 @@ export function AdminLayout() {
       customerLink={false}
       titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu & Thống Kê', '/admin/reports': 'Báo Cáo', '/admin/support': 'Hỗ Trợ Khách Hàng', '/admin/system': 'Giao Dịch & Nhật Ký',
         '/admin/storage': 'Kho Lưu Trữ Hệ Thống', '/admin/facilities': 'Quản Lý Cơ Sở', '/admin/customers': 'Khách Hàng',
-        '/admin/policies': 'Giá & Chính Sách', '/admin/settings': 'Cài Đặt', '/admin': 'Tổng Quan Quản Lý' }}
+        '/admin': 'Tổng Quan Quản Lý' }}
       nav={[
         { icon: 'grid', label: 'Tổng Quan', to: '/admin', end: true },
         { icon: 'building', label: 'Kho Lưu Trữ', to: '/admin/storage' },
@@ -367,11 +367,9 @@ export function AdminLayout() {
         { icon: 'user', label: 'Nhân Viên', to: '/admin/users' },
         { icon: 'grid', label: 'Cơ Sở', to: '/admin/facilities' },
         { icon: 'phone', label: 'Hỗ Trợ', to: '/admin/support' },
-        { icon: 'wallet', label: 'Giá & Chính Sách', to: '/admin/policies' },
         { icon: 'file', label: 'Hợp Đồng', to: '/admin/contracts' },
         { icon: 'chart', label: 'Doanh Thu', to: '/admin/revenue' },
         { icon: 'file', label: 'Báo Cáo', to: '/admin/reports' },
-        { icon: 'settings', label: 'Cài Đặt', to: '/admin/settings' },
       ]}
     />
   )
@@ -383,14 +381,13 @@ export function OpsLayout() {
     <ConsoleLayout
       area="Operations"
       titles={{ '/ops/facilities': 'Quản Lý Cơ Sở', '/ops/policies': 'Chính Sách & Giá', '/ops/revenue': 'Doanh Thu',
-        '/ops/storage': 'Vận Hành Kho', '/ops/settings': 'Cài Đặt', '/ops': 'Tổng Quan Vận Hành' }}
+        '/ops/storage': 'Vận Hành Kho', '/ops': 'Tổng Quan Vận Hành' }}
       nav={[
         { icon: 'grid', label: 'Tổng Quan', to: '/ops', end: true },
         { icon: 'package', label: 'Vận Hành Kho', to: '/ops/storage' },
         { icon: 'building', label: 'Cơ Sở', to: '/ops/facilities' },
         { icon: 'chart', label: 'Doanh Thu', to: '/ops/revenue' },
         { icon: 'file', label: 'Chính Sách', to: '/ops/policies' },
-        { icon: 'settings', label: 'Cài Đặt', to: '/ops/settings' },
       ]}
     />
   )

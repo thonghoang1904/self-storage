@@ -4,7 +4,7 @@ import { useAuth } from '../auth'
 import { roleLabel, Roles, type AccountProfile } from '../types'
 import { staffCode } from '../validation'
 import { mask, maskEmail } from '../pages/AccountSecurity'
-import { PasswordForm, ProfileForm } from '../pages/AccountProfile'
+import { ProfileForm } from '../pages/AccountProfile'
 import { Modal } from './Modal'
 import { Icon } from './ui'
 
@@ -12,7 +12,7 @@ import { Icon } from './ui'
 export function ProfileDialog({ onClose }: { onClose: () => void }) {
   const { user, refresh } = useAuth()
   const role = user?.role ?? ''
-  const [mode, setMode] = useState<'view' | 'edit' | 'password'>('view')
+  const [mode, setMode] = useState<'view' | 'edit'>('view')
   const [notice, setNotice] = useState('')
   const back = (msg: string) => { setMode('view'); setNotice(msg) }
   const [p, setP] = useState<AccountProfile | null>(null)
@@ -22,12 +22,10 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
   }, [])
 
   return (
-    <Modal title={mode === 'edit' ? 'Sửa thông tin' : mode === 'password' ? 'Đổi mật khẩu' : 'Thông tin cá nhân'} onClose={onClose}>
+    <Modal title={mode === 'edit' ? 'Sửa thông tin' : 'Thông tin cá nhân'} onClose={onClose}>
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
       {!p ? (!error && <p className="muted">Đang tải…</p>) : mode === 'edit' ? (
         <ProfileForm bare profile={p} onCancel={() => setMode('view')} onSaved={(x) => { setP(x); void refresh(); back('Đã lưu thông tin tài khoản.') }} />
-      ) : mode === 'password' ? (
-        <PasswordForm bare onCancel={() => setMode('view')} onDone={() => back('Đổi mật khẩu thành công.')} />
       ) : (
         <div className="stack">
           {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
@@ -44,7 +42,6 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
           <div className="info-row"><span className="muted">Ngày tạo</span><b>{fmtDate(p.createdAt)}</b></div>
           <div className="row wrap">
             <button type="button" className="btn primary" onClick={() => { setNotice(''); setMode('edit') }}><Icon name="settings" size={15} /> Sửa thông tin</button>
-            <button type="button" className="btn outline" onClick={() => { setNotice(''); setMode('password') }}><Icon name="lock" size={15} /> Đổi mật khẩu</button>
           </div>
         </div>
       )}

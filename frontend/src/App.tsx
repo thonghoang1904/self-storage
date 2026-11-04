@@ -8,7 +8,6 @@ import AdminContracts from './pages/AdminContracts'
 import AdminEmails from './pages/AdminEmails'
 import AdminCustomers from './pages/AdminCustomers'
 import AdminStorage from './pages/AdminStorage'
-import AccountSettings from './pages/AccountSettings'
 import ConsoleOverview from './pages/ConsoleOverview'
 import OpsStorage from './pages/OpsStorage'
 import OpsFacilities from './pages/OpsFacilities'
@@ -91,7 +90,7 @@ export default function App() {
             <Route path="/my-units/:id/renew" element={<RequireRole roles={[Roles.Customer]}><ContractRenew /></RequireRole>} />
             <Route path="/account/profile" element={<RequireRole roles={Object.values(Roles)}><AccountProfile /></RequireRole>} />
             <Route path="/account/profile/edit" element={<RequireRole roles={Object.values(Roles)}><AccountProfile mode="edit" /></RequireRole>} />
-            <Route path="/account/password" element={<RequireRole roles={Object.values(Roles)}><AccountProfile mode="password" /></RequireRole>} />
+            <Route path="/account/password" element={<RequireRole roles={[Roles.Customer]}><AccountProfile mode="password" /></RequireRole>} />
             <Route path="/account/security" element={<RequireRole roles={[Roles.Customer]}><AccountSecurity /></RequireRole>} />
             <Route path="/support" element={<RequireRole roles={[Roles.Customer]}><Support /></RequireRole>} />
             <Route path="/rent" element={<RequireRole roles={[Roles.Customer]}><Rent /></RequireRole>} />
@@ -120,8 +119,6 @@ export default function App() {
             <Route path="/admin/units" element={<KeepQuery to="/admin/storage" />} />
             <Route path="/admin/facilities" element={<OpsFacilities />} />
             <Route path="/admin/customers" element={<AdminCustomers />} />
-            <Route path="/admin/policies" element={<OpsPolicies />} />
-            <Route path="/admin/settings" element={<AccountSettings />} />
             <Route path="/admin/users" element={<AdminUsers />} />
             <Route path="/admin/contracts" element={<AdminContracts />} />
             <Route path="/admin/emails" element={<AdminEmails />} />
@@ -133,7 +130,6 @@ export default function App() {
           <Route element={<RequireRole roles={[Roles.OpsManager]}><OpsLayout /></RequireRole>}>
             <Route path="/ops" element={<ConsoleOverview admin={false} />} />
             <Route path="/ops/storage" element={<OpsStorage />} />
-            <Route path="/ops/settings" element={<AccountSettings />} />
             <Route path="/ops/facilities" element={<OpsFacilities />} />
             <Route path="/ops/policies" element={<OpsPolicies />} />
             <Route path="/ops/revenue" element={<OpsRevenue />} />

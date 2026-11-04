@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, ApiError, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { FormField } from '../components/form'
-import { Badge, Empty, Icon, StatusBadge, UnitArt, splitTypeName } from '../components/ui'
+import { Badge, Icon, StatusBadge, UnitArt, splitTypeName } from '../components/ui'
 import { photoVariant } from '../components/unitPhoto'
 import type { AccessRecord, ContractDetail as Detail, EarlyReturnQuote, EarlyReturnRequest, Facility, Invoice, Person, Renewal, StorageUnit, UnitType } from '../types'
 import { textError } from '../validation'
@@ -33,13 +33,6 @@ const INVOICE_TYPE: Record<string, string> = { DEPOSIT: 'Tiền cọc', RENEWAL:
 const monthLabel = (iso: string) => `Tháng ${iso.slice(5, 7)}/${iso.slice(0, 4)}`
 
 type ScheduleRow = { key: string; period: string; note?: string; amount: number; due: string; state: 'paid' | 'soon' | 'overdue' | 'scheduled' | 'cancelled'; invoice: string | null }
-const STATE_BADGE: Record<ScheduleRow['state'], { label: string; tone: string }> = {
-  paid: { label: 'Đã thanh toán', tone: 'ok' },
-  soon: { label: 'Sắp đến hạn', tone: 'warn' },
-  overdue: { label: 'Quá hạn', tone: 'bad' },
-  scheduled: { label: 'Theo lịch', tone: 'muted' },
-  cancelled: { label: 'Đã hủy', tone: 'muted' },
-}
 
 /**
  * Figma "Lịch Thanh Toán & Hóa Đơn": the contract's invoices by period (the backend bills rent monthly, see
@@ -210,11 +203,13 @@ export default function ContractDetail() {
                   </div>
                   <span className={`badge ${locked ? 'bad' : ended ? 'muted' : 'ok'}`}>{locked ? 'Khóa do quá hạn' : ended ? 'Đã trả kho' : 'Truy cập bình thường'}</span>
                 </div>
+                {/* Only what is known: the public unit list leaves out rented units, so size or floor can be missing. */}
                 <dl className="cd-specs">
-                  <div><dt>Kích thước</dt><dd>{type ? `${type.lengthMeters} × ${type.widthMeters} × ${type.heightMeters}m` : '—'}</dd></div>
-                  <div><dt>Vị trí</dt><dd>{unit ? `Tầng ${unit.floorNumber}${unit.zoneArea ? ` · ${unit.zoneArea}` : ''}` : '—'}</dd></div>
-                  <div><dt>Điều hòa</dt><dd>{type ? (type.hasClimateControl ? 'Có' : 'Không') : '—'}</dd></div>
+                  <div><dt>Cơ sở</dt><dd>{c.facilityName}</dd></div>
                   <div><dt>Giờ mở cửa</dt><dd>{facility?.operatingHours ?? '—'}</dd></div>
+                  {type && <div><dt>Kích thước</dt><dd>{`${type.lengthMeters} × ${type.widthMeters} × ${type.heightMeters}m`}</dd></div>}
+                  {unit && <div><dt>Vị trí</dt><dd>{`Tầng ${unit.floorNumber}${unit.zoneArea ? ` · ${unit.zoneArea}` : ''}`}</dd></div>}
+                  {type && <div><dt>Điều hòa</dt><dd>{type.hasClimateControl ? 'Có' : 'Không'}</dd></div>}
                   <div><dt>Trạng thái kho</dt><dd><StatusBadge status={c.unitStatus} /></dd></div>
                 </dl>
               </div>
@@ -223,32 +218,19 @@ export default function ContractDetail() {
             {showRenew && !ended && <section className="panel"><h3 className="panel-title">Gia hạn hợp đồng</h3><RenewalPanel contract={c} renewals={renewals} onChanged={load} /></section>}
             {showEarly && canReturnEarly && <section id="early-return" className="panel scroll-target"><EarlyReturnPanel contract={c} facility={facility} /></section>}
 
-            <section className="panel">
+            <section className="panel stack">
               <div className="row between wrap">
-                <div>
-                  <h3 className="panel-title">Lịch Thanh Toán & Hóa Đơn</h3>
-                  <p className="muted">Thanh toán trực tuyến qua VNPay.</p>
-                </div>
-                <Link to="/invoices" className="btn soft sm"><Icon name="card" size={14} /> Quản lý thanh toán</Link>
+                <h3 className="panel-title">Quyền Truy Cập</h3>
+                <span className={`badge ${locked || ended ? 'bad' : 'ok'}`}>{ended ? 'Đã kết thúc' : locked ? 'Đang khóa' : 'Đang bật'}</span>
               </div>
-              <div className="table-scroll">
-                <table className="schedule-table">
-                  <thead><tr><th>Kỳ thanh toán</th><th>Số tiền</th><th>Ngày đến hạn</th><th>Trạng thái</th><th>Hóa đơn</th></tr></thead>
-                  <tbody>
-                    {schedule.map((r) => (
-                      <tr key={r.key}>
-                        <td>{r.period}</td>
-                        <td className="money">{fmtMoney(r.amount)}</td>
-                        <td>{fmtDate(r.due)}</td>
-                        <td><span className={`badge ${STATE_BADGE[r.state].tone}`}>{STATE_BADGE[r.state].label}</span></td>
-                        <td>{r.invoice ? <Link to="/invoices" className="code">{r.invoice}</Link> : <span className="muted nowrap">Chưa phát hành</span>}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {schedule.length === 0 && <Empty icon="wallet">Chưa có kỳ thanh toán nào cho hợp đồng này.</Empty>}
-              </div>
+              <dl className="cd-specs">
+                <div><dt>Chủ hợp đồng</dt><dd>{user?.fullName ?? '—'}</dd></div>
+                <div><dt>Xác thực</dt><dd>CCCD tại cổng</dd></div>
+                <div><dt>Người vào kho</dt><dd>{people.length} người</dd></div>
+                <div><dt>Lần vào gần nhất</dt><dd>{lastVisit ? fmtTime(lastVisit.entryTime) : 'Chưa có'}</dd></div>
+              </dl>
             </section>
+
           </div>
 
           <div className="stack-lg detail-side">
@@ -272,16 +254,6 @@ export default function ContractDetail() {
                 : !ended && <Link to={`/support?contract=${c.contractId}&topic=return`} className="cd-danger"><Icon name="logout" size={15} /> Yêu cầu trả kho</Link>}
             </section>
 
-            <section className="panel stack-sm">
-              <h3 className="panel-title">Quyền Truy Cập</h3>
-              <div className={`access-state ${locked || ended ? 'off' : 'on'}`}>
-                <b>Trạng thái</b>
-                <span>{ended ? 'Đã kết thúc' : locked ? 'Đang khóa' : 'Đang bật'}</span>
-              </div>
-              <div className="info-row"><span className="muted">Chủ hợp đồng</span><b>{user?.fullName ?? '—'}</b></div>
-              <div className="info-row"><span className="muted">Xác thực</span><b>CCCD tại cổng</b></div>
-              <div className="info-row"><span className="muted">Khung giờ</span><b>{facility?.operatingHours ?? '—'}</b></div>
-            </section>
           </div>
         </div>
       </div>

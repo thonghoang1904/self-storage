@@ -58,7 +58,7 @@ export default function AccountProfile({ mode = 'view' }: { mode?: Mode }) {
         {!profile ? (!error && <p className="muted">Đang tải…</p>) : (
           <div className="policy-layout">
             <div className="stack-lg">
-              {mode === 'view' && <ProfileView profile={profile} />}
+              {mode === 'view' && <ProfileView profile={profile} canChangePassword={user.role === Roles.Customer} />}
               {mode === 'edit' && <ProfileForm profile={profile} onSaved={(p) => { setProfile(p); void refresh(); done('Đã lưu thông tin tài khoản.') }} />}
               {mode === 'password' && <PasswordForm onDone={() => done('Đổi mật khẩu thành công.')} />}
             </div>
@@ -84,7 +84,8 @@ export default function AccountProfile({ mode = 'view' }: { mode?: Mode }) {
 }
 
 /** Read-only details, partly hidden; editing and the password are behind their own buttons. */
-function ProfileView({ profile: p }: { profile: Profile }) {
+/** Only customers change their own password here; staff and admin accounts do not. */
+function ProfileView({ profile: p, canChangePassword }: { profile: Profile; canChangePassword: boolean }) {
   return (
     <section className="panel stack">
       <div><h2 className="panel-title">Thông tin cá nhân</h2><p className="muted">Email dùng để nhận hóa đơn, mã đặt lại mật khẩu và thông báo.</p></div>
@@ -95,7 +96,7 @@ function ProfileView({ profile: p }: { profile: Profile }) {
       <div className="info-row"><span className="muted">Số CCCD</span><b>{mask(p.citizenId, 4)}</b></div>
       <div className="row wrap">
         <Link to="/account/profile/edit" className="btn primary"><Icon name="settings" size={15} /> Sửa thông tin</Link>
-        <Link to="/account/password" className="btn outline"><Icon name="lock" size={15} /> Đổi mật khẩu</Link>
+        {canChangePassword && <Link to="/account/password" className="btn outline"><Icon name="lock" size={15} /> Đổi mật khẩu</Link>}
       </div>
     </section>
   )

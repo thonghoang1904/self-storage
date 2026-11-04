@@ -5,6 +5,7 @@ import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
 import { depositDueAt } from '../components/appointment'
 import { Icon, splitTypeName, UnitArt } from '../components/ui'
+import { Select } from '../components/Select'
 import { TermsList, TERMS_VERSION } from './Terms'
 import { type Availability, type Facility, type Reservation, type UnitType } from '../types'
 import { localToday } from '../validation'
@@ -65,6 +66,7 @@ export default function Rent() {
   }, [facilityId])
 
   const facility = facilities.find((f) => f.facilityId === facilityId)
+  const cities = [...new Set(facilities.map((f) => f.city))]
   const selected = availability.find((a) => a.unitTypeId === selectedId)
   const selectedType = types.find((t) => t.unitTypeId === selectedId)
   const monthly = selected?.baseMonthlyRate ?? 0
@@ -105,8 +107,8 @@ export default function Rent() {
 
   return (
     <>
-      <PageHero center eyebrow="Đặt kho nhanh chóng · chỉ trong 4 bước" title="Đặt Kho Lưu Trữ SafeKeep">
-        Chọn cơ sở và kích thước kho, đồng ý điều khoản hợp đồng rồi thanh toán cọc. Đơn được giữ 24 giờ (không quá 20:00 ngày bắt đầu) để bạn đặt cọc.
+      <PageHero center title="Đặt Kho Lưu Trữ">
+        Chọn kho, thời gian thuê, đồng ý điều khoản rồi thanh toán cọc. Đơn được giữ 24 giờ để bạn đặt cọc.
       </PageHero>
 
       <div className="container page-body">
@@ -121,19 +123,37 @@ export default function Rent() {
 
             <section className="stack">
               <div>
-                <h2 className="section-title">Bước 1: Chọn Cơ Sở & Kích Thước Kho</h2>
+                <h2 className="section-title">1. Chọn cơ sở & loại kho</h2>
                 <p className="muted">Hãy chọn loại diện tích phù hợp nhất với nhu cầu thực tế của bạn.</p>
               </div>
-              <div className="facility-tabs" role="tablist">
-                {facilities.map((f) => (
-                  <button key={f.facilityId} role="tab" aria-selected={f.facilityId === facilityId}
-                    className={f.facilityId === facilityId ? 'active' : ''} onClick={() => setFacilityId(f.facilityId)}>
-                    <Icon name="building" size={16} />
-                    <span><b>{f.facilityName}</b><small>{f.district} · {f.operatingHours}</small></span>
-                  </button>
-                ))}
+              {/* Two drop-downs (city, then facility) stay tidy however many facilities there are. */}
+              <div className="facility-pick">
+                {cities.length > 1 && (
+                  <label className="field"><span>Tỉnh / thành phố</span>
+                    <Select value={facility?.city ?? ''} onChange={(e) => setFacilityId(facilities.find((f) => f.city === e.target.value)?.facilityId ?? null)}>
+                      {cities.map((c) => <option key={c} value={c}>{c} ({facilities.filter((f) => f.city === c).length} cơ sở)</option>)}
+                    </Select>
+                  </label>
+                )}
+                <label className="field"><span>Cơ sở</span>
+                  <Select value={facilityId ?? ''} onChange={(e) => setFacilityId(Number(e.target.value))}>
+                    {facilities.filter((f) => !facility || f.city === facility.city).map((f) => <option key={f.facilityId} value={f.facilityId}>{f.facilityName} · {f.district}</option>)}
+                  </Select>
+                </label>
               </div>
-              {facility && <p className="meta"><Icon name="pin" size={14} /> {facility.address}, {facility.district}, {facility.city} · Hotline {facility.hotline}</p>}
+              {facility && (
+                <div className="facility-card">
+                  <span className="facility-card-icon"><Icon name="building" size={20} /></span>
+                  <div className="grow">
+                    <b>{facility.facilityName}</b>
+                    <small><Icon name="pin" size={13} /> {facility.address}, {facility.district}, {facility.city}</small>
+                  </div>
+                  <div className="facility-card-meta">
+                    <small><Icon name="clock" size={13} /> {facility.operatingHours}</small>
+                    <small><Icon name="phone" size={13} /> {facility.hotline}</small>
+                  </div>
+                </div>
+              )}
 
               <div className="size-list">
                 {availability.map((a, i) => {
@@ -167,19 +187,24 @@ export default function Rent() {
 
             <section className="stack">
               <div>
-                <h2 className="section-title">Bước 2: Thông Tin Người Thuê</h2>
-                <p className="muted">Hợp đồng sẽ đứng tên tài khoản đang đăng nhập. Nhân viên đối chiếu CCCD trong hồ sơ khi bạn đến nhận kho.</p>
+                <h2 className="section-title">2. Thời gian thuê</h2>
+                <p className="muted">Chọn số tháng và ngày bắt đầu. Có thể gia hạn sớm bất cứ lúc nào khi hợp đồng còn hiệu lực.</p>
               </div>
-              <div className="info-card">
-                <span className="feature-icon"><Icon name="user" size={20} /></span>
-                <div className="grow stack-sm">
-                  <b>{user?.fullName}</b>
-                  <span className="meta">Tài khoản {user?.username}</span>
+              <div className="panel stack rent-time">
+                <div className="duration-grid four">
+                  {DURATIONS.map((m) => (
+                    <button key={m} className={m === months ? 'active' : ''} onClick={() => setMonths(m)}><b>{m} tháng</b></button>
+                  ))}
                 </div>
-                <label className="field compact">
-                  <span>Ngày bắt đầu thuê</span>
-                  <input type="date" min={todayIso()} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-                </label>
+                <div className="form-grid">
+                  <label className="field"><span>Số tháng khác</span>
+                    <input type="number" min={1} max={60} value={months} onChange={(e) => setMonths(Math.max(1, Math.min(60, Number(e.target.value) || 1)))} />
+                  </label>
+                  <label className="field"><span>Ngày bắt đầu thuê</span>
+                    <input type="date" min={todayIso()} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                  </label>
+                </div>
+                <p className="meta"><Icon name="user" size={14} /><span>Hợp đồng đứng tên <b>{user?.fullName}</b> ({user?.username}). Nhân viên đối chiếu CCCD trong hồ sơ khi bạn đến nhận kho.</span></p>
               </div>
             </section>
           </div>
@@ -193,24 +218,11 @@ export default function Rent() {
               </div>
             ) : <p className="muted">Chọn một kích thước kho còn trống.</p>}
 
-            <div className="stack-sm">
-              <span className="label">Thời gian thuê</span>
-              <div className="duration-grid">
-                {DURATIONS.map((m) => (
-                  <button key={m} className={m === months ? 'active' : ''} onClick={() => setMonths(m)}>
-                    <b>{m} Tháng</b>
-                  </button>
-                ))}
-              </div>
-              <label className="row between custom-months">
-                <span className="muted">Số tháng khác</span>
-                <input type="number" min={1} max={60} value={months} onChange={(e) => setMonths(Math.max(1, Math.min(60, Number(e.target.value) || 1)))} />
-              </label>
-            </div>
 
             <dl className="summary-lines">
               <div><dt>Đơn giá</dt><dd>{selected ? `${fmtMoney(monthly)}/tháng` : '—'}</dd></div>
-              <div><dt>Thời gian thuê</dt><dd>{months} tháng · từ {fmtDate(startDate)}</dd></div>
+              <div><dt>Thời gian thuê</dt><dd>{months} tháng</dd></div>
+              <div><dt>Ngày bắt đầu</dt><dd>{fmtDate(startDate)}</dd></div>
             </dl>
             {/* What is paid now (only the deposit) apart from the rent invoices that come later, one per month. */}
             <div className="summary-total pay-now">
@@ -225,7 +237,7 @@ export default function Rent() {
             </dl>
             {error && !signing && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
             <button className="btn primary block lg" disabled={!selected || busy || signing} onClick={openSigning}>
-              {signing ? 'Xem điều khoản bên dưới ↓' : 'Tiếp Tục: Điều Khoản Hợp Đồng'}
+              {signing ? 'Xem điều khoản bên dưới ↓' : 'Tiếp tục: điều khoản hợp đồng'}
             </button>
             <p className="fine-print">Đơn được giữ 24 giờ, không quá 20:00 ngày bắt đầu thuê. Muốn đổi ý, bạn gửi yêu cầu hủy; cọc được hoàn sau khi trừ phí hủy theo chính sách.</p>
           </aside>
@@ -235,7 +247,7 @@ export default function Rent() {
           <section className="panel sign-panel" id="sign-contract">
             <div className="panel-head wrap">
               <div>
-                <h2 className="section-title">Bước 3: Điều Khoản Hợp Đồng Thuê Kho</h2>
+                <h2 className="section-title">3. Điều khoản hợp đồng</h2>
                 <p className="muted">Đọc điều khoản và tick đồng ý. Sau đó đơn được giữ chỗ và bạn chuyển sang thanh toán cọc.</p>
               </div>
               <button type="button" className="icon-btn" aria-label="Đóng" onClick={() => { setSigning(false); setError('') }}><Icon name="x" /></button>

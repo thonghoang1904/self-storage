@@ -60,7 +60,6 @@ export function AdminSystemPanels() {
           {[
             ['/admin/storage', 'building', 'Kho lưu trữ', 'Mọi kho, thêm, sửa, bảo trì, xóa'],
             ['/admin/facilities', 'grid', 'Quản lý cơ sở', 'Thêm, sửa, tạm đóng cơ sở'],
-            ['/admin/policies', 'clipboard', 'Giá & chính sách', 'Giá thuê, chính sách, phí, khuyến mãi'],
             ['/admin/users', 'user', 'Nhân viên', 'Tài khoản, vai trò, phân công'],
           ].map(([to, icon, title, text]) => (
             <Link key={to} to={to} className="related-link"><Icon name={icon} size={18} /><span className="grow"><b>{title}</b><small className="muted">{text}</small></span><Icon name="arrowRight" size={14} /></Link>
