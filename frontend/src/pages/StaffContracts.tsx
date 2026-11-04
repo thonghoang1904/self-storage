@@ -32,7 +32,7 @@ const KIND_LABEL: Record<Kind, { label: string; tone: 'ok' | 'warn' | 'bad' | 'i
   renewal: { label: 'Chờ thu phí gia hạn', tone: 'warn' },
   ending: { label: 'Sắp hết hạn', tone: 'info' },
   overdue: { label: 'Quá hạn · khóa kho', tone: 'bad' },
-  unpaid: { label: 'Nợ hóa đơn · bị chặn ở cổng', tone: 'bad' },
+  unpaid: { label: 'Nợ hóa đơn', tone: 'bad' },
   active: { label: 'Đang thuê', tone: 'ok' },
   ended: { label: 'Đã kết thúc', tone: 'muted' },
 }

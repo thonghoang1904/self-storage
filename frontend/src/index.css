@@ -1496,3 +1496,9 @@ a.stat-link { text-decoration: none; color: inherit; }
 .duration-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); } @media (max-width: 520px) { .duration-grid.four { grid-template-columns: 1fr 1fr; } }
 .rent-time .form-grid { grid-template-columns: 1fr 1fr; } @media (max-width: 520px) { .rent-time .form-grid { grid-template-columns: 1fr; } }
 .dialog-actions { padding-top: 14px; border-top: 1px solid var(--border); justify-content: flex-end; }
+.segmented.fill.two { grid-template-columns: 1fr 1fr; }
+/* Rent step 3: terms on the left, the order + agreement on the right */
+.sign-grid { align-items: stretch; }
+.sign-summary { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-tint); }
+.sign-summary .kv-grid { margin: 0; }
+.sign-grid .terms-box:not(.open) { max-height: 440px; }

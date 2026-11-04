@@ -465,12 +465,16 @@ export const SupportCategories: Record<string, string> = {
   Other: 'Khác',
 }
 
+/** Two levels only: Bình thường (sent as Medium) and Khẩn cấp (sent as Urgent). Old Low / High requests read as
+ *  the nearest of the two. */
 export const SupportPriorities: Record<string, { label: string; tone: 'ok' | 'warn' | 'bad' | 'info' | 'muted' }> = {
-  Low: { label: 'Thấp', tone: 'muted' },
-  Medium: { label: 'Trung bình', tone: 'info' },
-  High: { label: 'Cao', tone: 'warn' },
+  Low: { label: 'Bình thường', tone: 'info' },
+  Medium: { label: 'Bình thường', tone: 'info' },
+  High: { label: 'Khẩn cấp', tone: 'bad' },
   Urgent: { label: 'Khẩn cấp', tone: 'bad' },
 }
+export const SUPPORT_PRIORITY_CHOICES = [{ value: 'Medium', label: 'Bình thường' }, { value: 'Urgent', label: 'Khẩn cấp' }]
+export const isUrgentPriority = (p: string) => p === 'Urgent' || p === 'High'
 
 export interface Person {
   authorizedPersonId: number | null

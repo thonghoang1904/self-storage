@@ -5,7 +5,7 @@ import { useAuth } from '../auth'
 import { useStaffFacility } from '../components/layout'
 import type { Facility } from '../types'
 import { Empty, Icon, StatusBadge } from '../components/ui'
-import { SupportCategories, SupportPriorities, type SupportChecklistItem, type SupportRequest, type SupportUpdate } from '../types'
+import { isUrgentPriority, SupportCategories, SupportPriorities, type SupportChecklistItem, type SupportRequest, type SupportUpdate } from '../types'
 import { Select } from '../components/Select'
 import { StatChip, scrollToList } from '../components/StatCard'
 
@@ -64,7 +64,7 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
   const shown = useMemo(() => rows
     .filter((r) => status === 'all' ? true : status === 'active' ? r.status === 'Open' || r.status === 'InProgress'
       : status === 'done' ? r.status === 'Resolved' || r.status === 'Closed' : r.status === status)
-    .filter((r) => priority === 'all' || (priority === 'urgent' ? r.priority === 'Urgent' || r.priority === 'High' : r.priority === priority))
+    .filter((r) => priority === 'all' || (priority === 'urgent' ? isUrgentPriority(r.priority) : !isUrgentPriority(r.priority)))
     .filter((r) => {
       const s = q.trim().toLowerCase()
       return !s || [r.requestCode, r.title, r.unitCode, r.description, r.customerName ?? ''].some((v) => v.toLowerCase().includes(s))
@@ -86,7 +86,7 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
     setQ('')
     scrollToList('ticket-list')
   }
-  const urgent = rows.filter((r) => (r.priority === 'Urgent' || r.priority === 'High') && (r.status === 'Open' || r.status === 'InProgress')).length
+  const urgent = rows.filter((r) => isUrgentPriority(r.priority) && (r.status === 'Open' || r.status === 'InProgress')).length
 
   return (
     <div className="stack-xl">
@@ -99,7 +99,7 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
             : 'Tiếp nhận yêu cầu của khách, làm theo các bước xử lý và cập nhật tiến độ cho khách.'}</p>
         </div>
         <div className="stat-chips">
-          <StatChip icon="lock" tone="bad" label="khẩn cấp / cao đang mở" value={urgent} hint="Nên ưu tiên xử lý trước"
+          <StatChip icon="lock" tone="bad" label="khẩn cấp đang mở" value={urgent} hint="Nên ưu tiên xử lý trước"
             active={is('active', 'urgent')} onClick={() => pick('active', 'urgent')} />
         </div>
       </div>
@@ -125,8 +125,8 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
           )}
           <Select value={priority} onChange={(e) => setPriority(e.target.value)} aria-label="Mức độ">
             <option value="all">Mọi mức độ</option>
-            <option value="urgent">Khẩn cấp và Cao</option>
-            {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{SupportPriorities[p].label}</option>)}
+            <option value="urgent">Khẩn cấp</option>
+            <option value="normal">Bình thường</option>
           </Select>
           {(q || priority !== 'all' || status !== 'active') && (
             <button type="button" className="btn ghost sm" onClick={() => { setQ(''); setPriority('all'); setStatus('active') }}><Icon name="x" size={14} /> Bỏ lọc</button>

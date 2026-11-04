@@ -254,16 +254,6 @@ export default function Rent() {
             </div>
             <div className="sign-grid">
               <div className="stack">
-                <dl className="kv-grid contract-summary">
-                  <div><dt>Bên thuê</dt><dd>{user?.fullName}</dd></div>
-                  <div><dt>Tài khoản</dt><dd>{user?.username}</dd></div>
-                  <div><dt>Cơ sở</dt><dd>{facility?.facilityName}</dd></div>
-                  <div><dt>Loại kho</dt><dd>{splitTypeName(selected.typeName).name}</dd></div>
-                  <div><dt>Bắt đầu</dt><dd>{fmtDate(startDate)}</dd></div>
-                  <div><dt>Thời hạn</dt><dd>{months} tháng</dd></div>
-                  <div><dt>Giá thuê</dt><dd>{fmtMoney(selected.baseMonthlyRate)}/tháng</dd></div>
-                  <div><dt>Tiền cọc dự kiến</dt><dd>{fmtMoney(selected.baseMonthlyRate)}</dd></div>
-                </dl>
                 <div id="rent-terms" className={`terms-box ${termsOpen ? 'open' : ''}`} tabIndex={0} aria-label="Điều khoản hợp đồng">
                   <TermsList compact />
                 </div>
@@ -272,6 +262,19 @@ export default function Rent() {
                 </button>
               </div>
               <div className="stack sign-side">
+                <div className="sign-summary">
+                  <b>Thông tin đơn đặt kho</b>
+                  <dl className="kv-grid contract-summary">
+                    <div><dt>Bên thuê</dt><dd>{user?.fullName}</dd></div>
+                    <div><dt>Tài khoản</dt><dd>{user?.username}</dd></div>
+                    <div><dt>Cơ sở</dt><dd>{facility?.facilityName}</dd></div>
+                    <div><dt>Loại kho</dt><dd>{splitTypeName(selected.typeName).name}</dd></div>
+                    <div><dt>Bắt đầu</dt><dd>{fmtDate(startDate)}</dd></div>
+                    <div><dt>Thời hạn</dt><dd>{months} tháng</dd></div>
+                    <div><dt>Giá thuê</dt><dd>{fmtMoney(selected.baseMonthlyRate)}/tháng</dd></div>
+                    <div><dt>Tiền cọc dự kiến</dt><dd>{fmtMoney(selected.baseMonthlyRate)}</dd></div>
+                  </dl>
+                </div>
                 <label className="check-row">
                   <input type="checkbox" checked={agreed} onChange={(e) => { setAgreed(e.target.checked); setError('') }} />
                   <span>Tôi đã đọc, hiểu và đồng ý với <b>Điều khoản & Chính sách Hợp đồng</b> (phiên bản {TERMS_VERSION}), gồm quy định đặt cọc, hủy đơn, trả kho và phí quá hạn.</span>

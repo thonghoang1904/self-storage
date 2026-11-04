@@ -4,7 +4,7 @@ import { textError } from '../validation'
 import { api, fmtTime } from '../api'
 import { FormField, leavingToSubmit } from '../components/form'
 import { Badge, Empty, Eyebrow, Icon, StatusBadge } from '../components/ui'
-import { SupportCategories, SupportPriorities, type Contract, type SupportChecklistItem, type SupportRequest, type SupportUpdate } from '../types'
+import { SUPPORT_PRIORITY_CHOICES, SupportCategories, SupportPriorities, type Contract, type SupportChecklistItem, type SupportRequest, type SupportUpdate } from '../types'
 import { Select } from '../components/Select'
 
 const EMPTY_FORM = { contractId: 0, category: 'LockIssue', priority: 'Medium', title: '', description: '' }
@@ -50,6 +50,13 @@ export default function Support() {
     setShown({ title: true, description: true })
     if (!form.contractId) { setError('Vui lòng chọn hợp đồng / kho cần hỗ trợ'); return }
     if (textError(form.title, 'Tiêu đề', 5, 200) || textError(form.description, 'Mô tả', 10, 4000)) return
+    // One open request per unit and problem type: a second one would only duplicate the staff's work.
+    const dup = rows?.find((r) => r.contractId === form.contractId && r.category === form.category && (r.status === 'Open' || r.status === 'InProgress'))
+    if (dup) {
+      setError(`Kho này đã có yêu cầu "${SupportCategories[dup.category] ?? dup.category}" đang xử lý (${dup.requestCode}). Vui lòng theo dõi hoặc bổ sung thông tin trong yêu cầu đó.`)
+      setOpenId(dup.requestId)
+      return
+    }
     setError('')
     setBusy(true)
     try {
@@ -98,9 +105,9 @@ export default function Support() {
                     </Select>
                   </label>
                   <div className="field"><span>Mức độ</span>
-                    <div className="segmented fill">
-                      {Object.entries(SupportPriorities).map(([k, v]) => (
-                        <button key={k} type="button" className={form.priority === k ? 'active' : ''} onClick={() => setForm({ ...form, priority: k })}>{v.label}</button>
+                    <div className="segmented fill two">
+                      {SUPPORT_PRIORITY_CHOICES.map((p) => (
+                        <button key={p.value} type="button" className={form.priority === p.value ? 'active' : ''} onClick={() => setForm({ ...form, priority: p.value })}>{p.label}</button>
                       ))}
                     </div>
                   </div>
