@@ -50,11 +50,14 @@ export default function Support() {
     setShown({ title: true, description: true })
     if (!form.contractId) { setError('Vui lòng chọn hợp đồng / kho cần hỗ trợ'); return }
     if (textError(form.title, 'Tiêu đề', 5, 200) || textError(form.description, 'Mô tả', 10, 4000)) return
-    // One open request per unit and problem type: a second one would only duplicate the staff's work.
-    const dup = rows?.find((r) => r.contractId === form.contractId && r.category === form.category && (r.status === 'Open' || r.status === 'InProgress'))
-    if (dup) {
-      setError(`Kho này đã có yêu cầu "${SupportCategories[dup.category] ?? dup.category}" đang xử lý (${dup.requestCode}). Vui lòng theo dõi hoặc bổ sung thông tin trong yêu cầu đó.`)
-      setOpenId(dup.requestId)
+    // Anti-spam checks against the customer's own requests, re-read now so a second tab or a quick resend is caught too.
+    setBusy(true)
+    const history = await api<SupportRequest[]>('/api/support-requests/my').catch(() => rows ?? [])
+    setBusy(false)
+    const problem = spamCheck(form, history)
+    if (problem) {
+      setError(problem.message)
+      if (problem.requestId) setOpenId(problem.requestId)
       return
     }
     setError('')
@@ -203,4 +206,49 @@ function RequestCard({ request: r, open, onToggle, children }: { request: Suppor
       )}
     </article>
   )
+}
+
+/** Lower case, no accents, letters and digits only: "Ổ khóa  bị kẹt!" and "o khoa bi ket" compare equal. */
+const normalize = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd')
+  .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+const isOpen = (r: SupportRequest) => r.status === 'Open' || r.status === 'InProgress'
+const MINUTE = 60_000
+
+/**
+ * Support requests are read by people at the gate, so repeated or flooded tickets waste their time:
+ * - one open request per unit and problem type;
+ * - the same title or description as any request sent in the last 24 hours (whatever its unit or status);
+ * - text that is just one character or one word repeated;
+ * - more than 3 requests in 15 minutes, or 10 in a day.
+ * The backend does not check these yet; this stops the common cases before they reach staff.
+ */
+function spamCheck(form: { contractId: number; category: string; title: string; description: string }, history: SupportRequest[]):
+  { message: string; requestId?: number } | null {
+  const now = Date.now()
+  const age = (r: SupportRequest) => now - new Date(r.createdAt).getTime()
+  const title = normalize(form.title)
+  const desc = normalize(form.description)
+
+  const sameSlot = history.find((r) => r.contractId === form.contractId && r.category === form.category && isOpen(r))
+  if (sameSlot) return {
+    message: `Kho này đã có yêu cầu "${SupportCategories[sameSlot.category] ?? sameSlot.category}" đang xử lý (${sameSlot.requestCode}). Vui lòng theo dõi hoặc bổ sung thông tin trong yêu cầu đó.`,
+    requestId: sameSlot.requestId,
+  }
+
+  const sameText = history.find((r) => age(r) < 24 * 60 * MINUTE
+    && (normalize(r.title) === title || (desc.length >= 10 && normalize(r.description) === desc)))
+  if (sameText) return {
+    message: `Bạn đã gửi yêu cầu có cùng nội dung (${sameText.requestCode}) trong 24 giờ qua. Vui lòng theo dõi yêu cầu đó thay vì gửi lại.`,
+    requestId: sameText.requestId,
+  }
+
+  const words = desc.split(' ').filter(Boolean)
+  if (/^(.)\1+$/.test(desc.replace(/ /g, '')) || /^(.)\1+$/.test(title.replace(/ /g, '')) || (words.length >= 3 && new Set(words).size === 1))
+    return { message: 'Tiêu đề hoặc mô tả không hợp lệ. Vui lòng mô tả rõ sự cố để nhân viên hỗ trợ được.' }
+
+  const recent = history.filter((r) => age(r) < 15 * MINUTE).length
+  if (recent >= 3) return { message: 'Bạn vừa gửi nhiều yêu cầu liên tiếp. Vui lòng chờ khoảng 15 phút rồi gửi tiếp, hoặc gọi hotline nếu khẩn cấp.' }
+  const today = history.filter((r) => age(r) < 24 * 60 * MINUTE).length
+  if (today >= 10) return { message: 'Bạn đã gửi 10 yêu cầu trong 24 giờ qua. Vui lòng chờ nhân viên xử lý các yêu cầu hiện có, hoặc gọi hotline nếu khẩn cấp.' }
+  return null
 }
