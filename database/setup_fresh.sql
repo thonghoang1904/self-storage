@@ -17,3 +17,4 @@
 :r database\16_billing_safety.sql
 :r database\17_deposit_payment_hours.sql
 :r database\18_renewal_max_months.sql
+:r database\19_single_active_session.sql

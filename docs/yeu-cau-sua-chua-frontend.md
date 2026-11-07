@@ -15,6 +15,7 @@
 | Phản hồi & mở lại ticket hỗ trợ | `POST /api/support-requests/{requestId}/messages` | Khi khách gửi tin nhắn vào ticket đang `Resolved`, Backend tự động mở lại trạng thái về `InProgress` và xóa `ResolvedAt`. |
 | Thanh toán trực tuyến VNPay / MoMo | `POST /api/invoices/{id}/checkout/{provider}`<br>`GET /api/payments/momo/return`<br>`POST /api/payments/{id}/cancel` | Hạn liên kết chờ thanh toán giảm từ `30` xuống **`15` phút**; tự hết hạn giao dịch cũ khi tạo checkout mới sau 15 phút; `momo/return` xác thực chữ ký và trả `?gateway=momo&paymentReturn=1&result=success\|failed`. |
 | Lọc & phân trang hóa đơn | `GET /api/invoices/my?contractId=&reservationId=&page=1&pageSize=200` | Bổ sung bộ lọc theo `contractId`, `reservationId`, phân trang (`page`, `pageSize <= 500`) và header `X-Total-Count`. |
+| Giới hạn 1 phiên đăng nhập & Đăng xuất | `POST /api/auth/login`<br>`POST /api/auth/google`<br>`POST /api/auth/logout` | Mỗi tài khoản chỉ giữ **1 phiên hoạt động duy nhất** (`ActiveSessionId`) tại một thời điểm; đăng nhập mới lập tức vô hiệu hóa mọi token cũ (trả `401` `ProblemDetails` tiếng Việt); bổ sung API `POST /api/auth/logout` xóa phiên trên server. |
 
 ---
 
@@ -34,6 +35,7 @@
 | **FE-10** | Trung bình | Bổ sung form gửi phản hồi & mở lại ticket hỗ trợ cho khách hàng | `src/pages/Support.tsx` |
 | **FE-11** | Thấp / UX | Kiểm tra sớm tài khoản thiếu CCCD trước khi đặt kho & khi Admin đổi vai trò | `src/pages/Rent.tsx`, `src/pages/AdminUsers.tsx` (nếu có form gán role) |
 | **FE-12** | Thấp / Hiệu năng | Dùng query filter `?contractId=` cho hóa đơn và đồng bộ mock server (`dev:demo`) | `src/pages/ContractDetail.tsx`, `src/pages/Invoices.tsx`, `src/mock/server.ts` |
+| **FE-13** | Nghiêm trọng | Đồng bộ cơ chế 1 phiên đăng nhập duy nhất (Single Active Session), gọi `POST /api/auth/logout` và tự đăng xuất về `/login` khi nhận `401` | `src/api.ts`, `src/auth.tsx`, `src/pages/Login.tsx`, `src/mock/server.ts` |
 
 ---
 
@@ -348,6 +350,52 @@ Tuy nhiên trong `frontend/src/pages/Support.tsx` (`RequestCard`, dòng `146–1
 
 ---
 
+### FE-13 — Đồng bộ cơ chế 1 phiên đăng nhập duy nhất (Single Active Session) & API Đăng xuất
+
+#### 1. Hiện trạng & Nguyên nhân lỗi
+- Backend hiện đã áp dụng chính sách **1 phiên đăng nhập duy nhất cho mỗi tài khoản (`ActiveSessionId`)**: khi tài khoản đăng nhập ở trình duyệt/thiết bị mới (`POST /api/auth/login` hoặc `POST /api/auth/google`), toàn bộ JWT cũ của tài khoản đó bị vô hiệu hóa ngay lập tức và nhận phản hồi `401 Unauthorized` dạng `ProblemDetails` với thông báo tiếng Việt (`"Phiên đăng nhập không còn hiệu lực (tài khoản vừa đăng nhập ở nơi khác hoặc đã đăng xuất). Vui lòng đăng nhập lại."`). Đồng thời, Backend đã bổ sung endpoint `POST /api/auth/logout` (`204 No Content`) để thu hồi phiên trên server ngay khi người dùng bấm Đăng xuất.
+- Tuy nhiên, phía Frontend hiện có **4 điểm thiếu đồng bộ**:
+  1. **`frontend/src/auth.tsx` (dòng `44–47`):** Hàm `logout()` chỉ chạy `tokenStore.clear(); setUser(null)` ở phía trình duyệt mà **chưa gọi `POST /api/auth/logout`**, khiến `ActiveSessionId` trên server vẫn còn hiệu lực nếu chuỗi JWT bị sao chép trước đó.
+  2. **`frontend/src/api.ts` (dòng `90`) & `frontend/src/auth.tsx`:** Khi một request bị trả `401` (do đăng nhập ở nơi khác, hết hạn phiên hoặc bị khóa tài khoản), `api.ts` xóa `localStorage.ss_token` (`tokenStore.clear()`), nhưng state `user` trong `AuthProvider` **vẫn giữ nguyên khác `null`** cho đến khi người dùng F5 tải lại trang — dẫn tới giao diện vẫn hiển thị thanh điều hướng "Đã đăng nhập" dù mọi thao tác tiếp theo đều lỗi `401`.
+  3. **`frontend/src/api.ts` (`downloadFile` dòng `116–120`):** Hàm tải file CSV chưa gọi `tokenStore.clear()` và chưa phát sự kiện đăng xuất khi nhận `res.status === 401`.
+  4. **`frontend/src/pages/Login.tsx` (dòng `139–158`):** Nếu người dùng đã có phiên hợp lệ (`user !== null`) nhưng gõ thẳng URL `/login`, trang vẫn mở form đăng nhập thay vì tự điều hướng về `homeFor(user.role)`; ngoài ra trang `/login` chưa có vùng hiển thị thông báo lý do phiên cũ bị đăng xuất khi được điều hướng về từ sự kiện `401`.
+
+#### 2. Yêu cầu sửa phía Frontend
+- **`frontend/src/api.ts` (dòng `90` và `116–120`):**
+  - Định nghĩa sự kiện toàn cục khi token bị từ chối `401` (trừ chính các endpoint `/api/auth/login`, `/api/auth/google`):
+    ```ts
+    export const AUTH_EXPIRED_EVENT = 'ss:auth-expired'
+
+    function notifySessionExpired(message: string) {
+      tokenStore.clear()
+      window.dispatchEvent(new CustomEvent<string>(AUTH_EXPIRED_EVENT, { detail: message }))
+    }
+    ```
+  - Tại `api()` (dòng `90`): khi `res.status === 401 && token`, gọi `notifySessionExpired(message)`.
+  - Tại `downloadFile()` (dòng `116–120`): bổ sung kiểm tra `if (res.status === 401 && token) notifySessionExpired(message)` trước khi `throw new ApiError(res.status, message)`.
+- **`frontend/src/auth.tsx` (dòng `11`, `22–28`, `44–47`):**
+  - Cập nhật `logout()` để gọi `POST /api/auth/logout` trước khi xóa token cục bộ (bọc `try/catch/finally` để dù mạng lỗi hoặc token đã hết hạn `401` thì client vẫn đăng xuất sạch sẽ):
+    ```ts
+    const logout = async () => {
+      try {
+        if (tokenStore.get()) await api<void>('/api/auth/logout', { method: 'POST' })
+      } catch {
+        /* ignore network / 401 when signing out */
+      } finally {
+        tokenStore.clear()
+        setUser(null)
+      }
+    }
+    ```
+  - Lắng nghe cả `AUTH_EXPIRED_EVENT` lẫn sự kiện `window` `'storage'` (`e.key === 'ss_token'`) trong `AuthProvider` để đồng bộ đăng xuất ngay lập tức trên mọi tab đang mở, lưu thông báo lý do vào `sessionStorage.setItem('ss_auth_notice', detail)` và chuyển hướng về `/login`.
+- **`frontend/src/pages/Login.tsx` (dòng `139–158`):**
+  - Nếu `!loading && user`, tự động `navigate(homeFor(user.role), { replace: true })` để người dùng đang đăng nhập không tự đăng nhập đè lên phiên hiện tại một cách vô tình.
+  - Đọc và xóa `sessionStorage.getItem('ss_auth_notice')` khi mount để hiển thị banner cảnh báo rõ ràng (ví dụ: *"Phiên đăng nhập không còn hiệu lực (tài khoản vừa đăng nhập ở nơi khác hoặc đã đăng xuất). Vui lòng đăng nhập lại."*).
+- **`frontend/src/mock/server.ts`:**
+  - Bổ sung handler `POST /api/auth/logout` trả `undefined` (`204`) và lưu `activeTokenByUserId` trong bộ nhớ mock để mô phỏng đúng hành vi đá phiên cũ khi đăng nhập mới ở chế độ `npm run dev:demo`.
+
+---
+
 ## Danh Sách Kiểm Thử Nghiệm Thu (Checklist Sau Khi Sửa Frontend)
 
 1. Mở chi tiết một hợp đồng đang thuê (`/my-units/:id`): hiển thị đầy đủ tên loại kho, diện tích `m²`, kích thước `D × R × C`, tầng/khu, điều hòa, giờ mở cửa và đúng ảnh minh họa theo cỡ kho (không còn dấu `—`).
@@ -359,4 +407,5 @@ Tuy nhiên trong `frontend/src/pages/Support.tsx` (`RequestCard`, dòng `146–1
 7. Gửi yêu cầu gia hạn hợp đồng rồi bấm **Hủy yêu cầu gia hạn** khi chưa thanh toán: yêu cầu hủy thành công, hóa đơn `RENEWAL` chuyển sang `Cancelled`, khách chọn lại được số tháng mới.
 8. Trên trang `/invoices`: giao dịch VNPay/MoMo treo quá **15 phút** cho phép bấm **Hủy giao dịch** hoặc bấm thanh toán lại ngay mà không bị kẹt 30 phút.
 9. Trên trang `/support`: khách gửi được tin nhắn phản hồi vào ticket đang mở; nếu ticket đang `Resolved`, sau khi khách gửi phản hồi trạng thái tự chuyển lại về `InProgress`.
+10. Đăng nhập cùng 1 tài khoản trên Trình duyệt A rồi đăng nhập tiếp trên Trình duyệt B: thao tác bất kỳ trên Trình duyệt A lập tức nhận `401`, tự động thoát về `/login` kèm thông báo tiếng Việt *"Phiên đăng nhập không còn hiệu lực..."*; bấm **Đăng xuất** trên Trình duyệt B gọi `POST /api/auth/logout` và vô hiệu hóa ngay JWT cũ trên server.
 

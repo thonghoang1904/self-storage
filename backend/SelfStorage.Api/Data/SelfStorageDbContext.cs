@@ -51,6 +51,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
             e.HasKey(x => x.UserId);
             e.Property(x => x.GoogleSubject).HasMaxLength(255).IsUnicode(false);
             e.HasIndex(x => x.GoogleSubject).IsUnique().HasFilter("[GoogleSubject] IS NOT NULL");
+            e.Property(x => x.ActiveSessionId).HasMaxLength(64).IsUnicode(false);
             e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
             e.HasOne(x => x.Role).WithMany().HasForeignKey(x => x.RoleId);
         });

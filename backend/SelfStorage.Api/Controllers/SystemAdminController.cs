@@ -152,6 +152,11 @@ public sealed class SystemAdminController(
         var oldRoleName = user.Role.RoleName;
         user.RoleId = newRole.RoleId;
         user.Role = newRole;
+        if (oldRoleName != newRole.RoleName)
+        {
+            user.ActiveSessionId = null;
+            user.SessionIssuedAt = null;
+        }
         if (newRole.RoleName is not (AppRoles.Staff or AppRoles.Manager))
             await db.FacilityStaffAssignments
                 .Where(a => a.StaffId == userId && a.Status == "Active")
@@ -176,6 +181,11 @@ public sealed class SystemAdminController(
             await EnsureAnotherActiveAdminExists(userId, ct);
 
         user.Status = req.Status;
+        if (req.Status != "Active")
+        {
+            user.ActiveSessionId = null;
+            user.SessionIssuedAt = null;
+        }
         user.UpdatedAt = clock.GetLocalNow().DateTime;
         AddLog(actorId, "AdminUserStatusChanged", $"Changed user {userId} status to {req.Status}");
         await db.SaveChangesAsync(ct);

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -17,10 +18,14 @@ public class JwtOptions
 
 public class TokenService(IOptions<JwtOptions> options, TimeProvider clock)
 {
+    public const string SessionClaimType = "sid";
     private readonly JwtOptions _opt = options.Value;
 
-    public (string Token, DateTime ExpiresAt) CreateToken(User user)
+    public static string NewSessionId() => Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+
+    public (string Token, DateTime ExpiresAt) CreateToken(User user, string sessionId)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         var expires = clock.GetUtcNow().UtcDateTime.AddMinutes(_opt.ExpiresMinutes);
         var claims = new[]
         {
@@ -28,6 +33,8 @@ public class TokenService(IOptions<JwtOptions> options, TimeProvider clock)
             new Claim(ClaimTypes.Name, user.Username),
             new Claim(ClaimTypes.Role, user.Role.RoleName),
             new Claim("full_name", user.FullName),
+            new Claim(JwtRegisteredClaimNames.Jti, sessionId),
+            new Claim(SessionClaimType, sessionId),
         };
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_opt.SigningKey));
         var token = new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor

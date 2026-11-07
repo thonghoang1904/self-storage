@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using System.Data;
 using System.Net.Mail;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
@@ -70,22 +71,37 @@ public class AuthController(
     public async Task<ActionResult<LoginResponse>> Login(LoginRequest req, CancellationToken ct)
     {
         var username = req.Username.Trim();
-        var user = await db.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Username == username, ct);
-        if (user is null || user.Status != "Active" ||
-            hasher.VerifyHashedPassword(user, user.PasswordHash, req.Password) == PasswordVerificationResult.Failed)
+        var candidate = await db.Users.AsNoTracking().Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.Username == username, ct);
+        if (candidate is null || candidate.Status != "Active" ||
+            hasher.VerifyHashedPassword(candidate, candidate.PasswordHash, req.Password) == PasswordVerificationResult.Failed)
             throw new AppException(StatusCodes.Status401Unauthorized, "Sai tên đăng nhập hoặc mật khẩu");
+
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var user = await db.Users.Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.UserId == candidate.UserId && u.Status == "Active", ct)
+            ?? throw new AppException(StatusCodes.Status401Unauthorized, "Sai tên đăng nhập hoặc mật khẩu");
+
+        var replacedSession = !string.IsNullOrEmpty(user.ActiveSessionId);
+        var sessionId = TokenService.NewSessionId();
+        var now = clock.GetLocalNow().DateTime;
+        user.ActiveSessionId = sessionId;
+        user.SessionIssuedAt = now;
 
         db.ActivityLogs.Add(new ActivityLog
         {
             UserId = user.UserId,
             Action = "PasswordLogin",
             IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
-            Details = "Authenticated using username and password",
-            CreatedAt = clock.GetLocalNow().DateTime,
+            Details = replacedSession
+                ? "Authenticated using username and password (superseded previous active session)"
+                : "Authenticated using username and password",
+            CreatedAt = now,
         });
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
 
-        var (token, expires) = tokens.CreateToken(user);
+        var (token, expires) = tokens.CreateToken(user, sessionId);
         return new LoginResponse(token, expires, ToDto(user));
     }
 
@@ -115,6 +131,7 @@ public class AuthController(
             || !MailAddress.TryCreate(payload.Email, out _))
             throw new AppException(StatusCodes.Status401Unauthorized, "Tài khoản Google không thể đăng nhập.");
 
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var user = await db.Users.Include(u => u.Role)
             .FirstOrDefaultAsync(u => u.GoogleSubject == payload.Subject, ct);
         if (user is null)
@@ -131,19 +148,56 @@ public class AuthController(
         if (user.Status != "Active")
             throw new AppException(StatusCodes.Status401Unauthorized, "Tài khoản Google không thể đăng nhập.");
 
-        var now = clock.GetUtcNow().UtcDateTime;
+        var replacedSession = !string.IsNullOrEmpty(user.ActiveSessionId);
+        var sessionId = TokenService.NewSessionId();
+        var now = clock.GetLocalNow().DateTime;
+        user.ActiveSessionId = sessionId;
+        user.SessionIssuedAt = now;
+
         db.ActivityLogs.Add(new ActivityLog
         {
             UserId = user.UserId,
             Action = "GoogleLogin",
             IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
-            Details = "Authenticated using a verified Google account",
+            Details = replacedSession
+                ? "Authenticated using a verified Google account (superseded previous active session)"
+                : "Authenticated using a verified Google account",
             CreatedAt = now,
         });
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
 
-        var (token, expires) = tokens.CreateToken(user);
+        var (token, expires) = tokens.CreateToken(user, sessionId);
         return new LoginResponse(token, expires, ToDto(user));
+    }
+
+    /// <summary>Invalidate the caller's active session on the server.</summary>
+    [HttpPost("logout")]
+    [Authorize]
+    public async Task<IActionResult> Logout(CancellationToken ct)
+    {
+        var id = User.GetUserId();
+        var sid = User.FindFirstValue(TokenService.SessionClaimType);
+        var now = clock.GetLocalNow().DateTime;
+        var cleared = await db.Users
+            .Where(u => u.UserId == id && (sid == null || u.ActiveSessionId == sid))
+            .ExecuteUpdateAsync(update => update
+                .SetProperty(u => u.ActiveSessionId, (string?)null)
+                .SetProperty(u => u.SessionIssuedAt, (DateTime?)null), ct);
+        if (cleared > 0)
+        {
+            db.ActivityLogs.Add(new ActivityLog
+            {
+                UserId = id,
+                Action = "Logout",
+                IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+                Details = "Signed out and invalidated active session",
+                CreatedAt = now,
+            });
+            await db.SaveChangesAsync(ct);
+        }
+
+        return NoContent();
     }
 
     /// <summary>Send a single-use password reset token to the registered email address.</summary>
@@ -241,6 +295,8 @@ public class AuthController(
         var user = await db.Users.FirstOrDefaultAsync(u => u.UserId == userId && u.Status == "Active", ct)
                    ?? throw AppException.BadRequest("Mã đặt lại mật khẩu không hợp lệ, đã hết hạn hoặc đã được sử dụng");
         user.PasswordHash = hasher.HashPassword(user, req.NewPassword);
+        user.ActiveSessionId = null;
+        user.SessionIssuedAt = null;
         user.UpdatedAt = now.UtcDateTime;
         db.ActivityLogs.Add(new ActivityLog
         {

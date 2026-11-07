@@ -1,10 +1,13 @@
 using System.Reflection;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using SelfStorage.Api.Data;
@@ -51,6 +54,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         ValidateIssuerSigningKey = true,
         ValidateLifetime = true,
     });
+const string AuthFailureReasonKey = "SelfStorage.AuthFailureReason";
 builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
 {
     options.Events ??= new JwtBearerEvents();
@@ -60,6 +64,9 @@ builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.Authenticatio
             .CreateLogger("JwtBearer");
         logger.LogWarning("Bearer token validation failed with {FailureType}.",
             context.Exception.GetType().Name);
+        if (context.Exception is SecurityTokenExpiredException)
+            context.HttpContext.Items[AuthFailureReasonKey] =
+                "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
         return Task.CompletedTask;
     };
     options.Events.OnTokenValidated = async context =>
@@ -68,21 +75,72 @@ builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.Authenticatio
             .CreateLogger("JwtBearer");
         var userIdValue = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
         var tokenRole = context.Principal?.FindFirstValue(ClaimTypes.Role);
-        if (!int.TryParse(userIdValue, out var userId) || string.IsNullOrWhiteSpace(tokenRole))
+        var sessionId = context.Principal?.FindFirstValue(TokenService.SessionClaimType)
+            ?? context.Principal?.FindFirstValue(JwtRegisteredClaimNames.Jti);
+        if (!int.TryParse(userIdValue, out var userId)
+            || string.IsNullOrWhiteSpace(tokenRole)
+            || string.IsNullOrWhiteSpace(sessionId))
         {
-            logger.LogWarning("Bearer token rejected because account identity claims are missing or invalid.");
-            context.Fail("Invalid account claims.");
+            logger.LogWarning("Bearer token rejected because account or session claims are missing or invalid.");
+            context.HttpContext.Items[AuthFailureReasonKey] =
+                "Phiên đăng nhập không hợp lệ hoặc đã cũ. Vui lòng đăng nhập lại.";
+            context.Fail("Invalid account or session claims.");
             return;
         }
 
         var db = context.HttpContext.RequestServices.GetRequiredService<SelfStorageDbContext>();
-        var currentRole = await db.Users.Where(user => user.UserId == userId && user.Status == "Active")
-            .Select(user => user.Role.RoleName)
+        var account = await db.Users.AsNoTracking()
+            .Where(user => user.UserId == userId)
+            .Select(user => new { user.Status, RoleName = user.Role.RoleName, user.ActiveSessionId })
             .SingleOrDefaultAsync(context.HttpContext.RequestAborted);
-        if (currentRole is null || !string.Equals(currentRole, tokenRole, StringComparison.Ordinal))
+        if (account is null || account.Status != "Active")
         {
-            logger.LogWarning("Bearer token rejected because the account is inactive or its role has changed.");
-            context.Fail("Account is inactive or its role has changed.");
+            logger.LogWarning("Bearer token rejected because account {UserId} is missing or inactive.", userId);
+            context.HttpContext.Items[AuthFailureReasonKey] =
+                "Tài khoản đã bị khóa hoặc ngừng hoạt động.";
+            context.Fail("Account is inactive.");
+            return;
+        }
+
+        if (!string.Equals(account.RoleName, tokenRole, StringComparison.Ordinal))
+        {
+            logger.LogWarning("Bearer token rejected because account {UserId} role changed.", userId);
+            context.HttpContext.Items[AuthFailureReasonKey] =
+                "Quyền hạn tài khoản đã thay đổi. Vui lòng đăng nhập lại.";
+            context.Fail("Account role has changed.");
+            return;
+        }
+
+        if (string.IsNullOrEmpty(account.ActiveSessionId)
+            || !CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(account.ActiveSessionId),
+                Encoding.UTF8.GetBytes(sessionId)))
+        {
+            logger.LogWarning("Bearer token rejected because session for account {UserId} was superseded or signed out.", userId);
+            context.HttpContext.Items[AuthFailureReasonKey] =
+                "Phiên đăng nhập không còn hiệu lực (tài khoản vừa đăng nhập ở nơi khác hoặc đã đăng xuất). Vui lòng đăng nhập lại.";
+            context.Fail("Session has been superseded or signed out.");
+        }
+    };
+    options.Events.OnChallenge = async context =>
+    {
+        if (context.HttpContext.Items.TryGetValue(AuthFailureReasonKey, out var obj)
+            && obj is string reason && !string.IsNullOrWhiteSpace(reason)
+            && !context.Response.HasStarted)
+        {
+            context.HandleResponse();
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            context.Response.Headers.WWWAuthenticate = "Bearer error=\"invalid_token\"";
+            var problemDetails = context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsService>();
+            await problemDetails.TryWriteAsync(new ProblemDetailsContext
+            {
+                HttpContext = context.HttpContext,
+                ProblemDetails = new ProblemDetails
+                {
+                    Status = StatusCodes.Status401Unauthorized,
+                    Title = reason,
+                },
+            });
         }
     };
 });

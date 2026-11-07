@@ -20,6 +20,8 @@ public class User
     public string? CitizenId { get; set; }
     public string? Address { get; set; }
     public string Status { get; set; } = "Active";
+    public string? ActiveSessionId { get; set; }
+    public DateTime? SessionIssuedAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 
