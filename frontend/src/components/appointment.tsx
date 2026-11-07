@@ -7,11 +7,19 @@ import { Select } from './Select'
 const pad = (n: number) => String(n).padStart(2, '0')
 const localDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 
-/** Facility hours such as "06:00 - 22:00"; falls back to office hours when the text cannot be read. */
-function openHours(operatingHours?: string): [number, number] {
-  const m = operatingHours?.match(/(\d{1,2})[:h](\d{2})?\s*[-–]\s*(\d{1,2})[:h](\d{2})?/)
+/**
+ * Facility opening hours in minutes after midnight, read the same way as the backend's OperatingHoursParser:
+ * "24/7 Access", "24/24" or "24h" mean open all day; "06:00 - 22:00" (dash, en dash or em dash) gives the range;
+ * anything unreadable falls back to office hours 08:00–20:00.
+ */
+export function parseOperatingHours(raw?: string): [number, number] {
+  if (!raw) return [8 * 60, 20 * 60]
+  if (/24\/7|24\/24|24h/i.test(raw)) return [0, 24 * 60]
+  const m = raw.match(/(?<!\d)(\d{1,2})[:h](\d{2})?\s*[-–—]\s*(\d{1,2})[:h](\d{2})?(?!\d)/i)
   if (!m) return [8 * 60, 20 * 60]
-  return [Number(m[1]) * 60 + Number(m[2] ?? 0), Number(m[3]) * 60 + Number(m[4] ?? 0)]
+  const open = Number(m[1]) * 60 + Number(m[2] ?? 0)
+  const close = Number(m[3]) * 60 + Number(m[4] ?? 0)
+  return open < close && close <= 24 * 60 ? [open, close] : [8 * 60, 20 * 60]
 }
 
 /**
@@ -19,7 +27,7 @@ function openHours(operatingHours?: string): [number, number] {
  * ending an hour before closing so there is time to hand the unit over. Past slots are left out.
  */
 export function appointmentSlots(startDate: string, operatingHours?: string, now = new Date()): string[] {
-  const [open, close] = openHours(operatingHours)
+  const [open, close] = parseOperatingHours(operatingHours)
   const slots: string[] = []
   // The backend accepts pick-up times before 20:00 only.
   for (let t = Math.ceil(open / 30) * 30; t <= Math.min(close - 60, 19 * 60 + 30); t += 30) {

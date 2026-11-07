@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { checkCitizenId, checkPhone, CITIZEN_ID_FILTER, digitsOnly, PHONE_FILTER } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
 import { api, fmtDate, fmtTime } from '../api'
+import { parseOperatingHours } from '../components/appointment'
 import { useAuth } from '../auth'
 import { Empty, Icon } from '../components/ui'
 import { ContractUnitArt } from '../components/unitPhoto'
@@ -38,10 +39,6 @@ const toMin = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slic
 const toHHMM = (t: number) => `${pad(Math.floor(t / 60))}:${pad(t % 60)}`
 const hhmm = (iso: string) => iso.slice(11, 16)
 const dmy = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/')
-function openHours(text?: string): [number, number] {
-  const m = text?.match(/(\d{1,2})[:h](\d{2})?\s*[-–]\s*(\d{1,2})[:h](\d{2})?/)
-  return m ? [Number(m[1]) * 60 + Number(m[2] ?? 0), Number(m[3]) * 60 + Number(m[4] ?? 0)] : [8 * 60, 20 * 60]
-}
 const num = (s: string) => { const n = Number(s.replace(',', '.')); return Number.isFinite(n) && n > 0 ? n : 0 }
 /** Item volume in m³ from centimetres. */
 const volumeOf = (i: Item) => (num(i.l) * num(i.w) * num(i.h) / 1e6) * Math.max(1, i.quantity)
@@ -115,7 +112,8 @@ export default function MoveInRegistration() {
       setC(d)
       if (d.startDate > addDays(today, 1)) setDate(d.startDate)
       api<Facility[]>('/api/facilities').then((fs) => setFacility(fs.find((f) => f.facilityId === d.facilityId) ?? null)).catch(() => {})
-      api<StorageUnit[]>(`/api/facilities/${d.facilityId}/units`).then((us) => {
+      // Unit size comes with the contract; the public unit list (older backends) leaves rented units out.
+      if (!d.lengthMeters) api<StorageUnit[]>(`/api/facilities/${d.facilityId}/units`).then((us) => {
         const u = us.find((x) => x.unitId === d.unitId)
         if (u) api<UnitType[]>('/api/unit-types').then((ts) => setType(ts.find((t) => t.unitTypeId === u.unitTypeId) ?? null)).catch(() => {})
       }).catch(() => {})
@@ -125,7 +123,9 @@ export default function MoveInRegistration() {
     void loadRows()
   }, [id, loadRows, today])
 
-  const [open, close] = openHours(facility?.operatingHours)
+  const hoursText = c?.operatingHours || facility?.operatingHours
+  // A 24-hour facility closes at 24:00; cap at 23:30 so no "24:00" time is sent.
+  const [open, close] = parseOperatingHours(hoursText).map((t) => Math.min(t, 23 * 60 + 30))
   const entrySlots: string[] = []
   const nowMin = date === today ? new Date().getHours() * 60 + new Date().getMinutes() + 15 : 0
   for (let t = Math.ceil(Math.max(open, nowMin) / 30) * 30; t + 30 <= close; t += 30) entrySlots.push(toHHMM(t))
@@ -148,7 +148,9 @@ export default function MoveInRegistration() {
   const named = items.filter((i) => i.name.trim())
   const pieces = named.reduce((n, i) => n + Math.max(1, i.quantity), 0)
   const volume = named.reduce((n, i) => n + volumeOf(i), 0)
-  const capacity = type ? type.volumeCubicMeters || type.lengthMeters * type.widthMeters * type.heightMeters : 0
+  // Unit volume from the contract (newer backends), else from the unit type found in the public list.
+  const capacity = c?.volumeCubicMeters || (c?.lengthMeters ? c.lengthMeters * c.widthMeters * c.heightMeters : 0)
+    || (type ? type.volumeCubicMeters || type.lengthMeters * type.widthMeters * type.heightMeters : 0)
   const fill = capacity ? Math.round(volume / capacity * 100) : 0
   const visitor = who == null ? null : people.find((p) => p.authorizedPersonId === who) ?? null
   const purpose = buildPurpose(items, vehicle, helpers, phone, note)
@@ -202,7 +204,9 @@ export default function MoveInRegistration() {
     }
   }
 
+  const canCancel = (r: VisitRegistration) => r.status === 'Pending' || (r.status === 'Approved' && new Date(r.scheduledExitAt).getTime() > Date.now())
   const cancel = async (r: VisitRegistration) => {
+    if (r.status === 'Approved' && !window.confirm('Hủy lịch chuyển đồ đã được duyệt này? Bạn sẽ cần đăng ký lại nếu muốn vào kho khung giờ khác.')) return
     setError('')
     try {
       await api(`/api/contracts/${id}/visit-registrations/${r.visitRegistrationId}`, { method: 'DELETE' })
@@ -327,7 +331,7 @@ export default function MoveInRegistration() {
                 </section>
 
                 <section className="panel form-section">
-                  <div className="section-head"><span className="step-no">03</span><div><h3>Lịch chuyển đồ</h3><p className="muted">Chọn ngày giờ trong giờ hoạt động {facility?.operatingHours ?? ''} và phương tiện chở đồ.</p></div></div>
+                  <div className="section-head"><span className="step-no">03</span><div><h3>Lịch chuyển đồ</h3><p className="muted">Chọn ngày giờ trong giờ hoạt động {hoursText ?? ''} và phương tiện chở đồ.</p></div></div>
                   <div className="form-grid two">
                     <label className="field"><span>Ngày chuyển đồ *</span>
                       <input type="date" value={date} min={c.startDate > today ? c.startDate : today} max={c.endDate} onChange={(e) => setDate(e.target.value)} required />
@@ -417,7 +421,7 @@ export default function MoveInRegistration() {
                         <small className="muted block">Gửi {fmtTime(r.requestedAt)}{r.reviewNotes && ` · Ghi chú nhân viên: ${r.reviewNotes}`}</small>
                       </div>
                       <span className={`badge ${st.tone}`}>{st.label}</span>
-                      {r.status === 'Pending' && <button type="button" className="btn ghost sm danger-text" onClick={() => cancel(r)}>Hủy</button>}
+                      {canCancel(r) && <button type="button" className="btn ghost sm danger-text" onClick={() => cancel(r)}>Hủy</button>}
                     </div>
                   )
                 })}
@@ -429,15 +433,15 @@ export default function MoveInRegistration() {
           <aside className="stack-lg">
             <section className="panel">
               <h3 className="panel-title">Kho nhận đồ</h3>
-              <div className="unit-photo sm"><ContractUnitArt facilityId={c.facilityId} unitId={c.unitId} /></div>
+              <div className="unit-photo sm"><ContractUnitArt facilityId={c.facilityId} unitId={c.unitId} unitTypeName={c.unitTypeName} unitTypeId={c.unitTypeId} /></div>
               <div>
                 <h4 className="unit-title">Kho {c.unitCode}</h4>
-                <p className="muted">{type ? `${type.typeName} · ${capacity.toFixed(1)} m³` : c.facilityName}</p>
+                <p className="muted">{c.unitTypeName || type?.typeName ? `${c.unitTypeName || type?.typeName} · ${capacity.toFixed(1)} m³` : c.facilityName}</p>
                 <span className={`badge ${ended || locked ? 'bad' : 'ok'}`}>{ended ? 'Đã kết thúc' : locked ? 'Đang khóa' : 'Đang hoạt động'}</span>
               </div>
               <div className="info-row"><span className="muted">Cơ sở</span><b>{c.facilityName}</b></div>
               <div className="info-row"><span className="muted">Thời hạn</span><b>{fmtDate(c.startDate)} – {fmtDate(c.endDate)}</b></div>
-              <div className="info-row"><span className="muted">Giờ mở cửa</span><b>{facility?.operatingHours ?? '—'}</b></div>
+              <div className="info-row"><span className="muted">Giờ mở cửa</span><b>{hoursText ?? '—'}</b></div>
               {capacity > 0 && (
                 <div className="stack-sm">
                   <div className="info-row"><span className="muted">Đồ khai báo lần này</span><b>{volume.toFixed(2)} / {capacity.toFixed(1)} m³</b></div>

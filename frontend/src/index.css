@@ -1502,3 +1502,11 @@ a.stat-link { text-decoration: none; color: inherit; }
 .sign-summary { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-tint); }
 .sign-summary .kv-grid { margin: 0; }
 .sign-grid .terms-box:not(.open) { max-height: 440px; }
+/* Thuê kho: mã khuyến mãi */
+.promo-box { display: flex; flex-direction: column; gap: 8px; padding-top: 14px; border-top: 1px solid var(--border); }
+.promo-box input { text-transform: uppercase; }
+.promo-box input::placeholder { text-transform: none; }
+.promo-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.promo-chips button { padding: 5px 10px; border: 1px dashed var(--cyan); border-radius: 99px; background: #fff; font: inherit; font-size: 12.5px; font-weight: 700; color: var(--cyan-600); cursor: pointer; }
+.promo-chips button.active { background: var(--cyan-50); border-style: solid; }
+.promo-chips button:disabled { opacity: .45; cursor: not-allowed; border-color: var(--border); color: var(--muted); }

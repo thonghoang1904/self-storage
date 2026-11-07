@@ -4,6 +4,7 @@ import { api, fmtMoney } from '../api'
 import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
 import { Icon, splitTypeName, UnitArt } from '../components/ui'
+import { depositFor, fillFees, useFees, useRentalPolicy } from '../publicPolicy'
 import { homeFor, type Availability, type Facility, type UnitType } from '../types'
 
 /**
@@ -28,11 +29,11 @@ const FAQS = [
   },
   {
     q: 'Thủ tục đặt và nhận kho diễn ra thế nào?',
-    a: 'Bạn chọn cơ sở, loại kho và số tháng rồi đặt chỗ trực tuyến. Hệ thống giữ chỗ 24 giờ để bạn đặt cọc bằng một tháng tiền thuê. Sau khi cọc được xác nhận, bạn hẹn giờ đến nhận kho và nhân viên bàn giao, tạo hợp đồng.',
+    a: 'Bạn chọn cơ sở, loại kho và số tháng rồi đặt chỗ trực tuyến. Hệ thống giữ chỗ để bạn đặt cọc theo chính sách của cơ sở (mặc định bằng một tháng tiền thuê, giữ chỗ 24 giờ). Sau khi cọc được xác nhận, bạn hẹn giờ đến nhận kho và nhân viên bàn giao, tạo hợp đồng.',
   },
   {
     q: 'Nếu trả kho trễ hạn thì sao?',
-    a: 'Bạn trả kho từ 20:00 ngày hết hạn. Nếu quá 24 giờ chưa trả hoặc chưa gia hạn, kho bị khóa và tính phí mỗi ngày bằng 1/30 tiền thuê tháng, trừ dần vào tiền cọc.',
+    a: 'Bạn trả kho trước 20:00 ngày hết hạn. Nếu quá 24 giờ chưa trả hoặc chưa gia hạn, kho bị khóa và tính phí lưu kho quá hạn {LATE_FEE} theo bảng phí hiện hành, trừ dần vào tiền cọc.',
   },
 ]
 
@@ -53,9 +54,12 @@ function useAvailability(facilities: Facility[]) {
 }
 
 export default function Pricing() {
+  // Live fee table and the policy of the first facility (deposit %), for the FAQ and the comparison table.
+  const fees = useFees()
   const { user } = useAuth()
   const [types, setTypes] = useState<UnitType[]>([])
   const [facilities, setFacilities] = useState<Facility[]>([])
+  const policy = useRentalPolicy(facilities.find((f) => f.status === 'Active')?.facilityId)
   const [error, setError] = useState('')
   const [open, setOpen] = useState(0)
   const free = useAvailability(facilities)
@@ -78,14 +82,14 @@ export default function Pricing() {
     { label: 'Điều hòa, kiểm soát độ ẩm', value: (t) => (t.hasClimateControl ? <Icon name="check" size={16} className="cyan" /> : <span className="muted">—</span>) },
     { label: 'Giá thuê theo ngày', value: (t) => fmtMoney(t.baseDailyRate) },
     { label: 'Giá thuê theo tháng', value: (t) => <b>{fmtMoney(t.baseMonthlyRate)}</b> },
-    { label: 'Tiền cọc (1 tháng thuê)', value: (t) => fmtMoney(t.baseMonthlyRate) },
+    { label: `Tiền cọc (${policy.depositPercent}% giá tháng)`, value: (t) => fmtMoney(depositFor(t.baseMonthlyRate, policy)) },
     { label: 'Kho đang trống', value: (t) => (free ? `${free[t.unitTypeId] ?? 0} kho` : '…') },
   ]
 
   return (
     <>
       <PageHero center eyebrow="Bảng giá minh bạch · Không phát sinh chi phí ẩn" title="Kho Lưu Trữ & Bảng Giá Dịch Vụ">
-        Đủ kích thước từ tủ khóa cá nhân đến kho lớn cho cả căn nhà. Giá thuê theo tháng, tiền cọc bằng một tháng thuê, ra vào kho được nhân viên xác thực bằng CCCD.
+        Đủ kích thước từ tủ khóa cá nhân đến kho lớn cho cả căn nhà. Giá thuê theo tháng, tiền cọc hoàn lại khi trả kho, ra vào kho được nhân viên xác thực bằng CCCD.
       </PageHero>
 
       <section className="section tint">
@@ -161,7 +165,7 @@ export default function Pricing() {
                 <button type="button" className="faq-q" aria-expanded={open === i} onClick={() => setOpen(open === i ? -1 : i)}>
                   <span>{f.q}</span><Icon name="plus" size={18} />
                 </button>
-                {open === i && <p className="faq-a">{f.a}</p>}
+                {open === i && <p className="faq-a">{fillFees(f.a, fees)}</p>}
               </div>
             ))}
           </div>

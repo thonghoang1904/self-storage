@@ -6,7 +6,7 @@ import { useAuth } from '../auth'
 import { depositDueAt, depositMissed, pickupMissed } from '../components/appointment'
 import { Empty, Eyebrow, Icon, splitTypeName, StatusBadge } from '../components/ui'
 import { ContractUnitArt } from '../components/unitPhoto'
-import { DenyReasons, type AccessRecord, type Contract, type Person, type Reservation } from '../types'
+import { DenyReasons, type AccessRecord, type CancellationRequest, type Contract, type Person, type Reservation } from '../types'
 import { FormField, useValidatedForm } from '../components/form'
 import { Modal } from '../components/Modal'
 
@@ -99,7 +99,7 @@ export default function MyUnits() {
           <section className="stack">
             <h2 className="section-title with-icon"><Icon name="clipboard" size={20} className="cyan" /> Đơn Đặt Kho Đang Xử Lý</h2>
             <div className="order-cards">
-              {openReservations.map((r) => <OrderCard key={r.reservationId} r={r} />)}
+              {openReservations.map((r) => <OrderCard key={r.reservationId} r={r} onChanged={() => api<Reservation[]>('/api/reservations/my').then(setReservations).catch(() => {})} />)}
             </div>
           </section>
         )}
@@ -114,7 +114,7 @@ export default function MyUnits() {
               return (
                 <article key={c.contractId} className="my-unit-card">
                   <Link to={`/my-units/${c.contractId}`} className="my-unit-media" aria-label={`Chi tiết kho ${c.unitCode}`}>
-                    <ContractUnitArt facilityId={c.facilityId} unitCode={c.unitCode} />
+                    <ContractUnitArt facilityId={c.facilityId} unitCode={c.unitCode} contractId={c.contractId} />
                     <span className="tag-dark">{c.unitCode}</span>
                     <span className="tag-status"><StatusBadge status={c.status} /></span>
                   </Link>
@@ -302,7 +302,7 @@ export function History({ contractId }: { contractId: number }) {
  * A reservation on its way to a unit, shown like an order tracker: deposit → pickup time → handover, with the one
  * thing the customer has to do next as the main button (not hidden among notifications).
  */
-function OrderCard({ r }: { r: Reservation }) {
+function OrderCard({ r, onChanged }: { r: Reservation; onChanged: () => void }) {
   const lateDeposit = depositMissed(r)
   const latePickup = pickupMissed(r)
   const step = r.status === 'PendingDeposit' ? 0 : r.checkInAppointmentAt ? 2 : 1
@@ -334,6 +334,77 @@ function OrderCard({ r }: { r: Reservation }) {
             <Link to={`/reservations/${r.reservationId}/pickup`} className="btn outline"><Icon name="calendar" size={16} /> Đổi giờ</Link>
           </div>
         )}
+      {!lateDeposit && !latePickup && <ReservationCancel r={r} onChanged={onChanged} />}
     </article>
+  )
+}
+
+/**
+ * Cancel a reservation before handover: an unpaid one is cancelled at once; a paid one (Confirmed, before 20:00 of
+ * the pickup day) needs a request that staff approve, refunding the deposit minus the cancellation fee.
+ */
+function ReservationCancel({ r, onChanged }: { r: Reservation; onChanged: () => void }) {
+  const [requests, setRequests] = useState<CancellationRequest[] | null>(null)
+  const [open, setOpen] = useState(false)
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const confirmed = r.status === 'Confirmed'
+  const beforeDeadline = Date.now() < new Date(`${r.expectedStartDate}T20:00:00`).getTime()
+  useEffect(() => {
+    if (confirmed) api<CancellationRequest[]>(`/api/reservations/${r.reservationId}/cancellation-requests/my`).then(setRequests).catch(() => setRequests([]))
+  }, [r.reservationId, confirmed])
+
+  if (r.status === 'PendingDeposit') {
+    const cancel = async () => {
+      if (!window.confirm(`Hủy đơn ${r.reservationCode}? Kho sẽ được mở lại cho người khác đặt.`)) return
+      setBusy(true); setError('')
+      try { await api(`/api/reservations/${r.reservationId}/cancel`, { method: 'POST' }); onChanged() }
+      catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+    }
+    return (
+      <div className="row wrap">
+        <button type="button" className="btn ghost sm danger-text" disabled={busy} onClick={cancel}><Icon name="x" size={15} /> Hủy đặt kho</button>
+        {error && <small className="field-error">{error}</small>}
+      </div>
+    )
+  }
+  if (!confirmed || !beforeDeadline || !requests) return null
+  const pending = requests.find((x) => x.status === 'Pending')
+  if (pending) return <p className="alert warn"><Icon name="clock" size={16} />Đang chờ nhân viên duyệt yêu cầu hủy đơn (gửi lúc {fmtTime(pending.requestedAt)}).</p>
+  const rejected = requests[0]?.status === 'Rejected' ? requests[0] : null
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    const text = reason.trim()
+    if (!text) { setError('Vui lòng nhập lý do hủy'); return }
+    if (text.length > 1000) { setError('Lý do tối đa 1000 ký tự'); return }
+    setBusy(true); setError('')
+    try {
+      await api(`/api/reservations/${r.reservationId}/cancellation-requests`, { method: 'POST', body: { reason: text } })
+      setOpen(false); setReason('')
+      setRequests(await api<CancellationRequest[]>(`/api/reservations/${r.reservationId}/cancellation-requests/my`))
+    } catch (err) { setError((err as Error).message) } finally { setBusy(false) }
+  }
+  return (
+    <div className="stack">
+      {rejected && <p className="alert info"><Icon name="alert" size={16} />Yêu cầu hủy trước đã bị từ chối{rejected.resolutionNotes ? `: ${rejected.resolutionNotes}` : '.'}</p>}
+      {!open ? (
+        <div className="row wrap"><button type="button" className="btn ghost sm danger-text" onClick={() => setOpen(true)}><Icon name="x" size={15} /> Yêu cầu hủy & hoàn cọc</button></div>
+      ) : (
+        <form className="stack" onSubmit={submit} noValidate>
+          <label className="field">
+            <span>Lý do hủy</span>
+            <textarea rows={3} maxLength={1000} value={reason} onChange={(e) => { setReason(e.target.value); setError('') }} placeholder="Ví dụ: thay đổi kế hoạch chuyển nhà" />
+          </label>
+          <small className="muted">Nhân viên sẽ duyệt và hoàn cọc sau khi trừ phí hủy theo chính sách. Hạn gửi: trước 20:00 ngày {fmtDate(r.expectedStartDate)}.</small>
+          {error && <small className="field-error">{error}</small>}
+          <div className="row wrap">
+            <button type="submit" className="btn danger" disabled={busy}>{busy ? 'Đang gửi…' : 'Gửi yêu cầu hủy'}</button>
+            <button type="button" className="btn ghost" onClick={() => { setOpen(false); setError('') }}>Thôi</button>
+          </div>
+        </form>
+      )}
+    </div>
   )
 }

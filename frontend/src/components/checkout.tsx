@@ -33,12 +33,14 @@ export function PayButtons({ invoiceId, startingInvoiceId, startCheckout }: { in
 
 export const INVOICE_TYPE: Record<string, string> = { DEPOSIT: 'Tiền cọc', MONTHLY_RENT: 'Tiền thuê', RENEWAL: 'Gia hạn hợp đồng', OVERDUE_FINE: 'Phí quá hạn', EXTRA_CHARGE: 'Phí phát sinh' }
 export const TYPE_ICON: Record<string, string> = { DEPOSIT: 'shield', MONTHLY_RENT: 'calendar', RENEWAL: 'refresh', OVERDUE_FINE: 'alert', EXTRA_CHARGE: 'plus' }
-export const PAY_METHOD: Record<string, string> = { Cash: 'Tiền mặt', BankTransfer: 'Chuyển khoản', VNPay: 'VNPay', MoMo: 'MoMo', Momo: 'MoMo' }
+export const PAY_METHOD: Record<string, string> = { Cash: 'Tiền mặt', BankTransfer: 'Chuyển khoản', VNPay: 'VNPay', MoMo: 'MoMo', Momo: 'MoMo', DepositOffset: 'Cấn trừ tiền cọc' }
 export const PAY_STATUS: Record<string, { label: string; tone: string }> = {
   Success: { label: 'Thành công', tone: 'ok' },
   Pending: { label: 'Đang chờ', tone: 'warn' },
   Failed: { label: 'Thất bại', tone: 'bad' },
   Refunded: { label: 'Đã hoàn tiền', tone: 'info' },
+  RefundDue: { label: 'Cơ sở sẽ hoàn tiền', tone: 'warn' },
+  Reversed: { label: 'Đã hoàn tiền', tone: 'muted' },
 }
 
 const DIGITS = ['không', 'một', 'hai', 'ba', 'bốn', 'năm', 'sáu', 'bảy', 'tám', 'chín']

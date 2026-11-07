@@ -141,7 +141,7 @@ export default function Support() {
             {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
             <div className="stack">
               {rows?.map((r) => (
-                <RequestCard key={r.requestId} request={r} open={openId === r.requestId} onToggle={() => setOpenId(openId === r.requestId ? null : r.requestId)} />
+                <RequestCard key={r.requestId} request={r} open={openId === r.requestId} onToggle={() => setOpenId(openId === r.requestId ? null : r.requestId)} onReplied={load} />
               ))}
               {rows?.length === 0 && <div className="panel"><Empty icon="phone">Bạn chưa gửi yêu cầu hỗ trợ nào.</Empty></div>}
             </div>
@@ -153,13 +153,30 @@ export default function Support() {
 }
 
 /** One request with its handling timeline and checklist (loaded when opened). */
-function RequestCard({ request: r, open, onToggle, children }: { request: SupportRequest; open: boolean; onToggle: () => void; children?: ReactNode }) {
+function RequestCard({ request: r, open, onToggle, onReplied, children }: { request: SupportRequest; open: boolean; onToggle: () => void; onReplied?: () => unknown; children?: ReactNode }) {
   const [updates, setUpdates] = useState<SupportUpdate[] | null>(null)
   const [items, setItems] = useState<SupportChecklistItem[]>([])
+  const [reply, setReply] = useState('')
+  const [sending, setSending] = useState(false)
+  const [replyError, setReplyError] = useState('')
+  const loadUpdates = () => api<SupportUpdate[]>(`/api/support-requests/${r.requestId}/updates`).then(setUpdates).catch(() => setUpdates([]))
+  const sendReply = async (e: FormEvent) => {
+    e.preventDefault()
+    const message = reply.trim()
+    if (!message) { setReplyError('Vui lòng nhập nội dung phản hồi'); return }
+    if (message.length > 2000) { setReplyError('Nội dung phản hồi tối đa 2000 ký tự'); return }
+    setSending(true); setReplyError('')
+    try {
+      await api(`/api/support-requests/${r.requestId}/messages`, { method: 'POST', body: { message } })
+      setReply('')
+      await loadUpdates()
+      await onReplied?.()
+    } catch (err) { setReplyError((err as Error).message) } finally { setSending(false) }
+  }
   useEffect(() => {
     if (!open) return
     setUpdates(null)
-    api<SupportUpdate[]>(`/api/support-requests/${r.requestId}/updates`).then(setUpdates).catch(() => setUpdates([]))
+    void loadUpdates()
     api<SupportChecklistItem[]>(`/api/support-requests/${r.requestId}/checklist`).then(setItems).catch(() => setItems([]))
   }, [open, r.requestId, r.status])
 
@@ -201,6 +218,16 @@ function RequestCard({ request: r, open, onToggle, children }: { request: Suppor
               </li>
             ))}
           </ol>
+          {onReplied && (r.status === 'Closed' ? (
+            <small className="muted">Yêu cầu hỗ trợ này đã đóng. Vui lòng tạo yêu cầu mới nếu bạn cần hỗ trợ thêm.</small>
+          ) : (
+            <form className="stack-sm" onSubmit={sendReply} noValidate>
+              <textarea rows={3} maxLength={2000} value={reply} onChange={(e) => { setReply(e.target.value); setReplyError('') }} placeholder="Nhập phản hồi cho nhân viên…" aria-label="Phản hồi" />
+              {r.status === 'Resolved' && <small className="muted">Gửi phản hồi sẽ mở lại yêu cầu hỗ trợ để nhân viên tiếp tục xử lý.</small>}
+              {replyError && <small className="field-error">{replyError}</small>}
+              <div className="row"><button type="submit" className="btn primary sm" disabled={sending}>{sending ? 'Đang gửi…' : 'Gửi phản hồi'}</button></div>
+            </form>
+          ))}
           {children}
         </div>
       )}

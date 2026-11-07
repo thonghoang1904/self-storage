@@ -316,6 +316,17 @@ export interface ContractDetail {
   outstandingLateFee: number
   /** Renewal requests open 7 days before the end date. */
   renewalAvailableFrom: string
+  /** The unit itself (GET /api/contracts/{id}); the public unit list leaves rented units out. */
+  floorNumber: number
+  zoneArea: string | null
+  unitTypeId: number
+  unitTypeName: string
+  lengthMeters: number
+  widthMeters: number
+  heightMeters: number
+  volumeCubicMeters: number
+  hasClimateControl: boolean
+  operatingHours: string
 }
 
 export interface Renewal {

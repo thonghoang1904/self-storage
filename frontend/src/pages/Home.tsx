@@ -86,7 +86,7 @@ export default function Home() {
           <div className="section-head">
             <span className="kicker">Kho lưu trữ phổ biến</span>
             <h2>Chọn Không Gian Phù Hợp Với Bạn</h2>
-            <p>Đa dạng kích thước, giá thuê rõ ràng theo tháng. Tiền cọc bằng một tháng thuê.</p>
+            <p>Đa dạng kích thước, giá thuê rõ ràng theo tháng. Tiền cọc hoàn lại khi trả kho.</p>
           </div>
           <div className="unit-grid">
             {types.map((t, i) => {

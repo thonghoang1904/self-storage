@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CITIZEN_ID_FILTER, citizenIdError, digitsOnly, textError } from '../validation'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
+import { parseOperatingHours } from '../components/appointment'
 import { useAuth } from '../auth'
 import { Empty, Icon } from '../components/ui'
 import { ContractUnitArt } from '../components/unitPhoto'
@@ -21,11 +22,6 @@ const addDays = (iso: string, n: number) => { const d = new Date(`${iso}T00:00:0
 const hhmm = (iso: string) => iso.slice(11, 16)
 const dmy = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/')
 
-/** "06:00 - 22:00" → minutes; falls back to office hours. */
-function hours(text?: string): [number, number] {
-  const m = text?.match(/(\d{1,2})[:h](\d{2})?\s*[-–]\s*(\d{1,2})[:h](\d{2})?/)
-  return m ? [Number(m[1]) * 60 + Number(m[2] ?? 0), Number(m[3]) * 60 + Number(m[4] ?? 0)] : [8 * 60, 20 * 60]
-}
 const toHHMM = (t: number) => `${pad(Math.floor(t / 60))}:${pad(t % 60)}`
 
 const VISIT_STATE: Record<string, { label: string; tone: string; icon: string }> = {
@@ -79,9 +75,9 @@ export function VisitHub() {
       </div>
     )
   }
-  const now = new Date().toISOString().slice(0, 16)
-  const upcoming = (booked ?? []).filter((r) => (r.status === 'Pending' || r.status === 'Approved') && r.scheduledExitAt.slice(0, 16) >= now)
-    .sort((x, y) => x.scheduledEntryAt.localeCompare(y.scheduledEntryAt))
+  const nowMs = Date.now()
+  const upcoming = (booked ?? []).filter((r) => (r.status === 'Pending' || r.status === 'Approved') && new Date(r.scheduledExitAt).getTime() >= nowMs)
+    .sort((x, y) => new Date(x.scheduledEntryAt).getTime() - new Date(y.scheduledEntryAt).getTime())
 
   return (
     <>
@@ -191,7 +187,8 @@ export default function VisitRegistrationPage({ contractId, picker }: { contract
     void loadRows()
   }, [id, loadRows, today])
 
-  const [open, close] = hours(facility?.operatingHours)
+  // A 24-hour facility closes at 24:00; the last slot offered is 23:30 so no "24:00" time is sent.
+  const [open, close] = parseOperatingHours(facility?.operatingHours).map((t) => Math.min(t, 23 * 60 + 30))
   const slots: string[] = []
   for (let t = Math.ceil(open / 30) * 30; t <= close; t += 30) slots.push(toHHMM(t))
   // Today only future times; on the last day of the contract the visit must end before 20:00.
@@ -259,7 +256,9 @@ export default function VisitRegistrationPage({ contractId, picker }: { contract
     }
   }
 
+  const canCancel = (r: VisitRegistration) => r.status === 'Pending' || (r.status === 'Approved' && new Date(r.scheduledExitAt).getTime() > Date.now())
   const cancel = async (r: VisitRegistration) => {
+    if (r.status === 'Approved' && !window.confirm('Hủy lịch đã được duyệt này? Bạn sẽ cần đăng ký lại nếu muốn vào kho khung giờ khác.')) return
     setError('')
     try {
       await api(`/api/contracts/${id}/visit-registrations/${r.visitRegistrationId}`, { method: 'DELETE' })
@@ -418,7 +417,7 @@ export default function VisitRegistrationPage({ contractId, picker }: { contract
                         {r.reviewNotes && <small className="muted block">Ghi chú nhân viên: {r.reviewNotes}</small>}
                       </div>
                       <span className={`badge ${st.tone}`}>{st.label}</span>
-                      {r.status === 'Pending' && <button type="button" className="btn ghost sm danger-text" onClick={() => cancel(r)}>Hủy</button>}
+                      {canCancel(r) && <button type="button" className="btn ghost sm danger-text" onClick={() => cancel(r)}>Hủy</button>}
                     </div>
                   )
                 })}
@@ -430,7 +429,7 @@ export default function VisitRegistrationPage({ contractId, picker }: { contract
           <aside className="stack-lg">
             <section className="panel">
               <h3 className="panel-title">Hợp đồng của bạn</h3>
-              <div className="unit-photo sm"><ContractUnitArt facilityId={c.facilityId} unitId={c.unitId} /></div>
+              <div className="unit-photo sm"><ContractUnitArt facilityId={c.facilityId} unitId={c.unitId} unitTypeName={c.unitTypeName} unitTypeId={c.unitTypeId} /></div>
               <div>
                 <h4 className="unit-title">Kho {c.unitCode}</h4>
                 <p className="muted">{c.facilityName} • {c.contractNumber}</p>

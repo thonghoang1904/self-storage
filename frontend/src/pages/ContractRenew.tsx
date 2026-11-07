@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { Icon } from '../components/ui'
-import type { Renewal } from '../types'
+import type { EarlyReturnRequest, Renewal } from '../types'
 import { ContractStrip, Hero, Loading, useContract } from './ContractPolicy'
 import { TERMS_VERSION } from './Terms'
 
@@ -30,14 +30,37 @@ export default function ContractRenew() {
   const [agree, setAgree] = useState(false)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null)
+  // A pending early-return request blocks a renewal (the backend refuses both at once).
+  const [earlyPending, setEarlyPending] = useState<EarlyReturnRequest | null>(null)
+  useEffect(() => {
+    api<EarlyReturnRequest[]>(`/api/contracts/${id}/early-return-requests`)
+      .then((rs) => setEarlyPending(rs.find((r) => r.status === 'Pending') ?? null)).catch(() => setEarlyPending(null))
+  }, [id])
   if (!c) return <Loading error={error} />
 
   const pending = renewals.find((r) => r.status === 'Pending')
   const closesAt = new Date(`${c.endDate}T20:00:00`)
-  const open = c.status === 'Active' && new Date() < closesAt
+  const open = c.status === 'Active' && new Date() < closesAt && !earlyPending
   const newEnd = addMonths(c.endDate, months)
   const fee = months * c.monthlyRentFee
   const step = pending ? 2 : 1
+
+  // Cancel the unpaid request (DELETE …/renewals/{id}); the renewal invoice is cancelled with it.
+  const cancelPending = async () => {
+    if (!pending || !window.confirm(`Hủy yêu cầu gia hạn ${pending.extensionMonths} tháng? Hóa đơn gia hạn chưa thanh toán sẽ bị hủy.`)) return
+    setBusy(true)
+    setMsg(null)
+    try {
+      await api(`/api/contracts/${c.contractId}/renewals/${pending.renewalId}`, { method: 'DELETE' })
+      setMonths(pending.extensionMonths)
+      await reload()
+      setMsg({ tone: 'ok', text: 'Đã hủy yêu cầu gia hạn. Bạn có thể chọn lại số tháng.' })
+    } catch (e) {
+      setMsg({ tone: 'bad', text: (e as Error).message })
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const submit = async () => {
     if (!agree) return setMsg({ tone: 'bad', text: 'Vui lòng xác nhận đã đọc chính sách gia hạn' })
@@ -67,10 +90,15 @@ export default function ContractRenew() {
           <li className="later"><span>3</span>Gia hạn có hiệu lực</li>
         </ol>
 
+        {earlyPending && !pending && (
+          <p className="alert warn"><Icon name="alert" size={16} />
+            <span>Hợp đồng đang có yêu cầu <b>trả kho sớm ngày {fmtDate(earlyPending.returnDate)}</b> chờ xử lý, nên chưa gia hạn được.
+              Hủy yêu cầu trả kho sớm ở <Link to={`/my-units/${c.contractId}`} className="link">trang hợp đồng</Link> nếu bạn muốn tiếp tục thuê.</span></p>
+        )}
         {pending && (
           <p className="alert warn"><Icon name="clock" size={16} />
             <span>Hợp đồng đang có yêu cầu gia hạn <b>{pending.extensionMonths} tháng</b> (gửi {fmtTime(pending.requestedAt)}) chờ thanh toán {fmtMoney(pending.renewalFee)}, nên chưa gửi được yêu cầu mới.
-              Thanh toán trước 20:00 ngày {fmtDate(pending.oldEndDate)} để hoàn tất; muốn đổi số tháng, vui lòng liên hệ cơ sở để hủy yêu cầu này.</span></p>
+              Thanh toán trước 20:00 ngày {fmtDate(pending.oldEndDate)} để hoàn tất, hoặc hủy yêu cầu này để chọn lại số tháng.</span></p>
         )}
         {msg && <p className={`alert ${msg.tone}`}><Icon name={msg.tone === 'ok' ? 'check' : 'alert'} size={16} />{msg.text}</p>}
 
@@ -129,7 +157,7 @@ export default function ContractRenew() {
                 {renewals.map((r) => (
                   <div key={r.renewalId} className="info-row">
                     <span className="muted">{fmtTime(r.requestedAt)} · {r.extensionMonths} tháng · {fmtMoney(r.renewalFee)} · đến {fmtDate(r.newEndDate)}</span>
-                    <span className={`badge ${r.status === 'Paid' ? 'ok' : r.status === 'Pending' ? 'warn' : 'muted'}`}>{r.status === 'Paid' ? 'Đã thanh toán' : r.status === 'Pending' ? 'Chờ thanh toán' : r.status === 'Rejected' ? 'Từ chối' : r.status}</span>
+                    <span className={`badge ${r.status === 'Paid' ? 'ok' : r.status === 'Pending' ? 'warn' : 'muted'}`}>{r.status === 'Paid' ? 'Đã thanh toán' : r.status === 'Pending' ? 'Chờ thanh toán' : r.status === 'Rejected' ? 'Đã hủy / Từ chối' : r.status}</span>
                   </div>
                 ))}
               </section>
@@ -150,13 +178,16 @@ export default function ContractRenew() {
                 <b>{fmtMoney(pending ? pending.renewalFee : fee)}</b>
               </div>
               {pending ? (
-                <Link to={pending.invoiceId ? `/invoices/${pending.invoiceId}` : '/invoices'} className="btn primary block"><Icon name="wallet" size={16} /> Thanh toán phí gia hạn</Link>
+                <>
+                  <Link to={pending.invoiceId ? `/invoices/${pending.invoiceId}` : '/invoices'} className="btn primary block"><Icon name="wallet" size={16} /> Thanh toán phí gia hạn</Link>
+                  <button type="button" className="btn outline block" disabled={busy} onClick={() => void cancelPending()}>Hủy yêu cầu để chọn lại số tháng</button>
+                </>
               ) : (
                 <button type="button" className="btn primary block" disabled={busy || !open} onClick={() => void submit()}>
                   <Icon name="calendar" size={16} /> {busy ? 'Đang gửi…' : 'Gửi yêu cầu gia hạn'}
                 </button>
               )}
-              {!open && !pending && <small className="danger-text">Hợp đồng không còn trong thời gian được gia hạn.</small>}
+              {!open && !pending && !earlyPending && <small className="danger-text">Hợp đồng không còn trong thời gian được gia hạn.</small>}
               <Link to={`/my-units/${c.contractId}`} className="btn ghost block">Quay lại hợp đồng</Link>
             </section>
             <small className="muted">Cần hỗ trợ? <Link to={`/support?contract=${c.contractId}`} className="link">Gửi yêu cầu hỗ trợ</Link></small>

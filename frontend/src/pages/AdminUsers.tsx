@@ -301,6 +301,8 @@ function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser
     e.preventDefault()
     setError('')
     if (profileChanged && !form.validateAll()) return
+    // The API requires a CCCD for every customer account (also when switching an account to the customer role).
+    if (newRoleName === Roles.Customer && !digitsOnly(profile.citizenId)) { setError('Tài khoản khách hàng bắt buộc có số CCCD.'); return }
     setBusy(true)
     try {
       if (profileChanged) {
@@ -329,7 +331,7 @@ function EditUserForm({ user, roles, isMe, onCancel, onDone }: { user: AdminUser
           <FormField label="Họ và tên" error={form.error('fullName')}><input id="edit-fullname" {...form.field('fullName')} maxLength={100} /></FormField>
           <FormField label="Email" error={form.error('email')}><input id="edit-email" type="email" {...form.field('email')} maxLength={100} /></FormField>
           <FormField label="Số điện thoại" error={form.error('phoneNumber')}><input id="edit-phone" {...form.field('phoneNumber')} inputMode="tel" /></FormField>
-          <FormField label="Số CCCD" error={form.error('citizenId')}><input id="edit-cccd" {...form.field('citizenId')} inputMode="numeric" placeholder="Không bắt buộc" /></FormField>
+          <FormField label="Số CCCD" error={form.error('citizenId')}><input id="edit-cccd" {...form.field('citizenId')} inputMode="numeric" placeholder={newRoleName === Roles.Customer ? 'Bắt buộc với khách hàng' : 'Không bắt buộc'} /></FormField>
         </div>
         {isMe && <p className="muted">Bạn không thể tự đổi vai trò hay trạng thái của chính mình.</p>}
         <div className="form-grid">

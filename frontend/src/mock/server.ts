@@ -1005,6 +1005,9 @@ const routes: [string, RegExp, Handler][] = [
       monthlyRentFee: c.monthlyRentFee, depositPaid: c.depositPaid, accumulatedLateFee: accrued,
       depositBalance: Math.max(0, c.depositPaid - accrued), outstandingLateFee: Math.max(0, accrued - c.depositPaid),
       renewalAvailableFrom: `${c.startDate}T00:00:00`,
+      floorNumber: u.floorNumber, zoneArea: u.zoneArea, unitTypeId: u.unitTypeId, unitTypeName: typeById(u.unitTypeId).typeName,
+      lengthMeters: typeById(u.unitTypeId).lengthMeters, widthMeters: typeById(u.unitTypeId).widthMeters, heightMeters: typeById(u.unitTypeId).heightMeters,
+      volumeCubicMeters: typeById(u.unitTypeId).volumeCubicMeters, hasClimateControl: typeById(u.unitTypeId).hasClimateControl, operatingHours: f.operatingHours,
     }
     return d
   }],
@@ -1017,7 +1020,7 @@ const routes: [string, RegExp, Handler][] = [
     requireRole(me, [Roles.Customer])
     const c = ownContract(me, Number(m[1]))
     const months = Number(body.extensionMonths)
-    if (!(months >= 1 && months <= 60)) throw bad('Thời gian gia hạn từ 1 đến 60 tháng')
+    if (!(months >= 1 && months <= 12)) throw bad('Thời gian gia hạn mỗi lần phải từ 1 đến 12 tháng')
     const now = localIso(new Date())
     if (c.status !== 'Active' || now >= returnAppointment(c))
       throw conflict('Chỉ có thể yêu cầu gia hạn khi hợp đồng còn hiệu lực, trước 20:00 ngày hết hạn')
@@ -1025,6 +1028,17 @@ const routes: [string, RegExp, Handler][] = [
       throw conflict('Hợp đồng đã có yêu cầu gia hạn đang chờ xử lý')
     const r: Rnw = { renewalId: nextId(), contractId: c.contractId, oldEndDate: c.endDate, newEndDate: addMonthsIso(c.endDate, months), extensionMonths: months, renewalFee: c.monthlyRentFee * months, status: 'Pending', requestedAt: now }
     db.renewals.push(r)
+    return renewalDto(r)
+  }],
+  // Customer cancels their own unpaid renewal request; the renewal invoice is cancelled with it (shown as Rejected).
+  ['DELETE', /^\/api\/contracts\/(\d+)\/renewals\/(\d+)$/, (m, { token }) => {
+    const me = currentUser(token)
+    requireRole(me, [Roles.Customer])
+    const c = ownContract(me, Number(m[1]))
+    const r = db.renewals.find((x) => x.renewalId === Number(m[2]) && x.contractId === c.contractId)
+    if (!r) throw notFound('Không tìm thấy yêu cầu gia hạn')
+    if (r.status !== 'Pending') throw conflict('Yêu cầu gia hạn không còn ở trạng thái chờ thanh toán')
+    r.status = 'Rejected'
     return renewalDto(r)
   }],
   ['GET', /^\/api\/contracts\/facilities\/(\d+)$/, (m, { token, query }) => {
@@ -1392,6 +1406,23 @@ const routes: [string, RegExp, Handler][] = [
     if (!r) throw notFound('Không tìm thấy yêu cầu hỗ trợ')
     return checklistOf(r).map(checklistDto)
   }],
+  ['POST', /^\/api\/support-requests\/(\d+)\/messages$/, (m, { token, body }) => {
+    const me = currentUser(token)
+    const r = db.supports.find((x) => x.requestId === Number(m[1]))
+    if (!r) throw notFound('Không tìm thấy yêu cầu hỗ trợ')
+    if (me.role === Roles.Customer) { if (r.customerId !== me.userId) throw notFound('Không tìm thấy yêu cầu hỗ trợ') }
+    else { requireRole(me, STAFF); ensureAssigned(me.userId, r.facilityId) }
+    if (r.status === 'Closed') throw conflict('Yêu cầu đã đóng, không thể thêm phản hồi')
+    const msg = String(body.message ?? '').trim()
+    if (!msg) throw bad('Nội dung phản hồi không được để trống')
+    if (msg.length > 2000) throw bad('Nội dung phản hồi tối đa 2000 ký tự')
+    const prev = r.status
+    const reopen = me.role === Roles.Customer && prev === 'Resolved'
+    if (reopen) r.status = 'InProgress'
+    const u = { updateId: nextId(), requestId: r.requestId, updatedByUserId: me.userId, actionMessage: msg, previousStatus: reopen ? prev : null, newStatus: reopen ? r.status : null, createdAt: localIso(new Date()) }
+    db.supportUpdates.push(u)
+    return { updateId: u.updateId, updatedBy: me.fullName, actionMessage: msg, previousStatus: u.previousStatus, newStatus: u.newStatus, createdAt: u.createdAt }
+  }],
   ['POST', /^\/api\/admin\/support-requests\/(\d+)\/messages$/, (m, { token, body }) => {
     const me = currentUser(token); requireRole(me, [Roles.Admin])
     const r = db.supports.find((x) => x.requestId === Number(m[1]))
@@ -1537,7 +1568,8 @@ const routes: [string, RegExp, Handler][] = [
     requireRole(me, [Roles.Customer])
     const v = visitsOf().find((x) => x.visitRegistrationId === Number(m[2]) && x.contractId === Number(m[1]) && x.customerId === me.userId)
     if (!v) throw notFound('Không tìm thấy lịch ra/vào')
-    if (v.status !== 'Pending') throw conflict('Chỉ có thể hủy lịch đang chờ staff duyệt')
+    if (v.status !== 'Pending' && v.status !== 'Approved') throw conflict('Lịch ra/vào này đã được xử lý hoặc đã hủy')
+    if (v.status === 'Approved' && new Date(v.scheduledExitAt).getTime() <= Date.now()) throw conflict('Không thể hủy lịch đã duyệt khi đã qua giờ ra dự kiến')
     v.status = 'Cancelled'
     return visitDto(v)
   }],
@@ -1778,6 +1810,18 @@ const routes: [string, RegExp, Handler][] = [
     db.units.filter((u) => u.unitTypeId === t.unitTypeId).forEach((u) => { u.monthlyPrice = monthly })
     return t
   }],
+  // ---- public catalog (CatalogController, AllowAnonymous): policy of one facility, fee table, live promotions
+  ['GET', /^\/api\/facilities\/(\d+)\/rental-policy$/, (m) => {
+    const fid = Number(m[1])
+    if (!facilityById(fid)) throw notFound('Không tìm thấy cơ sở đang hoạt động')
+    const p = policiesOf().filter((x) => x.isActive && (x.facilityId === fid || x.facilityId == null))
+      .sort((a, b) => (b.facilityId == null ? 0 : 1) - (a.facilityId == null ? 0 : 1))[0]
+    return { depositPercent: p?.depositPercent ?? 100, cancellationGraceHours: p?.cancellationGraceHours ?? 24, cancellationFeePercent: p?.cancellationFeePercent ?? 10,
+      renewalNoticeDays: p?.renewalNoticeDays ?? 7, maxOverdueDaysBeforeLock: p?.maxOverdueDaysBeforeLock ?? 1, depositPaymentHours: 24 }
+  }],
+  ['GET', /^\/api\/fees$/, () => [...feesOf()].sort((a, b) => a.feeCode.localeCompare(b.feeCode))],
+  ['GET', /^\/api\/promotions$/, () => promotionsOf().filter((p) => p.isActive && p.startDate <= today() && p.endDate >= today())
+    .sort((a, b) => b.discountPercent - a.discountPercent || a.minRentalMonths - b.minRentalMonths)],
   ['GET', /^\/api\/operations\/rental-policies$/, (_m, { token }) => { opsOnly(token); return [...policiesOf()].sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate)) }],
   ['POST', /^\/api\/operations\/rental-policies$/, (_m, { token, body }) => {
     opsOnly(token)

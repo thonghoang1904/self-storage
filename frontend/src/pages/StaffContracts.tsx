@@ -8,6 +8,7 @@ import type { Invoice, OverdueSummary, Renewal, StaffContract } from '../types'
 import { Select } from '../components/Select'
 import { StatChip, scrollToList } from '../components/StatCard'
 import { ContractDialog } from './FacilityContracts'
+import { lateFeeText, useFees } from '../publicPolicy'
 
 /** Figma "renewals-overdue": metrics, filters, one table of contracts to renew or collect, collection rule. */
 
@@ -40,6 +41,7 @@ const PAGE_SIZE = 8
 const endingSoon = (r: { kind: Kind; daysLeft: number }) => r.kind === 'ending' || (r.kind === 'renewal' && r.daysLeft <= 7)
 
 export default function StaffContracts() {
+  const fees = useFees()
   const { facilityId } = useStaffFacility()
   const [contracts, setContracts] = useState<StaffContract[]>([])
   const [renewals, setRenewals] = useState<Renewal[]>([])
@@ -260,7 +262,7 @@ export default function StaffContracts() {
       <div className="panel collection-note">
         <div>
           <b>Quy định thu phí quá hạn</b>
-          <p className="muted">Sau 24 giờ kể từ 20:00 ngày hết hạn, kho tự khóa và tính phí mỗi ngày = phí tháng / 30, cấn trừ vào tiền cọc. Phần vượt cọc lập hóa đơn khi trả kho.</p>
+          <p className="muted">Sau 24 giờ kể từ 20:00 ngày hết hạn, kho tự khóa và tính phí lưu kho quá hạn {lateFeeText(fees)} theo bảng phí, cấn trừ vào tiền cọc. Phần vượt cọc lập hóa đơn khi trả kho.</p>
         </div>
         <Link to="/staff-return" className="btn outline"><Icon name="door" size={15} /> Mở kiểm tra trả kho</Link>
       </div>
