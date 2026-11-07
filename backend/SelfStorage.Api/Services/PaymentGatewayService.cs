@@ -98,8 +98,15 @@ public sealed class PaymentGatewayService(
 
         await ValidateInvoiceCanBePaidAsync(invoice, ct);
 
+        var now = clock.GetLocalNow().DateTime;
         var payment = await db.Payments.FirstOrDefaultAsync(
             p => p.InvoiceId == invoiceId && p.Status == "Pending", ct);
+        if (payment is not null && payment.PaymentDate <= now - BillingService.PendingPaymentCancelAfter)
+        {
+            payment.Status = "Failed";
+            payment.PaymentNotes = "Liên kết thanh toán cũ đã hết hạn; khởi tạo giao dịch mới.";
+            payment = null;
+        }
         if (payment is not null && payment.PaymentMethod != paymentMethod)
             throw AppException.Conflict("Hóa đơn đang có giao dịch chờ xử lý qua cổng thanh toán khác");
         if (payment is not null && payment.AmountPaid != invoice.TotalAmount)
@@ -113,7 +120,7 @@ public sealed class PaymentGatewayService(
                 PaymentMethod = paymentMethod,
                 TransactionCode = Guid.NewGuid().ToString("N"),
                 AmountPaid = invoice.TotalAmount,
-                PaymentDate = clock.GetLocalNow().DateTime,
+                PaymentDate = now,
                 Status = "Pending",
                 PaymentNotes = $"Đang chờ thanh toán {paymentMethod}.",
             };
@@ -283,6 +290,67 @@ public sealed class PaymentGatewayService(
 
         await billing.CompleteOnlinePaymentAsync("MoMo", request.OrderId, request.Amount,
             request.ResultCode == 0, request.TransactionId.ToString(CultureInfo.InvariantCulture), ct);
+    }
+
+    /// <summary>
+    /// Applies a signed MoMo redirect query idempotently (just like ProcessVnPayReturnAsync) so the frontend gets an
+    /// accurate result=success/failed parameter and localhost/slow-IPN environments still confirm valid payments.
+    /// </summary>
+    public async Task<string?> ProcessMomoReturnAsync(IQueryCollection query, CancellationToken ct)
+    {
+        if (query.Count == 0) return null;
+
+        var fields = query.ToDictionary(pair => pair.Key, pair => pair.Value.ToString(), StringComparer.Ordinal);
+        var hasResultCode = fields.TryGetValue("resultCode", out var rawResultCode)
+            && int.TryParse(rawResultCode, NumberStyles.Integer, CultureInfo.InvariantCulture, out _);
+        var resultCode = hasResultCode
+            ? int.Parse(rawResultCode!, NumberStyles.Integer, CultureInfo.InvariantCulture)
+            : -1;
+
+        var request = new MomoIpnRequest
+        {
+            PartnerCode = fields.GetValueOrDefault("partnerCode", ""),
+            OrderId = fields.GetValueOrDefault("orderId", ""),
+            RequestId = fields.GetValueOrDefault("requestId", ""),
+            Amount = fields.TryGetValue("amount", out var rawAmount)
+                && long.TryParse(rawAmount, NumberStyles.None, CultureInfo.InvariantCulture, out var amt) ? amt : 0,
+            OrderInfo = fields.GetValueOrDefault("orderInfo", ""),
+            OrderType = fields.GetValueOrDefault("orderType", ""),
+            TransactionId = fields.TryGetValue("transId", out var rawTransId)
+                && long.TryParse(rawTransId, NumberStyles.None, CultureInfo.InvariantCulture, out var tid) ? tid : 0,
+            ResultCode = resultCode,
+            Message = fields.GetValueOrDefault("message", ""),
+            PayType = fields.GetValueOrDefault("payType", ""),
+            ResponseTime = fields.TryGetValue("responseTime", out var rawResponseTime)
+                && long.TryParse(rawResponseTime, NumberStyles.None, CultureInfo.InvariantCulture, out var rt) ? rt : 0,
+            ExtraData = fields.GetValueOrDefault("extraData", ""),
+            Signature = fields.GetValueOrDefault("signature", ""),
+        };
+
+        if (hasResultCode
+            && !string.IsNullOrWhiteSpace(request.Signature)
+            && !string.IsNullOrWhiteSpace(settings.Momo.PartnerCode)
+            && !string.IsNullOrWhiteSpace(settings.Momo.AccessKey)
+            && !string.IsNullOrWhiteSpace(settings.Momo.SecretKey)
+            && request.PartnerCode == settings.Momo.PartnerCode
+            && !string.IsNullOrWhiteSpace(request.OrderId)
+            && string.Equals(request.OrderId, request.RequestId, StringComparison.Ordinal)
+            && request.Amount > 0
+            && VerifyMomoIpnSignature(request, settings.Momo.AccessKey, settings.Momo.SecretKey))
+        {
+            var expectedAmount = await db.Payments.Where(p =>
+                    p.PaymentMethod == "MoMo" && p.TransactionCode == request.OrderId)
+                .Select(p => (decimal?)p.AmountPaid).SingleOrDefaultAsync(ct);
+            if (expectedAmount is not null && expectedAmount.Value == request.Amount)
+            {
+                await billing.CompleteOnlinePaymentAsync("MoMo", request.OrderId, request.Amount,
+                    request.ResultCode == 0, request.TransactionId.ToString(CultureInfo.InvariantCulture), ct);
+                return request.ResultCode == 0 ? "success" : "failed";
+            }
+        }
+
+        // Unsigned or unverifiable query never mutates DB state; surface failure hint only when MoMo reported non-zero.
+        return hasResultCode && resultCode != 0 ? "failed" : null;
     }
 
     public string BuildFrontendReturnUrl(string provider, string? result = null)

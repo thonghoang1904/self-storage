@@ -299,7 +299,7 @@ CREATE TABLE ContractRenewals (
     ApprovedByStaffID INT NULL,
     OldEndDate DATE NOT NULL,
     NewEndDate DATE NOT NULL,
-    ExtensionMonths INT NOT NULL CONSTRAINT CK_Renewals_Months CHECK (ExtensionMonths > 0),
+    ExtensionMonths INT NOT NULL CONSTRAINT CK_Renewals_Months CHECK (ExtensionMonths BETWEEN 1 AND 12),
     RenewalFee DECIMAL(18,2) NOT NULL CONSTRAINT CK_Renewals_Fee CHECK (RenewalFee >= 0),
     Status VARCHAR(20) NOT NULL CONSTRAINT DF_Renewals_Status DEFAULT 'Pending',
     RequestedAt DATETIME2 NOT NULL CONSTRAINT DF_Renewals_ReqAt DEFAULT SYSDATETIME(),

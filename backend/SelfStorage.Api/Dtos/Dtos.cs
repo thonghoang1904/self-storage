@@ -232,7 +232,17 @@ public record ContractDetailDto(
     decimal AccumulatedLateFee,
     decimal DepositBalance,
     decimal OutstandingLateFee,
-    DateTime RenewalAvailableFrom);
+    DateTime RenewalAvailableFrom,
+    int FloorNumber = 1,
+    string? ZoneArea = null,
+    int UnitTypeId = 0,
+    string UnitTypeName = "",
+    decimal LengthMeters = 0m,
+    decimal WidthMeters = 0m,
+    decimal HeightMeters = 0m,
+    decimal VolumeCubicMeters = 0m,
+    bool HasClimateControl = false,
+    string OperatingHours = "");
 
 /// <summary>One contract as staff see it in the facility contract list.</summary>
 public record StaffContractDto(int ContractId, string ContractNumber, string CustomerName, string CustomerPhone,
@@ -262,7 +272,9 @@ public record UpdateAdminContractRequest(
     [Required] DateOnly EndDate,
     [StringLength(4000)] string? TermsConditions);
 
-public record RequestRenewalRequest([Range(1, 60)] int ExtensionMonths);
+public record RequestRenewalRequest(
+    [Range(1, 12, ErrorMessage = "Thời gian gia hạn mỗi lần phải từ 1 đến 12 tháng")]
+    int ExtensionMonths);
 public record RenewalDto(int RenewalId, int ContractId, DateOnly OldEndDate, DateOnly NewEndDate,
     int ExtensionMonths, decimal RenewalFee, string Status, DateTime RequestedAt, int? InvoiceId);
 public record ReturnUnitRequest([Required, StringLength(1000)] string UnitConditionNotes,

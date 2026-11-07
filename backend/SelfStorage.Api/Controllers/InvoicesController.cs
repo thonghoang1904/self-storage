@@ -21,14 +21,30 @@ public class InvoicesController(
 {
     [HttpGet("my")]
     [Authorize(Roles = AppRoles.Customer)]
-    public async Task<List<InvoiceDto>> Mine(CancellationToken ct)
+    public async Task<List<InvoiceDto>> Mine(
+        [FromQuery] int? contractId = null,
+        [FromQuery] int? reservationId = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 200,
+        CancellationToken ct = default)
     {
-        var invoices = await db.Invoices
+        if (page < 1 || pageSize is < 1 or > 500)
+            throw AppException.BadRequest("Tham số phân trang không hợp lệ (page >= 1, 1 <= pageSize <= 500)");
+
+        var query = db.Invoices.Where(i => i.CustomerId == User.GetUserId());
+        if (contractId is int cid) query = query.Where(i => i.ContractId == cid);
+        if (reservationId is int rid) query = query.Where(i => i.ReservationId == rid);
+
+        var total = await query.CountAsync(ct);
+        Response.Headers["X-Total-Count"] = total.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        var invoices = await query
             .Include(i => i.Details)
             .Include(i => i.Payments)
-            .Where(i => i.CustomerId == User.GetUserId())
             .OrderByDescending(i => i.CreatedAt)
-            .Take(100)
+            .ThenByDescending(i => i.InvoiceId)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync(ct);
         return await MapAsync(invoices, ct);
     }

@@ -5,6 +5,7 @@ using SelfStorage.Api.Data;
 using SelfStorage.Api.Data.Entities;
 using SelfStorage.Api.Dtos;
 using SelfStorage.Api.Infrastructure;
+using SelfStorage.Api.Services;
 
 namespace SelfStorage.Api.Controllers;
 
@@ -12,7 +13,10 @@ namespace SelfStorage.Api.Controllers;
 [ApiController]
 [Route("api")]
 [AllowAnonymous]
-public class CatalogController(SelfStorageDbContext db, TimeProvider clock) : ControllerBase
+public class CatalogController(
+    SelfStorageDbContext db,
+    RentalPolicyService rentalPolicies,
+    TimeProvider clock) : ControllerBase
 {
     [HttpGet("facilities")]
     public Task<List<FacilityDto>> Facilities(CancellationToken ct) =>
@@ -27,6 +31,39 @@ public class CatalogController(SelfStorageDbContext db, TimeProvider clock) : Co
             .Select(t => new UnitTypeDto(t.UnitTypeId, t.TypeName, t.LengthMeters, t.WidthMeters, t.HeightMeters,
                 t.VolumeCubicMeters, t.HasClimateControl, t.BaseDailyRate, t.BaseMonthlyRate, t.Description))
             .ToListAsync(ct);
+
+    /// <summary>Effective rental policy currently applying to one facility (deposit %, grace hours, cancellation fee, lock delay).</summary>
+    [HttpGet("facilities/{facilityId:int}/rental-policy")]
+    public async Task<EffectiveRentalPolicy> FacilityRentalPolicy(int facilityId, CancellationToken ct)
+    {
+        var facilityStatus = await db.Facilities.Where(f => f.FacilityId == facilityId)
+            .Select(f => f.Status).SingleOrDefaultAsync(ct);
+        if (facilityStatus is null || facilityStatus == "Closed")
+            throw AppException.NotFound("Không tìm thấy cơ sở đang hoạt động");
+        return await rentalPolicies.ForFacilityAsync(facilityId, ct);
+    }
+
+    /// <summary>Current fee schedule (late fees, early return fee, extra charges) for contract &amp; policy screens.</summary>
+    [HttpGet("fees")]
+    public Task<List<FeeConfigurationDto>> Fees(CancellationToken ct) =>
+        db.FeeConfigurations.OrderBy(f => f.FeeCode)
+            .Select(f => new FeeConfigurationDto(f.FeeTypeId, f.FeeCode, f.FeeName,
+                f.DefaultAmount, f.CalculationMethod, f.Description))
+            .ToListAsync(ct);
+
+    /// <summary>Active promotions valid today for first-time customers.</summary>
+    [HttpGet("promotions")]
+    public Task<List<PromotionDto>> Promotions(CancellationToken ct)
+    {
+        var today = DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
+        return db.Promotions
+            .Where(p => p.IsActive && p.StartDate <= today && p.EndDate >= today)
+            .OrderByDescending(p => p.DiscountPercent)
+            .ThenBy(p => p.MinRentalMonths)
+            .Select(p => new PromotionDto(p.PromotionId, p.PromoCode, p.Title, p.DiscountPercent,
+                p.MaxDiscountAmount, p.MinRentalMonths, p.StartDate, p.EndDate, p.IsActive))
+            .ToListAsync(ct);
+    }
 
     /// <summary>Number of available units per unit type at one facility.</summary>
     [HttpGet("facilities/{facilityId:int}/availability")]

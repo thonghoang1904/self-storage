@@ -108,8 +108,8 @@ public sealed class SystemAdminController(
         var user = await db.Users.Include(u => u.Role)
             .FirstOrDefaultAsync(u => u.UserId == userId, ct)
             ?? throw AppException.NotFound("Không tìm thấy tài khoản");
-        if (user.Role.RoleName == AppRoles.Customer && user.CitizenId is not null && citizenId is null)
-            throw AppException.BadRequest("Không thể xóa số CCCD của khách thuê; nhân viên cần CCCD để xác thực tại cổng");
+        if (user.Role.RoleName == AppRoles.Customer && citizenId is null)
+            throw AppException.BadRequest("Tài khoản khách thuê cần có số CCCD để nhân viên xác thực tại cổng");
         await ValidateAccountAsync(user.Username, email, citizenId, userId, ct);
 
         var changedFields = new List<string>();
@@ -143,6 +143,8 @@ public sealed class SystemAdminController(
             ?? throw AppException.NotFound("Không tìm thấy vai trò");
         if (userId == actorId && user.RoleId != req.RoleId)
             throw AppException.Conflict("Không thể tự đổi vai trò của chính mình");
+        if (newRole.RoleName == AppRoles.Customer && string.IsNullOrWhiteSpace(user.CitizenId))
+            throw AppException.BadRequest("Tài khoản chuyển sang vai trò khách thuê cần cập nhật số CCCD trước");
         if (user.Role.RoleName == AppRoles.Admin && newRole.RoleName != AppRoles.Admin)
             await EnsureAnotherActiveAdminExists(userId, ct);
 

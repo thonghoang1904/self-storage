@@ -71,7 +71,19 @@ public sealed class PaymentCallbacksController(
     }
 
     [HttpGet("momo/return")]
-    public IActionResult MomoReturn() => Redirect(paymentGateways.BuildFrontendReturnUrl("momo"));
+    public async Task<IActionResult> MomoReturn(CancellationToken ct)
+    {
+        string? result = null;
+        try
+        {
+            result = await paymentGateways.ProcessMomoReturnAsync(Request.Query, ct);
+        }
+        catch (AppException ex)
+        {
+            logger.LogWarning("MoMo return not applied: {Reason}", ex.Message);
+        }
+        return Redirect(paymentGateways.BuildFrontendReturnUrl("momo", result));
+    }
 
     public sealed record VnPayIpnResponse(
         [property: JsonPropertyName("RspCode")] string Code,

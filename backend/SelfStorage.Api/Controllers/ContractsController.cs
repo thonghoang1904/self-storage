@@ -20,7 +20,6 @@ public class ContractsController(
     SelfStorageDbContext db,
     AccessService access,
     BillingService billing,
-    RentalPolicyService rentalPolicies,
     EmailOutboxService emailOutbox,
     TimeProvider clock) : ControllerBase
 {
@@ -40,27 +39,44 @@ public class ContractsController(
     [Authorize(Roles = AppRoles.Customer)]
     public async Task<ContractDetailDto> Detail(int id, CancellationToken ct)
     {
-        var contract = await db.Contracts.Include(c => c.Unit).ThenInclude(u => u.Facility)
+        var contract = await db.Contracts
+            .Include(c => c.Unit).ThenInclude(u => u.Facility)
+            .Include(c => c.Unit).ThenInclude(u => u.UnitType)
             .FirstOrDefaultAsync(c => c.ContractId == id && c.CustomerId == User.GetUserId(), ct)
             ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
-        var policy = await rentalPolicies.ForFacilityAsync(contract.Unit.FacilityId, ct);
         var overdue = await db.OverdueRecords.Where(r => r.ContractId == id)
             .OrderByDescending(r => r.OverdueId).FirstOrDefaultAsync(ct);
         var accrued = overdue?.AccumulatedLateFee ?? 0m;
-        return new ContractDetailDto(contract.ContractId, contract.ContractNumber, contract.Unit.FacilityId,
-            contract.Unit.Facility.FacilityName, contract.UnitId, contract.Unit.UnitCode, contract.Unit.Status,
+        var unit = contract.Unit;
+        var unitType = unit.UnitType;
+        return new ContractDetailDto(contract.ContractId, contract.ContractNumber, unit.FacilityId,
+            unit.Facility.FacilityName, contract.UnitId, unit.UnitCode, unit.Status,
             contract.StartDate, contract.EndDate, contract.Status, contract.MonthlyRentFee, contract.DepositPaid,
             accrued, Math.Max(0m, contract.DepositPaid - accrued), Math.Max(0m, accrued - contract.DepositPaid),
             // Renewal is open for the whole term (early renewal); the policy's notice days only drive reminders.
-            contract.StartDate.ToDateTime(TimeOnly.MinValue));
+            contract.StartDate.ToDateTime(TimeOnly.MinValue),
+            unit.FloorNumber,
+            unit.ZoneArea,
+            unit.UnitTypeId,
+            unitType.TypeName,
+            unitType.LengthMeters,
+            unitType.WidthMeters,
+            unitType.HeightMeters,
+            unitType.VolumeCubicMeters,
+            unitType.HasClimateControl,
+            unit.Facility.OperatingHours);
     }
 
     [HttpPost("{id:int}/renewals")]
     [Authorize(Roles = AppRoles.Customer)]
     public async Task<RenewalDto> RequestRenewal(int id, RequestRenewalRequest req, CancellationToken ct)
     {
+        if (req.ExtensionMonths is < 1 or > 12)
+            throw AppException.BadRequest("Thời gian gia hạn mỗi lần phải từ 1 đến 12 tháng");
+
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var now = clock.GetLocalNow().DateTime;
+        var today = DateOnly.FromDateTime(now);
         var contract = await db.Contracts.Include(c => c.Unit).FirstOrDefaultAsync(c => c.ContractId == id
             && c.CustomerId == User.GetUserId(), ct) ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
         // Early renewal: allowed any time while the contract is active, until 20:00 on the end date.
@@ -68,6 +84,15 @@ public class ContractsController(
             throw AppException.Conflict("Chỉ có thể yêu cầu gia hạn khi hợp đồng còn hiệu lực, trước 20:00 ngày hết hạn");
         if (await db.ContractRenewals.AnyAsync(r => r.ContractId == id && r.Status == "Pending", ct))
             throw AppException.Conflict("Hợp đồng đã có yêu cầu gia hạn đang chờ xử lý");
+        if (await db.EarlyReturnRequests.AnyAsync(r => r.ContractId == id && r.Status == EarlyReturnStatus.Pending, ct))
+            throw AppException.Conflict(
+                "Hợp đồng đang có yêu cầu trả kho sớm chờ xử lý; vui lòng hủy yêu cầu trả sớm trước khi gia hạn");
+        if (await db.Invoices.AnyAsync(i => i.ContractId == id
+                && (i.InvoiceType == "MONTHLY_RENT" || i.InvoiceType == "EXTRA_CHARGE")
+                && (i.Status == "Unpaid" || i.Status == "Overdue")
+                && i.DueDate < today, ct))
+            throw AppException.Conflict(
+                "Hợp đồng còn hóa đơn tiền thuê hoặc phụ thu quá hạn chưa thanh toán; vui lòng thanh toán trước khi gia hạn");
 
         var renewal = new ContractRenewal
         {
@@ -76,6 +101,7 @@ public class ContractsController(
             NewEndDate = contract.EndDate.AddMonths(req.ExtensionMonths),
             ExtensionMonths = req.ExtensionMonths,
             RenewalFee = contract.MonthlyRentFee * req.ExtensionMonths,
+            RequestedAt = now,
         };
         db.ContractRenewals.Add(renewal);
         await db.SaveChangesAsync(ct);
@@ -87,6 +113,56 @@ public class ContractsController(
         renewal.InvoiceId = invoice.InvoiceId;
         await db.SaveChangesAsync(ct);
         await emailOutbox.QueueInvoiceIssuedAsync(invoice.InvoiceId, ct);
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return ToRenewalDto(renewal);
+    }
+
+    /// <summary>Customer cancels a still-unpaid renewal request before paying its invoice.</summary>
+    [HttpDelete("{id:int}/renewals/{renewalId:int}")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public async Task<RenewalDto> CancelRenewal(int id, int renewalId, CancellationToken ct)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await LoadOwnAsync(id, ct);
+        var renewal = await db.ContractRenewals
+            .FirstOrDefaultAsync(r => r.RenewalId == renewalId && r.ContractId == id, ct)
+            ?? throw AppException.NotFound("Không tìm thấy yêu cầu gia hạn");
+        if (renewal.Status != "Pending")
+            throw AppException.Conflict("Yêu cầu gia hạn không còn ở trạng thái chờ thanh toán");
+
+        var now = clock.GetLocalNow().DateTime;
+        if (renewal.InvoiceId is int invoiceId)
+        {
+            var invoice = await db.Invoices.Include(i => i.Payments)
+                .FirstOrDefaultAsync(i => i.InvoiceId == invoiceId, ct);
+            if (invoice is not null)
+            {
+                if (invoice.Status == "Paid" || invoice.Payments.Any(p => p.Status == "Success"))
+                    throw AppException.Conflict("Hóa đơn gia hạn đã được thanh toán, không thể hủy yêu cầu gia hạn");
+                if (invoice.Payments.Any(p => p.Status == "Pending"
+                        && p.PaymentDate > now - BillingService.PendingPaymentCancelAfter))
+                    throw AppException.Conflict("Đang có giao dịch thanh toán trực tuyến chờ xử lý; vui lòng thử lại sau ít phút");
+                foreach (var payment in invoice.Payments.Where(p => p.Status == "Pending"))
+                {
+                    payment.Status = "Failed";
+                    payment.PaymentNotes = "Giao dịch bị hủy do khách hủy yêu cầu gia hạn.";
+                }
+                if (invoice.Status is "Unpaid" or "Overdue")
+                    invoice.Status = "Cancelled";
+            }
+        }
+
+        renewal.Status = "Rejected";
+        renewal.ProcessedAt = now;
+        db.ActivityLogs.Add(new ActivityLog
+        {
+            UserId = User.GetUserId(),
+            Action = "ContractRenewalCancelledByCustomer",
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+            Details = $"Renewal {renewal.RenewalId} of contract {id} cancelled before payment",
+            CreatedAt = now,
+        });
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return ToRenewalDto(renewal);
@@ -371,6 +447,9 @@ public class ContractsController(
             throw AppException.BadRequest($"Ngày trả kho phải từ hôm nay đến trước ngày {contract.EndDate:dd/MM/yyyy}");
         if (await db.EarlyReturnRequests.AnyAsync(r => r.ContractId == id && r.Status == EarlyReturnStatus.Pending, ct))
             throw AppException.Conflict("Hợp đồng đã có yêu cầu trả kho sớm đang chờ; hủy yêu cầu cũ trước khi gửi lại");
+        if (await db.ContractRenewals.AnyAsync(r => r.ContractId == id && r.Status == "Pending", ct))
+            throw AppException.Conflict(
+                "Hợp đồng đang có yêu cầu gia hạn chờ thanh toán; vui lòng hoàn tất hoặc hủy yêu cầu gia hạn trước khi gửi yêu cầu trả kho sớm");
 
         var request = new EarlyReturnRequest
         {
@@ -600,12 +679,36 @@ public class ContractsController(
     [Authorize(Roles = AppRoles.Customer)]
     public async Task<IActionResult> RevokeAuthorizedPerson(int id, int personId, CancellationToken ct)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         await LoadOwnAsync(id, ct);
         var person = await db.AuthorizedPersons.FirstOrDefaultAsync(p => p.ContractId == id && p.AuthorizedPersonId == personId, ct)
                      ?? throw AppException.NotFound("Không tìm thấy người được ủy quyền");
+        if (await db.AccessRecords.AnyAsync(r => r.ContractId == id
+                && r.AuthorizedPersonId == personId
+                && r.Result == AccessResult.Granted
+                && r.ExitTime == null, ct))
+            throw AppException.Conflict(
+                "Người được ủy quyền đang ở trong kho; cần xác nhận ra khỏi cơ sở trước khi thu hồi quyền");
+
         person.Status = "Revoked";
         person.RevokedAt = clock.GetLocalNow().DateTime;
+
+        var openRegistrations = await db.VisitRegistrations
+            .Where(v => v.ContractId == id
+                && v.AuthorizedPersonId == personId
+                && (v.Status == "Pending"
+                    || (v.Status == "Approved"
+                        && !db.AccessRecords.Any(r => r.VisitRegistrationId == v.VisitRegistrationId
+                            && r.Result == AccessResult.Granted))))
+            .ToListAsync(ct);
+        foreach (var registration in openRegistrations)
+        {
+            registration.Status = "Cancelled";
+            registration.ReviewNotes = "Đã tự động hủy do chủ hợp đồng thu hồi quyền người được ủy quyền.";
+        }
+
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return NoContent();
     }
 

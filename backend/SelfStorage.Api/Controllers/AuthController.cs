@@ -34,6 +34,7 @@ public class AuthController(
     /// <summary>Customer self-registration.</summary>
     [HttpPost("register")]
     [AllowAnonymous]
+    [EnableRateLimiting("register")]
     public async Task<ActionResult<UserDto>> Register(RegisterRequest req, CancellationToken ct)
     {
         var username = req.Username.Trim();

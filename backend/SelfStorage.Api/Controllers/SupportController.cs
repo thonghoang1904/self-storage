@@ -79,9 +79,10 @@ public class SupportController(SelfStorageDbContext db, AccessService access, Ti
         if (contract.Status is ContractStatus.Terminated or ContractStatus.Liquidated)
             throw AppException.Conflict("Không thể gửi yêu cầu cho hợp đồng đã kết thúc");
 
+        var now = clock.GetLocalNow().DateTime;
         var request = new SupportRequest
         {
-            RequestCode = BusinessCodes.New("SUP", clock.GetLocalNow().DateTime),
+            RequestCode = BusinessCodes.New("SUP", now),
             CustomerId = contract.CustomerId,
             ContractId = contract.ContractId,
             UnitId = contract.UnitId,
@@ -90,6 +91,7 @@ public class SupportController(SelfStorageDbContext db, AccessService access, Ti
             Priority = req.Priority,
             Title = req.Title,
             Description = req.Description,
+            CreatedAt = now,
             ChecklistItems = ChecklistTemplates[req.Category]
                 .Select((description, index) => new SupportChecklistItem
                 {
@@ -106,6 +108,7 @@ public class SupportController(SelfStorageDbContext db, AccessService access, Ti
             UpdatedByUserId = contract.CustomerId,
             ActionMessage = "Khách hàng đã gửi yêu cầu hỗ trợ",
             NewStatus = "Open",
+            CreatedAt = now,
         });
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
@@ -136,23 +139,43 @@ public class SupportController(SelfStorageDbContext db, AccessService access, Ti
     [Authorize(Roles = AppRoles.Customer + "," + AppRoles.GateRoles)]
     public async Task<SupportUpdateDto> AddMessage(int requestId, AddSupportMessageRequest req, CancellationToken ct)
     {
+        var message = req.Message?.Trim() ?? "";
+        if (message.Length == 0)
+            throw AppException.BadRequest("Nội dung phản hồi không được để trống");
+
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var request = await db.SupportRequests.FirstOrDefaultAsync(r => r.RequestId == requestId, ct)
                       ?? throw AppException.NotFound("Không tìm thấy yêu cầu hỗ trợ");
         await EnsureCanReadRequestAsync(request, ct);
         if (request.Status == "Closed")
             throw AppException.Conflict("Yêu cầu đã đóng, không thể thêm phản hồi");
 
+        var now = clock.GetLocalNow().DateTime;
+        string? previousStatus = null;
+        string? newStatus = null;
+        if (User.IsInRole(AppRoles.Customer) && request.Status == "Resolved")
+        {
+            previousStatus = request.Status;
+            newStatus = "InProgress";
+            request.Status = "InProgress";
+            request.ResolvedAt = null;
+        }
+
         var userId = User.GetUserId();
         var update = new SupportUpdate
         {
             RequestId = requestId,
             UpdatedByUserId = userId,
-            ActionMessage = req.Message.Trim(),
+            ActionMessage = message,
+            PreviousStatus = previousStatus,
+            NewStatus = newStatus,
+            CreatedAt = now,
         };
         db.SupportUpdates.Add(update);
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         var author = await db.Users.Where(u => u.UserId == userId).Select(u => u.FullName).SingleAsync(ct);
-        return new SupportUpdateDto(update.UpdateId, author, update.ActionMessage, null, null, update.CreatedAt);
+        return new SupportUpdateDto(update.UpdateId, author, update.ActionMessage, update.PreviousStatus, update.NewStatus, update.CreatedAt);
     }
 
     [HttpGet("{requestId:int}/updates")]
@@ -205,11 +228,12 @@ public class SupportController(SelfStorageDbContext db, AccessService access, Ti
         if (item.Request.AssignedStaffId is not null && item.Request.AssignedStaffId != staffId)
             throw AppException.Conflict("Yêu cầu đã được nhân viên khác tiếp nhận");
 
+        var now = clock.GetLocalNow().DateTime;
         item.Request.AssignedStaffId = staffId;
         var completed = req.IsCompleted == true;
         item.IsCompleted = completed;
         item.CompletedByStaffId = completed ? staffId : null;
-        item.CompletedAt = completed ? clock.GetLocalNow().DateTime : null;
+        item.CompletedAt = completed ? now : null;
         item.Notes = string.IsNullOrWhiteSpace(req.Notes) ? null : req.Notes.Trim();
         db.SupportUpdates.Add(new SupportUpdate
         {
@@ -219,6 +243,7 @@ public class SupportController(SelfStorageDbContext db, AccessService access, Ti
                 + (item.Notes is null ? "" : $". Ghi chú: {item.Notes}"),
             PreviousStatus = item.Request.Status,
             NewStatus = item.Request.Status,
+            CreatedAt = now,
         });
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
@@ -267,10 +292,11 @@ public class SupportController(SelfStorageDbContext db, AccessService access, Ti
                 i => i.RequestId == requestId && !i.IsCompleted, ct))
             throw AppException.Conflict("Cần hoàn tất toàn bộ checklist trước khi đánh dấu ticket đã xử lý");
 
+        var now = clock.GetLocalNow().DateTime;
         var previousStatus = request.Status;
         request.AssignedStaffId = staffId;
         request.Status = req.Status;
-        request.ResolvedAt = req.Status is "Resolved" or "Closed" ? clock.GetLocalNow().DateTime : null;
+        request.ResolvedAt = req.Status is "Resolved" or "Closed" ? now : null;
         db.SupportUpdates.Add(new SupportUpdate
         {
             RequestId = requestId,
@@ -278,6 +304,7 @@ public class SupportController(SelfStorageDbContext db, AccessService access, Ti
             ActionMessage = req.ActionMessage,
             PreviousStatus = previousStatus,
             NewStatus = req.Status,
+            CreatedAt = now,
         });
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);

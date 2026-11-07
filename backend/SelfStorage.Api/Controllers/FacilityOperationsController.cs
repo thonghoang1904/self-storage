@@ -29,10 +29,15 @@ public sealed class FacilityOperationsController(
         if (!await db.Facilities.AnyAsync(f => f.FacilityId == facilityId, ct))
             throw AppException.NotFound("Không tìm thấy cơ sở");
 
+        var dayStartLocal = targetDate.ToDateTime(TimeOnly.MinValue);
+        var nextDayStartLocal = targetDate.AddDays(1).ToDateTime(TimeOnly.MinValue);
+        var dayStart = new DateTimeOffset(dayStartLocal, clock.LocalTimeZone.GetUtcOffset(dayStartLocal));
+        var dayEnd = new DateTimeOffset(nextDayStartLocal, clock.LocalTimeZone.GetUtcOffset(nextDayStartLocal));
+
         var reservations = await db.Reservations
             .Where(r => r.FacilityId == facilityId
                 && (r.CheckInAppointmentAt.HasValue
-                    ? DateOnly.FromDateTime(r.CheckInAppointmentAt.Value.DateTime) == targetDate
+                    ? r.CheckInAppointmentAt.Value >= dayStart && r.CheckInAppointmentAt.Value < dayEnd
                     : r.ExpectedStartDate == targetDate)
                 && r.Status == ReservationStatus.Confirmed)
             .OrderBy(r => r.CheckInAppointmentAt)

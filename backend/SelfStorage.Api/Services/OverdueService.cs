@@ -101,6 +101,16 @@ public sealed class OverdueService(
                     payment.PaymentNotes = "Giao dịch bị hủy do đơn đặt kho đã hết hạn.";
                 }
             }
+            var pendingCancellation = await db.ReservationCancellationRequests
+                .FirstOrDefaultAsync(r => r.ReservationId == reservation.ReservationId && r.Status == "Pending", ct);
+            if (pendingCancellation is not null)
+            {
+                pendingCancellation.Status = "Approved";
+                pendingCancellation.ResolvedAt = now;
+                pendingCancellation.ApprovedRefundAmount = 0m;
+                pendingCancellation.ResolutionNotes =
+                    "Đơn đặt kho chưa đặt cọc đã hết hạn giữ chỗ; yêu cầu hủy được đóng tự động, không phát sinh cọc cần hoàn.";
+            }
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
             expiredReservationCount++;
@@ -142,13 +152,30 @@ public sealed class OverdueService(
             }
 
             var policy = await policies.ForFacilityAsync(reservation.FacilityId, ct);
-            var cancellationFee = decimal.Round(
-                paidDeposit * policy.CancellationFeePercent / 100m, 2, MidpointRounding.AwayFromZero);
-            var approvedRefund = Math.Max(0m, paidDeposit - cancellationFee);
             var cancellation = await db.ReservationCancellationRequests
                 .FirstOrDefaultAsync(r => r.ReservationId == reservationId && r.Status == "Pending", ct);
-            if (cancellation is null)
+            decimal approvedRefund;
+            string resolutionNotes;
+            string finalReservationStatus;
+            string logAction;
+
+            if (cancellation is not null)
             {
+                // Customer already asked to cancel before the 20:00 cutoff: honor the free-cancellation grace period
+                // counted from booking to RequestedAt even when staff did not manually click Approve in time.
+                approvedRefund = policy.CancellationRefund(paidDeposit, reservation.CreatedAt, cancellation.RequestedAt);
+                var appliedFee = paidDeposit - approvedRefund;
+                resolutionNotes = appliedFee == 0m
+                    ? $"Yêu cầu hủy gửi trong thời gian miễn phí ({policy.CancellationGraceHours} giờ đầu) được tự động duyệt khi qua 20:00 ngày bắt đầu; hoàn 100% cọc ({approvedRefund:N0}đ)."
+                    : $"Yêu cầu hủy được tự động duyệt khi qua 20:00 ngày bắt đầu. Áp dụng phí hủy {policy.CancellationFeePercent:N2}% ({appliedFee:N0}đ); staff ghi nhận khoản hoàn thực tế.";
+                finalReservationStatus = ReservationStatus.Cancelled;
+                logAction = "ReservationCancellationAutoApproved";
+            }
+            else
+            {
+                var cancellationFee = decimal.Round(
+                    paidDeposit * policy.CancellationFeePercent / 100m, 2, MidpointRounding.AwayFromZero);
+                approvedRefund = Math.Max(0m, paidDeposit - cancellationFee);
                 cancellation = new ReservationCancellationRequest
                 {
                     ReservationId = reservationId,
@@ -157,22 +184,26 @@ public sealed class OverdueService(
                     RequestedAt = now,
                 };
                 db.ReservationCancellationRequests.Add(cancellation);
+                resolutionNotes =
+                    $"Đơn tự hết hạn do khách không đến nhận kho. Áp dụng phí hủy {policy.CancellationFeePercent:N2}% ({cancellationFee:N0}đ); staff ghi nhận khoản hoàn thực tế.";
+                finalReservationStatus = ReservationStatus.Expired;
+                logAction = "ReservationNoShowExpired";
             }
+
             cancellation.Status = "Approved";
             cancellation.ResolvedAt = now;
             cancellation.ApprovedRefundAmount = approvedRefund;
-            cancellation.ResolutionNotes =
-                $"Đơn tự hết hạn do khách không đến nhận kho. Áp dụng phí hủy {policy.CancellationFeePercent:N2}% ({cancellationFee:N0}đ); staff ghi nhận khoản hoàn thực tế.";
-            reservation.Status = ReservationStatus.Expired;
+            cancellation.ResolutionNotes = resolutionNotes;
+            reservation.Status = finalReservationStatus;
             foreach (var payment in depositInvoice.Payments.Where(p => p.Status == "Pending"))
             {
                 payment.Status = "Failed";
-                payment.PaymentNotes = "Giao dịch bị hủy do đơn đặt kho hết hạn vì khách không đến nhận kho.";
+                payment.PaymentNotes = "Giao dịch bị hủy do đơn đặt kho đã đóng sau 20:00 ngày bắt đầu.";
             }
             db.ActivityLogs.Add(new ActivityLog
             {
                 UserId = null,
-                Action = "ReservationNoShowExpired",
+                Action = logAction,
                 Details = $"Reservation {reservation.ReservationCode}; approved refund {approvedRefund:N0}",
                 CreatedAt = now,
             });

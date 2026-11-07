@@ -26,6 +26,7 @@ public sealed class DevelopmentDatabaseBootstrapper(
         "15_normalize_contacts.sql",
         "16_billing_safety.sql",
         "17_deposit_payment_hours.sql",
+        "18_renewal_max_months.sql",
     ];
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)

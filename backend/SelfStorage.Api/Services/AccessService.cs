@@ -19,7 +19,9 @@ public class AccessService(SelfStorageDbContext db, RentalPolicyService rentalPo
     public async Task<VisitRegistrationDto> CreateVisitRegistrationAsync(
         int customerId, int contractId, CreateVisitRegistrationRequest req, CancellationToken ct)
     {
-        var contract = await db.Contracts.Include(c => c.Unit).Include(c => c.Customer)
+        var contract = await db.Contracts
+            .Include(c => c.Unit).ThenInclude(u => u.Facility)
+            .Include(c => c.Customer)
             .Include(c => c.AuthorizedPersons)
             .FirstOrDefaultAsync(c => c.ContractId == contractId && c.CustomerId == customerId, ct)
             ?? throw AppException.NotFound("Không tìm thấy hợp đồng đang thuê");
@@ -44,11 +46,19 @@ public class AccessService(SelfStorageDbContext db, RentalPolicyService rentalPo
             || (DateOnly.FromDateTime(localExit) == contract.EndDate
                 && TimeOnly.FromDateTime(localExit) >= new TimeOnly(20, 0)))
             throw AppException.BadRequest("Thời gian đăng ký phải nằm trong thời hạn hợp đồng");
+        if (OperatingHoursParser.TryParse(contract.Unit.Facility.OperatingHours, out var operatingWindow)
+            && !operatingWindow.ContainsVisit(localEntry, localExit))
+            throw AppException.BadRequest(
+                $"Thời gian đăng ký phải nằm trong giờ hoạt động của cơ sở ({operatingWindow.FormatRange()})");
 
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var overlaps = await db.VisitRegistrations.AnyAsync(v =>
             v.ContractId == contractId && v.CustomerId == customerId
             && (v.Status == "Pending" || v.Status == "Approved")
+            && (v.AuthorizedPersonId == null
+                || db.AuthorizedPersons.Any(p => p.AuthorizedPersonId == v.AuthorizedPersonId && p.Status == "Active"))
+            && !db.AccessRecords.Any(r => r.VisitRegistrationId == v.VisitRegistrationId
+                && r.Result == AccessResult.Granted && r.ExitTime != null)
             && v.ScheduledEntryAt < req.ScheduledExitAt
             && req.ScheduledEntryAt < v.ScheduledExitAt, ct);
         if (overlaps)
@@ -79,8 +89,16 @@ public class AccessService(SelfStorageDbContext db, RentalPolicyService rentalPo
             .FirstOrDefaultAsync(v => v.VisitRegistrationId == registrationId
                 && v.ContractId == contractId && v.CustomerId == customerId, ct)
             ?? throw AppException.NotFound("Không tìm thấy lịch ra/vào");
-        if (registration.Status != "Pending")
-            throw AppException.Conflict("Chỉ có thể hủy lịch đang chờ staff duyệt");
+        if (registration.Status is not ("Pending" or "Approved"))
+            throw AppException.Conflict("Lịch ra/vào này đã được xử lý hoặc đã hủy");
+        if (registration.Status == "Approved")
+        {
+            if (registration.ScheduledExitAt <= clock.GetUtcNow())
+                throw AppException.Conflict("Không thể hủy lịch đã duyệt khi đã qua giờ ra dự kiến");
+            if (await db.AccessRecords.AnyAsync(r => r.VisitRegistrationId == registrationId
+                    && r.Result == AccessResult.Granted, ct))
+                throw AppException.Conflict("Không thể hủy lịch đã được sử dụng để vào kho");
+        }
         registration.Status = "Cancelled";
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
@@ -124,15 +142,23 @@ public class AccessService(SelfStorageDbContext db, RentalPolicyService rentalPo
             throw AppException.BadRequest("Vui lòng ghi lý do từ chối lịch ra/vào để khách biết");
         if (approve)
         {
-            if (registration.ScheduledEntryAt <= clock.GetUtcNow())
-                throw AppException.Conflict("Không thể duyệt lịch đã qua giờ vào dự kiến");
+            if (registration.ScheduledExitAt <= clock.GetUtcNow())
+                throw AppException.Conflict("Không thể duyệt lịch đã qua giờ ra dự kiến");
             if (registration.Contract.Status != ContractStatus.Active
                 || (await FindIssuesAsync(registration.Contract, ct)).Count > 0)
                 throw AppException.Conflict("Hợp đồng hoặc kho không còn đủ điều kiện ra/vào");
+            if (registration.AuthorizedPersonId is int authorizedPersonId
+                && !await db.AuthorizedPersons.AnyAsync(p => p.ContractId == registration.ContractId
+                    && p.AuthorizedPersonId == authorizedPersonId && p.Status == "Active", ct))
+                throw AppException.Conflict("Người được ủy quyền trên lịch này đã bị thu hồi quyền ra/vào");
             var overlap = await db.VisitRegistrations.AnyAsync(v =>
                 v.ContractId == registration.ContractId
                 && v.VisitRegistrationId != registrationId
                 && v.Status == "Approved"
+                && (v.AuthorizedPersonId == null
+                    || db.AuthorizedPersons.Any(p => p.AuthorizedPersonId == v.AuthorizedPersonId && p.Status == "Active"))
+                && !db.AccessRecords.Any(r => r.VisitRegistrationId == v.VisitRegistrationId
+                    && r.Result == AccessResult.Granted && r.ExitTime != null)
                 && v.ScheduledEntryAt < registration.ScheduledExitAt
                 && registration.ScheduledEntryAt < v.ScheduledExitAt, ct);
             if (overlap)
@@ -205,7 +231,9 @@ public class AccessService(SelfStorageDbContext db, RentalPolicyService rentalPo
         var now = clock.GetUtcNow();
         var approvedRegistrations = await db.VisitRegistrations
             .Where(v => ids.Contains(v.ContractId) && v.Status == "Approved"
-                && v.ScheduledEntryAt <= now && v.ScheduledExitAt >= now)
+                && v.ScheduledEntryAt <= now && v.ScheduledExitAt >= now
+                && !db.AccessRecords.Any(r => r.VisitRegistrationId == v.VisitRegistrationId
+                    && r.Result == AccessResult.Granted))
             .Select(v => new { v.ContractId, v.AuthorizedPersonId })
             .ToListAsync(ct);
 
@@ -257,8 +285,12 @@ public class AccessService(SelfStorageDbContext db, RentalPolicyService rentalPo
             ?? throw AppException.Conflict("Không tìm thấy lịch ra/vào đã được staff duyệt cho hợp đồng này");
         var now = clock.GetUtcNow();
         if (now < registration.ScheduledEntryAt || now > registration.ScheduledExitAt)
+        {
+            var entryLocal = TimeZoneInfo.ConvertTime(registration.ScheduledEntryAt, clock.LocalTimeZone);
+            var exitLocal = TimeZoneInfo.ConvertTime(registration.ScheduledExitAt, clock.LocalTimeZone);
             throw AppException.Conflict(
-                $"Chỉ được vào trong khung giờ đã đăng ký: {registration.ScheduledEntryAt:dd/MM/yyyy HH:mm} - {registration.ScheduledExitAt:dd/MM/yyyy HH:mm}");
+                $"Chỉ được vào trong khung giờ đã đăng ký: {entryLocal:dd/MM/yyyy HH:mm} - {exitLocal:dd/MM/yyyy HH:mm}");
+        }
         if (registration.CustomerId != contract.CustomerId
             || registration.AuthorizedPersonId != req.AuthorizedPersonId)
             throw AppException.Forbidden("Lịch đăng ký không thuộc khách thuê của hợp đồng");

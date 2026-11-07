@@ -53,17 +53,32 @@ public sealed class MonthlyRentInvoiceService(
             })
             .ToListAsync(ct);
 
+        var contractIds = contracts.Select(c => c.ContractId).ToArray();
+        var pendingEarlyReturnDates = contractIds.Length == 0
+            ? new Dictionary<int, DateOnly>()
+            : await db.EarlyReturnRequests
+                .Where(r => contractIds.Contains(r.ContractId)
+                    && r.Status == EarlyReturnStatus.Pending
+                    && r.ReturnDate >= today)
+                .ToDictionaryAsync(r => r.ContractId, r => r.ReturnDate, ct);
+
         foreach (var contract in contracts)
         {
-            for (var month = 0; month < 61; month++)
+            var paidRenewalIntervals = await LoadMergedPaidRenewalIntervalsAsync(db, contract.ContractId, ct);
+            var hasUpcomingEarlyReturn = pendingEarlyReturnDates.TryGetValue(
+                contract.ContractId, out var scheduledEarlyReturnDate);
+
+            for (var month = 0; month < 600; month++)
             {
                 var periodStart = contract.StartDate.AddMonths(month);
                 if (periodStart >= contract.EndDate || periodStart > generationThrough)
                     break;
-                var periodEnd = periodStart.AddMonths(1);
+                if (hasUpcomingEarlyReturn && periodStart >= scheduledEarlyReturnDate)
+                    break;
+                var periodEnd = contract.StartDate.AddMonths(month + 1);
                 if (periodEnd > contract.EndDate)
                     periodEnd = contract.EndDate;
-                if (await IsCoveredByPaidRenewalAsync(db, contract.ContractId, periodStart, periodEnd, ct))
+                if (IsCoveredByMergedIntervals(paidRenewalIntervals, periodStart, periodEnd))
                     continue;
                 if (await db.Invoices.AnyAsync(i => i.ContractId == contract.ContractId
                     && i.InvoiceType == "MONTHLY_RENT" && i.BillingPeriodStart == periodStart, ct))
@@ -102,8 +117,40 @@ public sealed class MonthlyRentInvoiceService(
         }
     }
 
-    private static Task<bool> IsCoveredByPaidRenewalAsync(
-        SelfStorageDbContext db, int contractId, DateOnly periodStart, DateOnly periodEnd, CancellationToken ct) =>
-        db.ContractRenewals.AnyAsync(r => r.ContractId == contractId && r.Status == "Paid"
-            && r.OldEndDate <= periodStart && r.NewEndDate >= periodEnd, ct);
+    /// <summary>
+    /// Merges contiguous or overlapping paid renewals (e.g. [28/02..28/03] + [28/03..28/04] -> [28/02..28/04])
+    /// so a monthly billing period [StartDate.AddMonths(m), StartDate.AddMonths(m+1)] straddling a clamped month-end
+    /// boundary is still recognized as already paid via renewal.
+    /// </summary>
+    private static async Task<List<(DateOnly Start, DateOnly End)>> LoadMergedPaidRenewalIntervalsAsync(
+        SelfStorageDbContext db, int contractId, CancellationToken ct)
+    {
+        var raw = await db.ContractRenewals
+            .Where(r => r.ContractId == contractId && r.Status == "Paid")
+            .OrderBy(r => r.OldEndDate)
+            .ThenBy(r => r.NewEndDate)
+            .Select(r => new { r.OldEndDate, r.NewEndDate })
+            .ToListAsync(ct);
+
+        var merged = new List<(DateOnly Start, DateOnly End)>();
+        foreach (var item in raw)
+        {
+            if (merged.Count > 0 && item.OldEndDate <= merged[^1].End)
+            {
+                var current = merged[^1];
+                if (item.NewEndDate > current.End)
+                    merged[^1] = (current.Start, item.NewEndDate);
+            }
+            else
+            {
+                merged.Add((item.OldEndDate, item.NewEndDate));
+            }
+        }
+
+        return merged;
+    }
+
+    private static bool IsCoveredByMergedIntervals(
+        IReadOnlyList<(DateOnly Start, DateOnly End)> intervals, DateOnly periodStart, DateOnly periodEnd) =>
+        intervals.Any(interval => interval.Start <= periodStart && interval.End >= periodEnd);
 }

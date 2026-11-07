@@ -30,7 +30,7 @@ public sealed class BillingService(
     /// Gateway links expire within 15 minutes; after this a still-pending payment is marked Failed (by the customer or
     /// the overdue job) so the invoice can be paid another way. A confirmation arriving later is still recorded.
     /// </summary>
-    public static readonly TimeSpan PendingPaymentCancelAfter = TimeSpan.FromMinutes(30);
+    public static readonly TimeSpan PendingPaymentCancelAfter = TimeSpan.FromMinutes(15);
 
     public Invoice CreateInvoice(
         int customerId,
@@ -47,9 +47,10 @@ public sealed class BillingService(
         if (unitPrice <= 0 || quantity <= 0)
             throw new InvalidOperationException("Billing invoices must have a positive quantity and price.");
 
+        var now = clock.GetLocalNow().DateTime;
         return new Invoice
         {
-            InvoiceNumber = $"INV-{clock.GetLocalNow():yyyyMMddHHmmss}-{RandomNumberGenerator.GetInt32(100000, 1000000)}",
+            InvoiceNumber = $"INV-{now:yyyyMMddHHmmss}-{RandomNumberGenerator.GetInt32(100000, 1000000)}",
             ContractId = contractId,
             ReservationId = reservationId,
             CustomerId = customerId,
@@ -60,6 +61,7 @@ public sealed class BillingService(
             BillingPeriodStart = billingPeriodStart,
             BillingPeriodEnd = billingPeriodEnd,
             Status = "Unpaid",
+            CreatedAt = now,
             Details =
             [
                 new InvoiceDetail
@@ -284,6 +286,11 @@ public sealed class BillingService(
             contract.EndDate = renewal.NewEndDate;
             // Only lift an overdue lock; a unit under maintenance stays under maintenance.
             if (contract.Unit.Status == UnitStatus.OverdueLocked) contract.Unit.Status = UnitStatus.Rented;
+            var pendingEarlyReturns = await db.EarlyReturnRequests
+                .Where(r => r.ContractId == contract.ContractId && r.Status == EarlyReturnStatus.Pending)
+                .ToListAsync(ct);
+            foreach (var earlyReturn in pendingEarlyReturns)
+                earlyReturn.Status = EarlyReturnStatus.Cancelled;
         }
         else if (invoice.InvoiceType == "OVERDUE_FINE" && invoice.ContractId is int contractId)
         {
