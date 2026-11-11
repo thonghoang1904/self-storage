@@ -37,7 +37,6 @@ function badgeOf(f: Facility, r?: FacilityReport): { label: string; tone: 'ok' |
   if (!r?.totalUnits) return { label: 'Chưa có kho', tone: 'muted' }
   const pct = occupancy(r)
   if (pct >= 90) return { label: 'Gần đầy', tone: 'warn' }
-  if (pct < 70) return { label: 'Cần thúc đẩy', tone: 'info' }
   return { label: 'Hoạt động tốt', tone: 'ok' }
 }
 

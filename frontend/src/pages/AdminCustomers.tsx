@@ -127,19 +127,16 @@ export default function AdminCustomers() {
         </div>
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Khách hàng</th><th>Liên hệ</th><th>Hợp đồng</th><th>Kho đang thuê</th><th>Hết hạn</th><th>Tình trạng</th><th>Hành động</th></tr></thead>
+            <thead><tr><th>Khách hàng</th><th>Liên hệ</th><th>Hợp đồng</th><th>Kho đang thuê</th><th>Hết hạn</th><th>Tình trạng</th></tr></thead>
             <tbody>
               {shown.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE).map(({ user: u, contracts: own, next, standing: st }) => (
-                <tr key={u.userId}>
-                  <td><b>{u.fullName}</b><br /><small className="cyan">KH-{u.userId} · {u.username}</small>{u.status !== 'Active' && <> <Badge tone="muted">{u.status === 'Suspended' ? 'Bị khóa' : 'Ngưng'}</Badge></>}</td>
+                <tr key={u.userId} className="row-click" onClick={() => setViewing(u)} title="Bấm để xem thông tin khách hàng">
+                  <td><button type="button" className="link-btn" onClick={(e) => { e.stopPropagation(); setViewing(u) }}><b>{u.fullName}</b></button><br /><small className="cyan">KH-{u.userId} · {u.username}</small>{u.status !== 'Active' && <> <Badge tone="muted">{u.status === 'Suspended' ? 'Bị khóa' : 'Ngưng'}</Badge></>}</td>
                   <td>{u.email}<br /><small className="muted">{u.phoneNumber}</small></td>
                   <td>{next ? <><b>{next.contractNumber}</b>{own.length > 1 && <small className="muted"> +{own.length - 1}</small>}</> : '—'}</td>
                   <td>{next ? <>{next.unitCode} <small className="muted">· {next.facilityName}</small></> : '—'}</td>
                   <td>{next ? fmtDate(next.endDate) : '—'}</td>
                   <td><Badge tone={STANDING[st].tone}>{st === 'soon' && next ? `Còn ${Math.max(0, daysUntil(next.endDate))} ngày` : STANDING[st].label}</Badge></td>
-                  <td>{own.length > 0
-                    ? <button type="button" className="link-btn link nowrap" onClick={() => setViewing(u)}>Xem hợp đồng</button>
-                    : <span className="muted">—</span>}</td>
                 </tr>
               ))}
             </tbody>
@@ -170,16 +167,21 @@ function CustomerContracts({ customer: u, onClose }: { customer: AdminUser; onCl
   }, [u.userId])
   const live = (rows ?? []).filter((c) => c.status === 'Active' || c.status === 'Overdue' || c.status === 'Renewed')
   return (
-    <Modal title={`Hợp đồng của ${u.fullName}`} onClose={onClose} wide>
+    <Modal title={`Khách hàng ${u.fullName}`} onClose={onClose} wide>
       <div className="info-box">
-        <div className="info-row"><span className="muted">Mã khách</span><b>KH-{u.userId} · {u.username}</b></div>
+        <div className="info-row"><span className="muted">Mã khách</span><b>KH-{u.userId}</b></div>
+        <div className="info-row"><span className="muted">Họ và tên</span><b>{u.fullName}</b></div>
+        <div className="info-row"><span className="muted">Tên đăng nhập</span><b>{u.username}</b></div>
         <div className="info-row"><span className="muted">Email</span><b>{u.email}</b></div>
         <div className="info-row"><span className="muted">Số điện thoại</span><b>{u.phoneNumber}</b></div>
+        <div className="info-row"><span className="muted">Số CCCD</span><b>{u.citizenId || '—'}</b></div>
+        <div className="info-row"><span className="muted">Tài khoản</span><b>{u.status === 'Active' ? 'Đang hoạt động' : u.status === 'Suspended' ? 'Bị khóa' : 'Ngưng'}</b></div>
         {rows && <div className="info-row"><span className="muted">Hợp đồng</span><b>{live.length} đang hiệu lực · {rows.length} tất cả</b></div>}
       </div>
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
       {!rows && !error && <p className="muted">Đang tải…</p>}
       {rows?.length === 0 && <Empty icon="file">Khách chưa có hợp đồng nào.</Empty>}
+      {!!rows?.length && <h3 className="panel-title">Hợp đồng</h3>}
       <div className="stack-sm">
         {rows?.map((c) => {
           const left = daysUntil(c.endDate)

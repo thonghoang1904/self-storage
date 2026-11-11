@@ -1510,3 +1510,5 @@ a.stat-link { text-decoration: none; color: inherit; }
 .promo-chips button { padding: 5px 10px; border: 1px dashed var(--cyan); border-radius: 99px; background: #fff; font: inherit; font-size: 12.5px; font-weight: 700; color: var(--cyan-600); cursor: pointer; }
 .promo-chips button.active { background: var(--cyan-50); border-style: solid; }
 .promo-chips button:disabled { opacity: .45; cursor: not-allowed; border-color: var(--border); color: var(--muted); }
+tr.row-click { cursor: pointer; }
+tr.row-click:hover td { background: var(--bg-tint); }
