@@ -120,11 +120,65 @@ export async function downloadFile(path: string, fileName: string): Promise<void
     }
     blob = await res.blob()
   }
+  // A CSV from the server is comma-separated; rewrite it so Excel splits it into columns on any machine.
+  if (fileName.toLowerCase().endsWith('.csv')) blob = tableFile(parseCsv(await blob.text()))
+  saveBlob(blob, fileName)
+}
+
+function saveBlob(blob: Blob, fileName: string) {
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
   a.download = fileName
   a.click()
   setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+}
+
+/** Reads comma-separated text (quoted fields, "" for a quote, optional BOM) into rows of cells. */
+export function parseCsv(text: string): string[][] {
+  const rows: string[][] = []
+  let row: string[] = [], cell = '', quoted = false
+  const src = text.replace(/^\uFEFF/, '')
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i]
+    if (quoted) {
+      if (ch === '"' && src[i + 1] === '"') { cell += '"'; i++ }
+      else if (ch === '"') quoted = false
+      else cell += ch
+    } else if (ch === '"') quoted = true
+    else if (ch === ',') { row.push(cell); cell = '' }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && src[i + 1] === '\n') i++
+      row.push(cell); rows.push(row); row = []; cell = ''
+    } else cell += ch
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row) }
+  return rows
+}
+
+/**
+ * An export file Excel opens with one value per cell whatever the computer's list separator is (a Vietnamese
+ * Windows uses ";", so a comma CSV lands in one column): tab-separated UTF-16 text with a byte-order mark.
+ * Numbers with a leading 0 (phone numbers, codes) are kept as text so Excel does not drop the 0.
+ */
+export function tableFile(rows: (string | number | null | undefined)[][]): Blob {
+  const cell = (v: string | number | null | undefined) => {
+    const s = (v == null ? '' : String(v)).replace(/[\t\r\n]+/g, ' ')
+    return /^0\d+$/.test(s) ? `="${s}"` : s
+  }
+  const text = rows.map((r) => r.map(cell).join('\t')).join('\r\n')
+  const bytes = new Uint8Array(2 + text.length * 2)
+  bytes[0] = 0xff; bytes[1] = 0xfe
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i)
+    bytes[2 + i * 2] = code & 0xff
+    bytes[3 + i * 2] = code >> 8
+  }
+  return new Blob([bytes], { type: 'text/csv;charset=utf-16le' })
+}
+
+/** Builds the export file from rows (header row first) and hands it to the browser as a download. */
+export function saveTable(fileName: string, rows: (string | number | null | undefined)[][]) {
+  saveBlob(tableFile(rows), fileName)
 }
 
 // ASP.NET Core writes model validation errors in English ("The FullName field is required.").

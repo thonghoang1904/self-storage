@@ -131,7 +131,7 @@ export default function AdminCustomers() {
             <tbody>
               {shown.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE).map(({ user: u, contracts: own, next, standing: st }) => (
                 <tr key={u.userId} className="row-click" onClick={() => setViewing(u)} title="Bấm để xem thông tin khách hàng">
-                  <td><button type="button" className="link-btn" onClick={(e) => { e.stopPropagation(); setViewing(u) }}><b>{u.fullName}</b></button><br /><small className="cyan">KH-{u.userId} · {u.username}</small>{u.status !== 'Active' && <> <Badge tone="muted">{u.status === 'Suspended' ? 'Bị khóa' : 'Ngưng'}</Badge></>}</td>
+                  <td><button type="button" className="link-btn" style={{ textDecoration: 'none' }} onClick={(e) => { e.stopPropagation(); setViewing(u) }}><b>{u.fullName}</b></button><br /><small className="cyan">KH-{u.userId} · {u.username}</small>{u.status !== 'Active' && <> <Badge tone="muted">{u.status === 'Suspended' ? 'Bị khóa' : 'Ngưng'}</Badge></>}</td>
                   <td>{u.email}<br /><small className="muted">{u.phoneNumber}</small></td>
                   <td>{next ? <><b>{next.contractNumber}</b>{own.length > 1 && <small className="muted"> +{own.length - 1}</small>}</> : '—'}</td>
                   <td>{next ? <>{next.unitCode} <small className="muted">· {next.facilityName}</small></> : '—'}</td>

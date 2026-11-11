@@ -1512,3 +1512,4 @@ a.stat-link { text-decoration: none; color: inherit; }
 .promo-chips button:disabled { opacity: .45; cursor: not-allowed; border-color: var(--border); color: var(--muted); }
 tr.row-click { cursor: pointer; }
 tr.row-click:hover td { background: var(--bg-tint); }
+tr.row-selected td { background: var(--cyan-25); }
