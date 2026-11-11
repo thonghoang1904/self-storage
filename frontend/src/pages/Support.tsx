@@ -20,6 +20,8 @@ export default function Support() {
     ? { ...EMPTY_FORM, category: 'Other', priority: 'Medium', title: 'Yêu cầu trả kho', description: 'Tôi muốn trả kho và nhận lại tiền cọc. Ngày giờ dự kiến đến trả kho: ' }
     : EMPTY_FORM)
   const [openId, setOpenId] = useState<number | null>(null)
+  // Requests already handled (resolved or closed) are hidden until the customer asks to see them.
+  const [showOld, setShowOld] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -57,7 +59,11 @@ export default function Support() {
     const problem = spamCheck(form, history)
     if (problem) {
       setError(problem.message)
-      if (problem.requestId) setOpenId(problem.requestId)
+      if (problem.requestId) {
+        setOpenId(problem.requestId)
+        const target = rows?.find((r) => r.requestId === problem.requestId)
+        if (target && !isOpen(target)) setShowOld(true)
+      }
       return
     }
     setError('')
@@ -77,6 +83,8 @@ export default function Support() {
   }
 
   const open = rows?.filter((r) => r.status === 'Open' || r.status === 'InProgress').length ?? 0
+  const old = (rows?.length ?? 0) - open
+  const visible = (rows ?? []).filter((r) => showOld || isOpen(r))
 
   return (
     <>
@@ -136,14 +144,23 @@ export default function Support() {
           <section className="stack-lg">
             <div className="row between wrap">
               <h2 className="section-title with-icon"><Icon name="history" size={20} className="cyan" /> Lịch Sử Yêu Cầu {open > 0 && <span className="pill">{open} đang mở</span>}</h2>
+              {old > 0 && (
+                <div className="segmented">
+                  <button type="button" className={!showOld ? 'active' : ''} onClick={() => setShowOld(false)}>Đang mở ({open})</button>
+                  <button type="button" className={showOld ? 'active' : ''} onClick={() => setShowOld(true)}>Tất cả ({rows?.length ?? 0})</button>
+                </div>
+              )}
             </div>
             {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
             {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
             <div className="stack">
-              {rows?.map((r) => (
+              {visible.map((r) => (
                 <RequestCard key={r.requestId} request={r} open={openId === r.requestId} onToggle={() => setOpenId(openId === r.requestId ? null : r.requestId)} onReplied={load} />
               ))}
               {rows?.length === 0 && <div className="panel"><Empty icon="phone">Bạn chưa gửi yêu cầu hỗ trợ nào.</Empty></div>}
+              {!!rows?.length && visible.length === 0 && (
+                <div className="panel"><Empty icon="check">Không có yêu cầu nào đang mở. {old} yêu cầu đã xử lý đang được ẩn, bấm <b>Tất cả</b> để xem lại.</Empty></div>
+              )}
             </div>
           </section>
         </div>
