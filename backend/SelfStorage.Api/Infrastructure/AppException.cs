@@ -16,7 +16,10 @@ public class AppException(int statusCode, string message) : Exception(message)
     public static AppException Forbidden(string message) => new(StatusCodes.Status403Forbidden, message);
 }
 
-public class AppExceptionHandler(IProblemDetailsService problemDetails) : IExceptionHandler
+public class AppExceptionHandler(
+    IProblemDetailsService problemDetails,
+    ILogger<AppExceptionHandler> logger,
+    IHostEnvironment environment) : IExceptionHandler
 {
     // Unique keys in database/*.sql. Two requests racing past the AnyAsync checks end up here.
     private static readonly Dictionary<string, string> DuplicateMessages = new()
@@ -49,15 +52,40 @@ public class AppExceptionHandler(IProblemDetailsService problemDetails) : IExcep
                 (StatusCodes.Status409Conflict,
                     DuplicateMessages.FirstOrDefault(m => sql.Message.Contains(m.Key)).Value
                     ?? "Dữ liệu đã tồn tại, vui lòng kiểm tra lại"),
+            DbUpdateException { InnerException: SqlException { Number: 1205 } } or SqlException { Number: 1205 } =>
+                (StatusCodes.Status409Conflict, "Hệ thống đang xử lý giao dịch khác, vui lòng thử lại"),
+            DbUpdateException { InnerException: SqlException { Number: 547 } } =>
+                (StatusCodes.Status409Conflict, "Dữ liệu không thỏa ràng buộc của hệ thống, vui lòng kiểm tra lại"),
+            DbUpdateException { InnerException: SqlException { Number: 2628 or 8152 } } =>
+                (StatusCodes.Status400BadRequest, "Dữ liệu nhập vào vượt quá độ dài cho phép"),
             _ => (0, ""),
         };
-        if (status == 0) return false;
+
+        string? detail = null;
+        if (status == 0)
+        {
+            logger.LogError(ex, "Unhandled exception while processing {Method} {Path}", http.Request.Method, http.Request.Path);
+            var rootMessage = ex.GetBaseException().Message;
+            status = StatusCodes.Status500InternalServerError;
+            title = environment.IsDevelopment()
+                ? $"Lỗi hệ thống: {rootMessage}"
+                : "Đã xảy ra lỗi hệ thống, vui lòng thử lại sau.";
+            if (environment.IsDevelopment())
+                detail = rootMessage;
+        }
+        else if (status >= StatusCodes.Status500InternalServerError || ex is DbUpdateException)
+        {
+            logger.LogWarning(ex, "Database or server exception mapped to {Status} on {Method} {Path}",
+                status, http.Request.Method, http.Request.Path);
+            if (environment.IsDevelopment())
+                detail = ex.GetBaseException().Message;
+        }
 
         http.Response.StatusCode = status;
         return await problemDetails.TryWriteAsync(new ProblemDetailsContext
         {
             HttpContext = http,
-            ProblemDetails = new ProblemDetails { Status = status, Title = title },
+            ProblemDetails = new ProblemDetails { Status = status, Title = title, Detail = detail },
         });
     }
 }

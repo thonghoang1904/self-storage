@@ -302,16 +302,28 @@ public class ReservationsController(
             throw AppException.BadRequest($"Số tiền hoàn còn được duyệt là {Math.Max(0m, remaining):N0}đ");
 
         var now = clock.GetLocalNow().DateTime;
+        var staffId = User.GetUserId();
+        var notes = string.IsNullOrWhiteSpace(req.Notes) ? null : req.Notes.Trim();
+        if (notes is { Length: > 255 }) notes = notes[..255];
         db.Payments.Add(new Payment
         {
             InvoiceId = depositInvoice.InvoiceId,
-            ReceivedByStaffId = User.GetUserId(),
+            ReceivedByStaffId = staffId,
             PaymentMethod = req.PaymentMethod,
             TransactionCode = transactionCode,
             AmountPaid = req.Amount,
             PaymentDate = now,
             Status = "Refunded",
-            PaymentNotes = req.Notes,
+            PaymentNotes = notes,
+        });
+        db.ActivityLogs.Add(new ActivityLog
+        {
+            UserId = staffId,
+            Action = "ReservationCancellationRefunded",
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+            Details = $"Reservation {reservation.ReservationCode}; refunded {req.Amount:N0}đ via {req.PaymentMethod}"
+                + (transactionCode is null ? "" : $" ({transactionCode})"),
+            CreatedAt = now,
         });
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);

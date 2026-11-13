@@ -118,7 +118,7 @@ public static class DevSeeder
                 db.Contracts.Add(contract);
                 await db.SaveChangesAsync();
 
-                // The first month is already paid, so unpaid rent does not keep the demo customer out at the gate.
+                // The first month and deposit are already paid, so unpaid rent does not keep the demo customer out at the gate.
                 db.Invoices.Add(new Invoice
                 {
                     InvoiceNumber = "INV-DEMO-0001",
@@ -141,6 +141,30 @@ public static class DevSeeder
                         ReceivedByStaffId = manager.UserId,
                         PaymentMethod = "Cash",
                         AmountPaid = contract.MonthlyRentFee,
+                        PaymentDate = contract.StartDate.ToDateTime(new TimeOnly(9, 0)),
+                        Status = "Success",
+                    }],
+                });
+                db.Invoices.Add(new Invoice
+                {
+                    InvoiceNumber = "INV-DEMO-DEP-0001",
+                    ContractId = contract.ContractId,
+                    CustomerId = customer.UserId,
+                    InvoiceType = "DEPOSIT",
+                    SubTotal = contract.DepositPaid,
+                    DueDate = contract.StartDate,
+                    Status = "Paid",
+                    Details = [new InvoiceDetail
+                    {
+                        Description = "Tiền đặt cọc hợp đồng demo",
+                        Quantity = 1,
+                        UnitPrice = contract.DepositPaid,
+                    }],
+                    Payments = [new Payment
+                    {
+                        ReceivedByStaffId = manager.UserId,
+                        PaymentMethod = "Cash",
+                        AmountPaid = contract.DepositPaid,
                         PaymentDate = contract.StartDate.ToDateTime(new TimeOnly(9, 0)),
                         Status = "Success",
                     }],

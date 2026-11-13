@@ -374,6 +374,9 @@ public record ExtraChargeInvoiceDto(int InvoiceId, string InvoiceNumber, string 
     decimal TotalAmount, DateOnly DueDate, string Status, int ContractId);
 public record DepositRefundDto(int ContractId, decimal RefundedAmount, decimal RemainingRefund,
     string PaymentMethod, string? TransactionCode, DateTime RefundedAt);
+public record DepositRefundSummaryDto(int ContractId, decimal DepositPaid, decimal FeesDeducted,
+    decimal SettledFromDeposit, decimal StillOwed, decimal RefundableAmount, decimal AlreadyRefunded,
+    decimal RemainingRefund, IReadOnlyList<PaymentDto> Refunds);
 public record UpdateSupportRequest([Required] string Status, [Required, StringLength(4000)] string ActionMessage);
 public record UpdateSupportChecklistItemRequest([Required] bool? IsCompleted, [StringLength(1000)] string? Notes);
 public record SupportChecklistItemDto(int ChecklistItemId, int SortOrder, string Description, bool IsCompleted,

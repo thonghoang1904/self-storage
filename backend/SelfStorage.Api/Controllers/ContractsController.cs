@@ -501,8 +501,47 @@ public class ContractsController(
             .OrderBy(r => r.ReturnDate).ThenBy(r => r.RequestedAt)).ToListAsync(ct);
     }
 
+    [HttpGet("{id:int}/deposit-refunds")]
+    [Authorize(Roles = AppRoles.GateRoles + "," + AppRoles.Admin)]
+    public async Task<DepositRefundSummaryDto> GetDepositRefunds(int id, CancellationToken ct)
+    {
+        var contract = await db.Contracts.FirstOrDefaultAsync(c => c.ContractId == id, ct)
+            ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
+        if (!User.IsInRole(AppRoles.Admin))
+            await access.EnsureAssignedAsync(User.GetUserId(),
+                await db.StorageUnits.Where(u => u.UnitId == contract.UnitId).Select(u => u.FacilityId).SingleAsync(ct), ct);
+        if (contract.Status != ContractStatus.Terminated)
+            throw AppException.Conflict("Chỉ được hoàn cọc sau khi hợp đồng đã kết thúc và trả kho");
+
+        var summary = await ComputeDepositRefundSummaryAsync(contract, ct);
+        var refundedPayments = summary.DepositInvoice is null
+            ? []
+            : summary.DepositInvoice.Payments
+                .Where(p => p.Status == "Refunded")
+                .OrderByDescending(p => p.PaymentDate)
+                .ToList();
+        var staffIds = refundedPayments
+            .Where(p => p.ReceivedByStaffId != null)
+            .Select(p => p.ReceivedByStaffId!.Value)
+            .Distinct()
+            .ToList();
+        var staffNames = staffIds.Count == 0
+            ? new Dictionary<int, string>()
+            : await db.Users.Where(u => staffIds.Contains(u.UserId))
+                .ToDictionaryAsync(u => u.UserId, u => u.FullName, ct);
+        var refunds = refundedPayments
+            .Select(p => new PaymentDto(p.PaymentId, p.PaymentMethod, p.TransactionCode, p.AmountPaid,
+                p.PaymentDate, p.Status, p.PaymentNotes,
+                p.ReceivedByStaffId is int sid ? staffNames.GetValueOrDefault(sid) : null))
+            .ToList();
+
+        return new DepositRefundSummaryDto(id, contract.DepositPaid, summary.FeesDeducted,
+            summary.SettledFromDeposit, summary.StillOwed, summary.Refundable,
+            summary.AlreadyRefunded, summary.Remaining, refunds);
+    }
+
     [HttpPost("{id:int}/deposit-refunds")]
-    [Authorize(Roles = AppRoles.GateRoles)]
+    [Authorize(Roles = AppRoles.GateRoles + "," + AppRoles.Admin)]
     public async Task<DepositRefundDto> RefundDeposit(int id, RecordDepositRefundRequest req, CancellationToken ct)
     {
         var transactionCode = string.IsNullOrWhiteSpace(req.TransactionCode) ? null : req.TransactionCode.Trim();
@@ -514,47 +553,65 @@ public class ContractsController(
         var contract = await db.Contracts.FirstOrDefaultAsync(c => c.ContractId == id, ct)
             ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
         var staffId = User.GetUserId();
-        await access.EnsureAssignedAsync(staffId,
-            await db.StorageUnits.Where(u => u.UnitId == contract.UnitId).Select(u => u.FacilityId).SingleAsync(ct), ct);
+        if (!User.IsInRole(AppRoles.Admin))
+            await access.EnsureAssignedAsync(staffId,
+                await db.StorageUnits.Where(u => u.UnitId == contract.UnitId).Select(u => u.FacilityId).SingleAsync(ct), ct);
         if (contract.Status != ContractStatus.Terminated)
             throw AppException.Conflict("Chỉ được hoàn cọc sau khi hợp đồng đã kết thúc và trả kho");
-        if (contract.ReservationId is not int reservationId)
-            throw AppException.Conflict("Không tìm thấy đơn đặt kho để đối chiếu khoản cọc");
 
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
-        var depositInvoice = await db.Invoices
-            .Include(i => i.Payments)
-            .FirstOrDefaultAsync(i => i.ReservationId == reservationId && i.InvoiceType == "DEPOSIT", ct)
-            ?? throw AppException.Conflict("Không tìm thấy hóa đơn cọc");
-        if (depositInvoice.Status != "Paid"
-            || !depositInvoice.Payments.Any(p => p.Status == "Success"))
+        var summary = await ComputeDepositRefundSummaryAsync(contract, ct);
+        var depositInvoice = summary.DepositInvoice;
+        if (depositInvoice is not null
+            && (depositInvoice.Status != "Paid" || !depositInvoice.Payments.Any(p => p.Status == "Success")))
             throw AppException.Conflict("Khoản cọc chưa được ghi nhận thanh toán");
         if (transactionCode is not null && await db.Payments.AnyAsync(
             p => p.TransactionCode == transactionCode, ct))
             throw AppException.Conflict("Mã giao dịch đã được ghi nhận");
 
-        var latestOverdue = await db.OverdueRecords.Where(o => o.ContractId == id)
-            .OrderByDescending(o => o.OverdueId).FirstOrDefaultAsync(ct);
-        var earlyReturnFees = await db.EarlyReturnRequests
-            .Where(r => r.ContractId == id && r.Status == EarlyReturnStatus.Completed)
-            .SumAsync(r => (decimal?)r.EarlyReturnFee, ct) ?? 0m;
-        // Deposit minus late/early-return fees, minus what was settled from it at return, minus anything still owed.
-        var feesDeducted = Math.Min(contract.DepositPaid, (latestOverdue?.AccumulatedLateFee ?? 0m) + earlyReturnFees);
-        var settledFromDeposit = await db.Payments
-            .Where(p => p.PaymentMethod == "DepositOffset" && p.Status == "Success"
-                && db.Invoices.Any(i => i.InvoiceId == p.InvoiceId && i.ContractId == id))
-            .SumAsync(p => (decimal?)p.AmountPaid, ct) ?? 0m;
-        var stillOwed = await db.Invoices
-            .Where(i => i.ContractId == id && (i.Status == "Unpaid" || i.Status == "Overdue"))
-            .SumAsync(i => (decimal?)i.TotalAmount, ct) ?? 0m;
-        var refundable = Math.Max(0m, contract.DepositPaid - feesDeducted - settledFromDeposit - stillOwed);
-        var alreadyRefunded = depositInvoice.Payments.Where(p => p.Status == "Refunded").Sum(p => p.AmountPaid);
-        var remaining = refundable - alreadyRefunded;
-        if (req.Amount <= 0 || req.Amount > remaining)
-            throw AppException.BadRequest($"Số tiền hoàn cọc còn có thể hoàn là {Math.Max(0m, remaining):N0}đ"
-                + (stillOwed > 0 ? $" (khách còn nợ {stillOwed:N0}đ hóa đơn chưa thanh toán)" : ""));
+        if (req.Amount <= 0 || req.Amount > summary.Remaining)
+            throw AppException.BadRequest($"Số tiền hoàn cọc còn có thể hoàn là {Math.Max(0m, summary.Remaining):N0}đ"
+                + (summary.StillOwed > 0 ? $" (khách còn nợ {summary.StillOwed:N0}đ hóa đơn chưa thanh toán)" : ""));
+
+        // Legacy or seeded contracts created before reservation deposit invoices existed need a paid DEPOSIT invoice to anchor the refund payment FK.
+        if (depositInvoice is null)
+        {
+            var baseInvoiceNumber = $"INV-DEP-{contract.ContractId:D6}";
+            var invoiceNumber = await db.Invoices.AnyAsync(i => i.InvoiceNumber == baseInvoiceNumber, ct)
+                ? $"INV-DEP-{contract.ContractId}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}"
+                : baseInvoiceNumber;
+            depositInvoice = new Invoice
+            {
+                InvoiceNumber = invoiceNumber,
+                ContractId = contract.ContractId,
+                ReservationId = contract.ReservationId,
+                CustomerId = contract.CustomerId,
+                InvoiceType = "DEPOSIT",
+                SubTotal = contract.DepositPaid,
+                DueDate = contract.StartDate,
+                Status = "Paid",
+                CreatedAt = contract.SignedDate,
+                Details = [new InvoiceDetail
+                {
+                    Description = $"Tiền đặt cọc hợp đồng {contract.ContractNumber}",
+                    Quantity = 1,
+                    UnitPrice = contract.DepositPaid,
+                }],
+                Payments = [new Payment
+                {
+                    PaymentMethod = "Cash",
+                    AmountPaid = contract.DepositPaid,
+                    PaymentDate = contract.SignedDate,
+                    Status = "Success",
+                    PaymentNotes = "Khởi tạo đối chiếu hóa đơn cọc lịch sử",
+                }],
+            };
+            db.Invoices.Add(depositInvoice);
+            await db.SaveChangesAsync(ct);
+        }
 
         var now = clock.GetLocalNow().DateTime;
+        var notes = string.IsNullOrWhiteSpace(req.Notes) ? null : Truncate(req.Notes.Trim(), 255);
         var payment = new Payment
         {
             InvoiceId = depositInvoice.InvoiceId,
@@ -564,12 +621,21 @@ public class ContractsController(
             AmountPaid = req.Amount,
             PaymentDate = now,
             Status = "Refunded",
-            PaymentNotes = req.Notes,
+            PaymentNotes = notes,
         };
         db.Payments.Add(payment);
+        db.ActivityLogs.Add(new ActivityLog
+        {
+            UserId = staffId,
+            Action = "DepositRefunded",
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+            Details = $"Contract {contract.ContractNumber}; refunded {req.Amount:N0}đ via {req.PaymentMethod}"
+                + (transactionCode is null ? "" : $" ({transactionCode})"),
+            CreatedAt = now,
+        });
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
-        return new DepositRefundDto(id, req.Amount, remaining - req.Amount, req.PaymentMethod, transactionCode, now);
+        return new DepositRefundDto(id, req.Amount, summary.Remaining - req.Amount, req.PaymentMethod, transactionCode, now);
     }
 
     /// <summary>Contracts of one facility for staff (renewals, return, overdue). Optional status filter.</summary>
@@ -840,4 +906,43 @@ public class ContractsController(
     private static RenewalDto ToRenewalDto(ContractRenewal r) =>
         new(r.RenewalId, r.ContractId, r.OldEndDate, r.NewEndDate, r.ExtensionMonths,
             r.RenewalFee, r.Status, r.RequestedAt, r.InvoiceId);
+
+    private async Task<(Invoice? DepositInvoice, decimal FeesDeducted, decimal SettledFromDeposit, decimal StillOwed,
+        decimal Refundable, decimal AlreadyRefunded, decimal Remaining)> ComputeDepositRefundSummaryAsync(
+        Contract contract, CancellationToken ct)
+    {
+        Invoice? depositInvoice = null;
+        if (contract.ReservationId is int reservationId)
+        {
+            depositInvoice = await db.Invoices
+                .Include(i => i.Payments)
+                .FirstOrDefaultAsync(i => i.ReservationId == reservationId && i.InvoiceType == "DEPOSIT", ct);
+        }
+        depositInvoice ??= await db.Invoices
+            .Include(i => i.Payments)
+            .FirstOrDefaultAsync(i => i.ContractId == contract.ContractId && i.InvoiceType == "DEPOSIT", ct);
+
+        if (depositInvoice is null && contract.DepositPaid <= 0m)
+            throw AppException.Conflict("Không tìm thấy hóa đơn cọc");
+
+        var latestOverdue = await db.OverdueRecords.Where(o => o.ContractId == contract.ContractId)
+            .OrderByDescending(o => o.OverdueId).FirstOrDefaultAsync(ct);
+        var earlyReturnFees = await db.EarlyReturnRequests
+            .Where(r => r.ContractId == contract.ContractId && r.Status == EarlyReturnStatus.Completed)
+            .SumAsync(r => (decimal?)r.EarlyReturnFee, ct) ?? 0m;
+        // Deposit minus late/early-return fees, minus what was settled from it at return, minus anything still owed.
+        var feesDeducted = Math.Min(contract.DepositPaid, (latestOverdue?.AccumulatedLateFee ?? 0m) + earlyReturnFees);
+        var settledFromDeposit = await db.Payments
+            .Where(p => p.PaymentMethod == "DepositOffset" && p.Status == "Success"
+                && db.Invoices.Any(i => i.InvoiceId == p.InvoiceId && i.ContractId == contract.ContractId))
+            .SumAsync(p => (decimal?)p.AmountPaid, ct) ?? 0m;
+        var stillOwed = await db.Invoices
+            .Where(i => i.ContractId == contract.ContractId && (i.Status == "Unpaid" || i.Status == "Overdue"))
+            .SumAsync(i => (decimal?)i.TotalAmount, ct) ?? 0m;
+        var refundable = Math.Max(0m, contract.DepositPaid - feesDeducted - settledFromDeposit - stillOwed);
+        var alreadyRefunded = depositInvoice?.Payments.Where(p => p.Status == "Refunded").Sum(p => p.AmountPaid) ?? 0m;
+        var remaining = Math.Max(0m, refundable - alreadyRefunded);
+
+        return (depositInvoice, feesDeducted, settledFromDeposit, stillOwed, refundable, alreadyRefunded, remaining);
+    }
 }
