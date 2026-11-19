@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { api, fmtDate, fmtMoney } from '../api'
 import { useAuth } from '../auth'
@@ -11,12 +11,15 @@ const ago = (iso: string) => {
   return d <= 0 ? 'Hôm nay' : d === 1 ? '1 ngày trước' : `${d} ngày trước`
 }
 
+const REFRESH_MS = 30_000
+
 type Note = { key: string; tone: 'warn' | 'bad'; icon: string; title: string; when: string; text: string; to: string; action: string }
 
 /**
  * Customer's bell in the top-right of the header (replaces "Thông Báo Mới Nhất" on Kho của tôi):
  * bills to pay (deposits excluded, they have their own banner) and contracts ending within 45 days.
- * Built from GET /api/invoices/my and GET /api/contracts/my, reloaded on each page change.
+ * Built from GET /api/invoices/my and GET /api/contracts/my, reloaded on each page change, when the bell is opened,
+ * when the tab regains focus and every 30 seconds while the tab is visible.
  */
 export function NotificationBell() {
   const { user } = useAuth()
@@ -27,12 +30,26 @@ export function NotificationBell() {
   const box = useRef<HTMLDivElement>(null)
   const customer = user?.role === Roles.Customer
 
-  useEffect(() => {
-    setOpen(false)
+  // Fetch the latest bills and contracts. Failures keep what is shown, so a network blip does not empty the bell.
+  const refresh = useCallback(() => {
     if (!customer) return
-    api<Contract[]>('/api/contracts/my').then(setContracts).catch(() => setContracts([]))
-    api<Invoice[]>('/api/invoices/my').then(setInvoices).catch(() => setInvoices([]))
-  }, [customer, pathname])
+    api<Contract[]>('/api/contracts/my').then(setContracts).catch(() => {})
+    api<Invoice[]>('/api/invoices/my').then(setInvoices).catch(() => {})
+  }, [customer])
+
+  // On every page change.
+  useEffect(() => { setOpen(false); refresh() }, [refresh, pathname])
+
+  // Keep it current while the customer stays on one page: every 30 seconds while the tab is visible,
+  // and right away when they come back to the tab (a payment finished in another tab, staff confirmed something).
+  useEffect(() => {
+    if (!customer) return
+    const tick = () => { if (document.visibilityState === 'visible') refresh() }
+    const id = window.setInterval(tick, REFRESH_MS)
+    window.addEventListener('focus', tick)
+    document.addEventListener('visibilitychange', tick)
+    return () => { window.clearInterval(id); window.removeEventListener('focus', tick); document.removeEventListener('visibilitychange', tick) }
+  }, [customer, refresh])
 
   useEffect(() => {
     if (!open) return
@@ -60,7 +77,7 @@ export function NotificationBell() {
 
   return (
     <div className="bell" ref={box}>
-      <button type="button" className="icon-btn bell-btn" aria-label={`Thông báo${notes.length ? ` (${notes.length})` : ''}`} aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button type="button" className="icon-btn bell-btn" aria-label={`Thông báo${notes.length ? ` (${notes.length})` : ''}`} aria-expanded={open} onClick={() => { if (!open) refresh(); setOpen(!open) }}>
         <Icon name="bell" size={20} />
         {notes.length > 0 && <span className="bell-count">{notes.length > 9 ? '9+' : notes.length}</span>}
       </button>

@@ -8,6 +8,18 @@ import type { Facility, Invoice, Reservation } from '../types'
 import { Select } from '../components/Select'
 import { StatCard, scrollToList } from '../components/StatCard'
 
+/** The API pages invoices 200 at a time; keep asking until a short page so long-time customers see every invoice. */
+async function allMyInvoices(): Promise<Invoice[]> {
+  const pageSize = 200
+  const all: Invoice[] = []
+  for (let page = 1; page <= 50; page++) {
+    const batch = await api<Invoice[]>(`/api/invoices/my?page=${page}&pageSize=${pageSize}`)
+    all.push(...batch)
+    if (batch.length < pageSize) break
+  }
+  return all
+}
+
 export default function Invoices() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [error, setError] = useState('')
@@ -34,7 +46,7 @@ export default function Invoices() {
     if (!quiet) setError('')
     try {
       const [inv, rs] = await Promise.all([
-        api<Invoice[]>('/api/invoices/my'),
+        allMyInvoices(),
         api<Reservation[]>('/api/reservations/my').catch(() => [] as Reservation[]),
       ])
       setInvoices(inv)
@@ -237,8 +249,8 @@ const PAY_STATUS: Record<string, { label: string; tone: string }> = {
   Reversed: { label: 'Đã hoàn tiền', tone: 'muted' },
 }
 const PAY_METHOD: Record<string, string> = { VNPay: 'VNPay', MoMo: 'MoMo', BankTransfer: 'Chuyển khoản', Cash: 'Tiền mặt', CreditCard: 'Thẻ', DepositOffset: 'Cấn trừ tiền cọc' }
-/** The API refuses to cancel a pending online payment for 30 minutes, while its gateway link may still be paid. */
-const CANCEL_AFTER_MS = 30 * 60 * 1000
+/** The API refuses to cancel a pending online payment for 15 minutes, while its gateway link may still be paid. */
+const CANCEL_AFTER_MS = 15 * 60 * 1000
 
 /**
  * "Lịch sử thanh toán" (GET /api/payments/my): every payment of the customer. A VNPay/MoMo payment left pending

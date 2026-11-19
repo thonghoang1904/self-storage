@@ -4,7 +4,7 @@ import { amountError, checkMoney, checkText, firstError, textError, transactionC
 import { api, billingLink, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { FormField } from '../components/form'
-import { Empty, Icon, StatusBadge } from '../components/ui'
+import { Icon, StatusBadge } from '../components/ui'
 import type { EarlyReturnQuote, EarlyReturnRequest, Invoice, OverdueSummary, ReturnUnitResult, StaffContract } from '../types'
 import { Select } from '../components/Select'
 
@@ -72,76 +72,109 @@ export default function StaffReturn() {
   useEffect(() => { if (wanted) setSelectedId(wanted) }, [wanted])
 
   const now = new Date()
-  const due = contracts.filter((c) => (c.status === 'Active' || c.status === 'Overdue') && new Date(c.returnAppointment) <= now)
   const selected = contracts.find((c) => c.contractId === selectedId) ?? null
-  const pick = (id: number) => { setSelectedId(id); navigate(`/staff-return?contract=${id}`, { replace: true }) }
-
-  const find = (e?: FormEvent) => {
-    e?.preventDefault()
-    setError('')
-    const s = query.trim().toLowerCase()
-    if (!s) return
-    const hit = contracts.find((c) => c.contractNumber.toLowerCase() === s || c.unitCode.toLowerCase() === s)
-      ?? contracts.find((c) => [c.contractNumber, c.unitCode, c.customerName, c.customerPhone].some((v) => v.toLowerCase().includes(s)))
-    if (!hit) return setError('Không tìm thấy hợp đồng tại cơ sở này. Thử mã hợp đồng, mã kho hoặc số điện thoại.')
-    setSelectedId(hit.contractId)
-    navigate(`/staff-return?contract=${hit.contractId}`, { replace: true })
+  const pick = (id: number) => {
+    setSelectedId(id)
+    navigate(`/staff-return?contract=${id}`, { replace: true })
+    setTimeout(() => document.getElementById('return-inspection')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
   }
+
+  // The queue: what staff should handle first. Overdue and past the return time, then customers who asked to return
+  // early, then contracts ending within 7 days. Each contract appears once, under its most urgent reason.
+  const live = contracts.filter((c) => c.status === 'Active' || c.status === 'Overdue')
+  const pending = requests.filter((r) => r.status === 'Pending')
+  const weekAhead = now.getTime() + 7 * 86400000
+  const queue: QueueItem[] = []
+  const seen = new Set<number>()
+  const push = (c: StaffContract | undefined, item: Omit<QueueItem, 'contract'>) => { if (c && !seen.has(c.contractId)) { seen.add(c.contractId); queue.push({ contract: c, ...item }) } }
+  for (const c of live.filter((x) => new Date(x.returnAppointment) <= now).sort((a, b) => a.returnAppointment.localeCompare(b.returnAppointment))) {
+    const o = overdue.find((x) => x.contractId === c.contractId)
+    push(c, o?.daysOverdue
+      ? { tone: 'bad', label: `Quá hạn ${o.daysOverdue} ngày`, when: `Hết hạn ${fmtDate(c.endDate)}` }
+      : { tone: 'warn', label: 'Đến lịch trả kho', when: `Từ ${fmtTime(c.returnAppointment)}` })
+  }
+  for (const r of [...pending].sort((a, b) => a.returnDate.localeCompare(b.returnDate))) {
+    push(live.find((c) => c.contractId === r.contractId), { tone: 'info', label: 'Khách hẹn trả sớm', when: `Hẹn ngày ${fmtDate(r.returnDate)}` })
+  }
+  for (const c of live.filter((x) => { const t = new Date(x.returnAppointment).getTime(); return t > now.getTime() && t <= weekAhead }).sort((a, b) => a.returnAppointment.localeCompare(b.returnAppointment))) {
+    push(c, { tone: 'muted', label: 'Sắp hết hạn', when: `Trả từ ${fmtTime(c.returnAppointment)}` })
+  }
+
+  // Searching looks through every contract of the facility, not only the queue.
+  const s = query.trim().toLowerCase()
+  const results: QueueItem[] = s
+    ? contracts.filter((c) => [c.contractNumber, c.unitCode, c.customerName, c.customerPhone].some((v) => v.toLowerCase().includes(s)))
+      .map((c) => queue.find((q) => q.contract.contractId === c.contractId)
+        ?? { contract: c, tone: c.status === 'Terminated' ? 'muted' : 'ok', label: c.status === 'Terminated' ? 'Đã trả kho' : 'Đang thuê', when: `Hết hạn ${fmtDate(c.endDate)}` })
+    : queue
+  const find = (e: FormEvent) => {
+    e.preventDefault()
+    setError('')
+    if (!s) return
+    const exact = contracts.find((c) => c.contractNumber.toLowerCase() === s || c.unitCode.toLowerCase() === s)
+    if (exact) return pick(exact.contractId)
+    if (results.length === 1) return pick(results[0].contract.contractId)
+    if (results.length === 0) setError('Không tìm thấy hợp đồng tại cơ sở này. Thử mã hợp đồng, mã kho, tên hoặc số điện thoại.')
+  }
+  const count = (tone: QueueItem['tone']) => queue.filter((q) => q.tone === tone).length
 
   return (
     <div className="stack-xl">
       <div className="page-title-row row between wrap">
         <div>
           <h1>Kiểm Tra Trả Kho</h1>
-          <p className="muted">Đối chiếu hợp đồng, kiểm tra tình trạng kho, hoàn tất trả kho và hoàn cọc cho khách.</p>
+          <p className="muted">Chọn hợp đồng cần trả, kiểm tra tình trạng kho, hoàn tất trả kho và hoàn cọc cho khách.</p>
         </div>
         <Link to="/staff-contracts" className="btn outline"><Icon name="clipboard" size={15} /> Danh sách gia hạn & quá hạn</Link>
       </div>
 
       <section className="panel">
-        <div>
-          <h2 className="panel-title">Tìm hợp đồng cần trả kho</h2>
-          <p className="muted">Nhập mã hợp đồng, mã kho hoặc số điện thoại của khách. Trả trước 20:00 ngày hết hạn được tính là trả kho sớm.</p>
+        <div className="row between wrap">
+          <div>
+            <h2 className="panel-title">Hàng chờ trả kho</h2>
+            <p className="muted">
+              {queue.length === 0 ? 'Không có hợp đồng nào cần trả kho trong 7 ngày tới.'
+                : <>{count('bad') + count('warn')} đến lịch hoặc quá hạn · {count('info')} khách hẹn trả sớm · {count('muted')} sắp hết hạn trong 7 ngày. Bấm vào một hợp đồng để kiểm tra trả kho.</>}
+            </p>
+          </div>
+          <form className="row" onSubmit={find}>
+            <input value={query} onChange={(e) => { setQuery(e.target.value); setError('') }} placeholder="Tìm mã HĐ, mã kho, tên, SĐT…" aria-label="Tìm hợp đồng" style={{ minWidth: 260 }} />
+            <button className="btn primary" type="submit"><Icon name="search" size={15} /> Tìm</button>
+          </form>
         </div>
-        <form className="lookup-row" onSubmit={find}>
-          <label className="field grow"><span>Mã hợp đồng / mã kho / SĐT</span>
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="vd: HD-DEMO-0004 hoặc C-02" />
-          </label>
-          <button className="btn primary" type="submit"><Icon name="search" size={15} /> Tìm hợp đồng</button>
-          <button className="btn outline" type="button" onClick={() => { setQuery(''); setSelectedId(null); navigate('/staff-return', { replace: true }) }}>Làm mới</button>
-        </form>
-        {due.length > 0 && (
-          <div className="quick-tries">
-            <span className="muted">Đến lịch trả kho:</span>
-            {due.map((c) => (
-              <button key={c.contractId} type="button" className={`chip ${c.contractId === selectedId ? 'active' : ''}`}
-                onClick={() => pick(c.contractId)}>
-                {c.contractNumber} · {c.unitCode}
-              </button>
-            ))}
-          </div>
-        )}
-        {requests.length > 0 && (
-          <div className="quick-tries">
-            <span className="muted">Khách hẹn trả sớm:</span>
-            {requests.map((r) => (
-              <button key={r.requestId} type="button" className={`chip ${r.contractId === selectedId ? 'active' : ''}`} onClick={() => pick(r.contractId)}>
-                {r.unitCode} · {r.customerName} · {fmtDate(r.returnDate)}
-              </button>
-            ))}
-          </div>
-        )}
         {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+        {results.length > 0 ? (
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Hợp đồng</th><th>Khách hàng</th><th>Kho</th><th>Lịch trả</th><th>Tình trạng</th></tr></thead>
+              <tbody>
+                {results.map(({ contract: c, tone, label, when }) => (
+                  <tr key={c.contractId} className={`row-click ${c.contractId === selectedId ? 'row-selected' : ''}`} onClick={() => pick(c.contractId)}>
+                    <td><b className="cyan">{c.contractNumber}</b></td>
+                    <td>{c.customerName}<br /><small className="muted">{c.customerPhone}</small></td>
+                    <td>{c.unitCode}</td>
+                    <td>{when}</td>
+                    <td><span className={`badge ${tone}`}>{label}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : s && !error ? <p className="muted">Không có hợp đồng nào khớp “{query.trim()}”.</p> : null}
       </section>
 
-      {selected
-        ? <Inspection key={selected.contractId} contract={selected} overdue={overdue.find((o) => o.contractId === selected.contractId)}
+      {selected && (
+        <div id="return-inspection">
+          <Inspection key={selected.contractId} contract={selected} overdue={overdue.find((o) => o.contractId === selected.contractId)}
             request={requests.find((r) => r.contractId === selected.contractId)} onChanged={load}
             invoices={invoices.filter((i) => i.contractId === selected.contractId)} />
-        : <div className="panel"><Empty icon="door">Chọn một hợp đồng để bắt đầu kiểm tra trả kho.</Empty></div>}
+        </div>
+      )}
     </div>
   )
 }
+
+interface QueueItem { contract: StaffContract; tone: 'bad' | 'warn' | 'info' | 'muted' | 'ok'; label: string; when: string }
 
 function Info({ label, children }: { label: string; children: ReactNode }) {
   return <div className="info-row"><span className="muted">{label}</span><b>{children}</b></div>

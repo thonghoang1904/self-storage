@@ -20,6 +20,8 @@ export default function Support() {
     ? { ...EMPTY_FORM, category: 'Other', priority: 'Medium', title: 'Yêu cầu trả kho', description: 'Tôi muốn trả kho và nhận lại tiền cọc. Ngày giờ dự kiến đến trả kho: ' }
     : EMPTY_FORM)
   const [openId, setOpenId] = useState<number | null>(null)
+  // Requests already handled (resolved or closed) are hidden until the customer asks to see them.
+  const [showOld, setShowOld] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -57,7 +59,11 @@ export default function Support() {
     const problem = spamCheck(form, history)
     if (problem) {
       setError(problem.message)
-      if (problem.requestId) setOpenId(problem.requestId)
+      if (problem.requestId) {
+        setOpenId(problem.requestId)
+        const target = rows?.find((r) => r.requestId === problem.requestId)
+        if (target && !isOpen(target)) setShowOld(true)
+      }
       return
     }
     setError('')
@@ -77,6 +83,8 @@ export default function Support() {
   }
 
   const open = rows?.filter((r) => r.status === 'Open' || r.status === 'InProgress').length ?? 0
+  const old = (rows?.length ?? 0) - open
+  const visible = (rows ?? []).filter((r) => showOld || isOpen(r))
 
   return (
     <>
@@ -136,14 +144,23 @@ export default function Support() {
           <section className="stack-lg">
             <div className="row between wrap">
               <h2 className="section-title with-icon"><Icon name="history" size={20} className="cyan" /> Lịch Sử Yêu Cầu {open > 0 && <span className="pill">{open} đang mở</span>}</h2>
+              {old > 0 && (
+                <div className="segmented">
+                  <button type="button" className={!showOld ? 'active' : ''} onClick={() => setShowOld(false)}>Đang mở ({open})</button>
+                  <button type="button" className={showOld ? 'active' : ''} onClick={() => setShowOld(true)}>Tất cả ({rows?.length ?? 0})</button>
+                </div>
+              )}
             </div>
             {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
             {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
             <div className="stack">
-              {rows?.map((r) => (
-                <RequestCard key={r.requestId} request={r} open={openId === r.requestId} onToggle={() => setOpenId(openId === r.requestId ? null : r.requestId)} />
+              {visible.map((r) => (
+                <RequestCard key={r.requestId} request={r} open={openId === r.requestId} onToggle={() => setOpenId(openId === r.requestId ? null : r.requestId)} onReplied={load} />
               ))}
               {rows?.length === 0 && <div className="panel"><Empty icon="phone">Bạn chưa gửi yêu cầu hỗ trợ nào.</Empty></div>}
+              {!!rows?.length && visible.length === 0 && (
+                <div className="panel"><Empty icon="check">Không có yêu cầu nào đang mở. {old} yêu cầu đã xử lý đang được ẩn, bấm <b>Tất cả</b> để xem lại.</Empty></div>
+              )}
             </div>
           </section>
         </div>
@@ -153,13 +170,30 @@ export default function Support() {
 }
 
 /** One request with its handling timeline and checklist (loaded when opened). */
-function RequestCard({ request: r, open, onToggle, children }: { request: SupportRequest; open: boolean; onToggle: () => void; children?: ReactNode }) {
+function RequestCard({ request: r, open, onToggle, onReplied, children }: { request: SupportRequest; open: boolean; onToggle: () => void; onReplied?: () => unknown; children?: ReactNode }) {
   const [updates, setUpdates] = useState<SupportUpdate[] | null>(null)
   const [items, setItems] = useState<SupportChecklistItem[]>([])
+  const [reply, setReply] = useState('')
+  const [sending, setSending] = useState(false)
+  const [replyError, setReplyError] = useState('')
+  const loadUpdates = () => api<SupportUpdate[]>(`/api/support-requests/${r.requestId}/updates`).then(setUpdates).catch(() => setUpdates([]))
+  const sendReply = async (e: FormEvent) => {
+    e.preventDefault()
+    const message = reply.trim()
+    if (!message) { setReplyError('Vui lòng nhập nội dung phản hồi'); return }
+    if (message.length > 2000) { setReplyError('Nội dung phản hồi tối đa 2000 ký tự'); return }
+    setSending(true); setReplyError('')
+    try {
+      await api(`/api/support-requests/${r.requestId}/messages`, { method: 'POST', body: { message } })
+      setReply('')
+      await loadUpdates()
+      await onReplied?.()
+    } catch (err) { setReplyError((err as Error).message) } finally { setSending(false) }
+  }
   useEffect(() => {
     if (!open) return
     setUpdates(null)
-    api<SupportUpdate[]>(`/api/support-requests/${r.requestId}/updates`).then(setUpdates).catch(() => setUpdates([]))
+    void loadUpdates()
     api<SupportChecklistItem[]>(`/api/support-requests/${r.requestId}/checklist`).then(setItems).catch(() => setItems([]))
   }, [open, r.requestId, r.status])
 
@@ -201,6 +235,16 @@ function RequestCard({ request: r, open, onToggle, children }: { request: Suppor
               </li>
             ))}
           </ol>
+          {onReplied && (r.status === 'Closed' ? (
+            <small className="muted">Yêu cầu hỗ trợ này đã đóng. Vui lòng tạo yêu cầu mới nếu bạn cần hỗ trợ thêm.</small>
+          ) : (
+            <form className="stack-sm" onSubmit={sendReply} noValidate>
+              <textarea rows={3} maxLength={2000} value={reply} onChange={(e) => { setReply(e.target.value); setReplyError('') }} placeholder="Nhập phản hồi cho nhân viên…" aria-label="Phản hồi" />
+              {r.status === 'Resolved' && <small className="muted">Gửi phản hồi sẽ mở lại yêu cầu hỗ trợ để nhân viên tiếp tục xử lý.</small>}
+              {replyError && <small className="field-error">{replyError}</small>}
+              <div className="row"><button type="submit" className="btn primary sm" disabled={sending}>{sending ? 'Đang gửi…' : 'Gửi phản hồi'}</button></div>
+            </form>
+          ))}
           {children}
         </div>
       )}

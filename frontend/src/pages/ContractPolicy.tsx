@@ -3,7 +3,8 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { Icon, splitTypeName, StatusBadge } from '../components/ui'
 import { ContractUnitArt } from '../components/unitPhoto'
-import { ExtraChargeFees, type ContractDetail, type Facility, type Renewal, type StorageUnit } from '../types'
+import { type ContractDetail, type Facility, type FeeConfiguration, type Renewal, type StorageUnit } from '../types'
+import { lateFeePerDay, lateFeeText, useFees } from '../publicPolicy'
 import { TERMS_VERSION, termsHref } from './Terms'
 
 /**
@@ -15,7 +16,7 @@ import { TERMS_VERSION, termsHref } from './Terms'
 
 type Section = { id: string; icon: string; title: string; body: string[] }
 
-function sections(c: ContractDetail, hours?: string): Section[] {
+function sections(c: ContractDetail, hours: string | undefined, fees: FeeConfiguration[]): Section[] {
   return [
     {
       id: 'pay', icon: 'wallet', title: 'Thanh toán & tiền cọc',
@@ -35,7 +36,7 @@ function sections(c: ContractDetail, hours?: string): Section[] {
       id: 'return', icon: 'key', title: 'Trả kho, quá hạn & hoàn cọc',
       body: [
         `Trả kho trước 20:00 ngày ${fmtDate(c.endDate)}. Nhân viên kiểm tra kho cùng khách, đối soát phí và hoàn phần cọc còn lại.`,
-        `Quá 24 giờ kể từ 20:00 ngày hết hạn, kho bị khóa và tính phí mỗi ngày bằng tiền thuê tháng / 30 (${fmtMoney(Math.round(c.monthlyRentFee / 30))}/ngày), cấn trừ vào tiền cọc; phần vượt cọc lập thành hóa đơn.`,
+        `Quá 24 giờ kể từ 20:00 ngày hết hạn, kho bị khóa và tính phí lưu kho quá hạn ${lateFeeText(fees, c.monthlyRentFee)} theo bảng phí hiện hành, cấn trừ vào tiền cọc; phần vượt cọc lập thành hóa đơn.`,
       ],
     },
     {
@@ -62,7 +63,9 @@ export function useContract(id: number) {
       const d = await api<ContractDetail>(`/api/contracts/${id}`)
       setC(d)
       api<Facility[]>('/api/facilities').then((fs) => setFacility(fs.find((f) => f.facilityId === d.facilityId) ?? null)).catch(() => {})
-      api<StorageUnit[]>(`/api/facilities/${d.facilityId}/units`).then((us) => setUnitType(us.find((u) => u.unitId === d.unitId)?.unitTypeName ?? '')).catch(() => {})
+      // The unit type comes with the contract; the public unit list (older backends) leaves rented units out.
+      if (d.unitTypeName) setUnitType(d.unitTypeName)
+      else api<StorageUnit[]>(`/api/facilities/${d.facilityId}/units`).then((us) => setUnitType(us.find((u) => u.unitId === d.unitId)?.unitTypeName ?? '')).catch(() => {})
     } catch (e) {
       setError((e as Error).message)
     }
@@ -105,7 +108,7 @@ export function ContractStrip({ c, unitType }: { c: ContractDetail; unitType: st
   const type = unitType ? splitTypeName(unitType) : null
   return (
     <section className="panel contract-strip">
-      <div className="unit-photo xs"><ContractUnitArt facilityId={c.facilityId} unitId={c.unitId} /></div>
+      <div className="unit-photo xs"><ContractUnitArt facilityId={c.facilityId} unitId={c.unitId} unitTypeName={c.unitTypeName} unitTypeId={c.unitTypeId} /></div>
       <div className="strip-identity">
         <b>{type ? `${type.name} ${type.size}` : `Kho ${c.unitCode}`} · {c.unitCode}</b>
         <small className="muted">{c.facilityName}</small>
@@ -128,12 +131,15 @@ export default function ContractPolicy() {
   const id = Number(useParams().id)
   const from = new URLSearchParams(useLocation().search).get('from') ?? ''
   const { c, renewals, facility, error } = useContract(id)
+  // Fee table as the backend has it now (GET /api/fees), seeded defaults if it cannot be read.
+  const fees = useFees()
   if (!c) return <Loading error={error} />
+  const lateDaily = lateFeePerDay(fees, c.monthlyRentFee)
 
   // Opened from another step (renewal, early return): after reading, go straight back to it.
   const back = BACK[from] ?? BACK.contract
   const backTo = back.path(c.contractId)
-  const list = sections(c, facility?.operatingHours)
+  const list = sections(c, c.operatingHours || facility?.operatingHours, fees)
   const pending = renewals.find((r) => r.status === 'Pending')
   const go = (sid: string) => document.getElementById(`policy-${sid}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
@@ -146,7 +152,7 @@ export default function ContractPolicy() {
           <div className="cd-tile"><small>Tiền thuê</small><b>{fmtMoney(c.monthlyRentFee)}<span>/tháng</span></b><small className="muted">Hóa đơn theo từng tháng</small></div>
           <div className="cd-tile"><small>Tiền cọc</small><b>{fmtMoney(c.depositPaid)}</b><small className="muted">Hoàn lại khi trả kho</small></div>
           <div className="cd-tile"><small>Hết hạn</small><b>{fmtDate(c.endDate)}</b><small className="muted">Trả kho hoặc gia hạn trước 20:00</small></div>
-          <div className="cd-tile"><small>Phí quá hạn</small><b>{fmtMoney(Math.round(c.monthlyRentFee / 30))}<span>/ngày</span></b><small className="muted">Tiền thuê tháng / 30</small></div>
+          <div className="cd-tile"><small>Phí quá hạn</small><b>{lateDaily != null ? <>{fmtMoney(lateDaily)}<span>/ngày</span></> : '—'}</b><small className="muted">Theo bảng phí hiện hành</small></div>
         </div>
 
         {pending && (
@@ -170,10 +176,10 @@ export default function ContractPolicy() {
                 </div>
                 {s.id === 'fees' ? (
                   <div className="policy-fee-list">
-                    {ExtraChargeFees.filter((f) => !f.perDay).map((f) => (
-                      <div key={f.feeTypeId}><span>{f.feeName}</span><b>{fmtMoney(f.defaultAmount)}</b></div>
+                    {fees.filter((f) => f.feeCode !== 'LATE_FEE_DAILY').map((f) => (
+                      <div key={f.feeTypeId}><span>{f.feeName}</span><b>{f.calculationMethod === 'Percentage' ? `${f.defaultAmount}%` : `${fmtMoney(f.defaultAmount)}${f.calculationMethod === 'DailyRate' ? ' / ngày' : ''}`}</b></div>
                     ))}
-                    <div><span>Phí lưu kho quá hạn (tiền thuê / 30)</span><b>{fmtMoney(Math.round(c.monthlyRentFee / 30))} / ngày</b></div>
+                    <div><span>Phí lưu kho quá hạn</span><b>{lateFeeText(fees, c.monthlyRentFee)}</b></div>
                     <small className="muted">Chỉ thu khi có sự việc thực tế và được nhân viên lập hóa đơn.</small>
                   </div>
                 ) : (

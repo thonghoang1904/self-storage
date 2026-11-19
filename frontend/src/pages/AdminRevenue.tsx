@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api, fmtDate, fmtMoney } from '../api'
+import { api, fmtDate, fmtMoney, saveTable } from '../api'
 import { Empty, Icon } from '../components/ui'
 import type { AdminContract, OperationsReportRow } from '../types'
 
@@ -93,12 +93,7 @@ export default function AdminRevenue() {
 
   const exportCsv = () => {
     const lines = [['Tháng', 'Doanh thu', 'Hoàn tiền', 'Thuần'], ...series.map((s) => [s.key, String(s.income), String(s.refund), String(s.income - s.refund)])]
-    const csv = '﻿' + lines.map((l) => l.map((v) => `"${v}"`).join(',')).join('\r\n')
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
-    a.download = `doanh-thu-12-thang-${iso(today)}.csv`
-    a.click()
-    URL.revokeObjectURL(a.href)
+    saveTable(`doanh-thu-12-thang-${iso(today)}.csv`, lines)
   }
 
   return (

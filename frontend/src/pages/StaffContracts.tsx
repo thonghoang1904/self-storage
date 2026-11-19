@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { localToday } from '../validation'
-import { api, fmtDate, fmtMoney } from '../api'
+import { api, fmtDate, fmtMoney, saveTable } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { Invoice, OverdueSummary, Renewal, StaffContract } from '../types'
 import { Select } from '../components/Select'
 import { StatChip, scrollToList } from '../components/StatCard'
 import { ContractDialog } from './FacilityContracts'
+import { lateFeeText, useFees } from '../publicPolicy'
 
 /** Figma "renewals-overdue": metrics, filters, one table of contracts to renew or collect, collection rule. */
 
@@ -40,6 +41,7 @@ const PAGE_SIZE = 8
 const endingSoon = (r: { kind: Kind; daysLeft: number }) => r.kind === 'ending' || (r.kind === 'renewal' && r.daysLeft <= 7)
 
 export default function StaffContracts() {
+  const fees = useFees()
   const { facilityId } = useStaffFacility()
   const [contracts, setContracts] = useState<StaffContract[]>([])
   const [renewals, setRenewals] = useState<Renewal[]>([])
@@ -147,12 +149,7 @@ export default function StaffContracts() {
     const head = ['Mã HĐ', 'Khách hàng', 'SĐT', 'Kho', 'Ngày hết hạn', 'Còn lại (ngày)', 'Số tiền cần thu', 'Trạng thái']
     const lines = shown.map((r) => [r.contract.contractNumber, r.contract.customerName, r.contract.customerPhone, r.contract.unitCode,
       fmtDate(r.contract.endDate), r.kind === 'ended' ? '' : String(r.daysLeft), String(r.amountDue), KIND_LABEL[r.kind].label])
-    const csv = '﻿' + [head, ...lines].map((l) => l.map((v) => `"${v.replaceAll('"', '""')}"`).join(',')).join('\r\n')
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
-    a.download = `gia-han-qua-han-${localToday()}.csv`
-    a.click()
-    URL.revokeObjectURL(a.href)
+    saveTable(`gia-han-qua-han-${localToday()}.csv`, [head, ...lines])
   }
 
   const active = rows.filter((r) => r.kind !== 'ended').length
@@ -260,7 +257,7 @@ export default function StaffContracts() {
       <div className="panel collection-note">
         <div>
           <b>Quy định thu phí quá hạn</b>
-          <p className="muted">Sau 24 giờ kể từ 20:00 ngày hết hạn, kho tự khóa và tính phí mỗi ngày = phí tháng / 30, cấn trừ vào tiền cọc. Phần vượt cọc lập hóa đơn khi trả kho.</p>
+          <p className="muted">Sau 24 giờ kể từ 20:00 ngày hết hạn, kho tự khóa và tính phí lưu kho quá hạn {lateFeeText(fees)} theo bảng phí, cấn trừ vào tiền cọc. Phần vượt cọc lập hóa đơn khi trả kho.</p>
         </div>
         <Link to="/staff-return" className="btn outline"><Icon name="door" size={15} /> Mở kiểm tra trả kho</Link>
       </div>

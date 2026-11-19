@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, fmtDate, fmtMoney } from '../api'
 import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
@@ -7,8 +7,9 @@ import { depositDueAt } from '../components/appointment'
 import { Icon, splitTypeName, UnitArt } from '../components/ui'
 import { Select } from '../components/Select'
 import { TermsList, TERMS_VERSION } from './Terms'
-import { type Availability, type Facility, type Reservation, type UnitType } from '../types'
+import { type AccountProfile, type Availability, type Facility, type Reservation, type UnitType } from '../types'
 import { localToday } from '../validation'
+import { depositFor, usePromotions, useRentalPolicy } from '../publicPolicy'
 
 const DURATIONS = [1, 3, 6, 12]
 const SIGN_KEY = 'ss_signed_contracts'
@@ -45,6 +46,11 @@ export default function Rent() {
   const [termsOpen, setTermsOpen] = useState(false)
   const navigate = useNavigate()
   const [agreed, setAgreed] = useState(false)
+  // Staff check the customer's CCCD at handover, so an account without one cannot go on to sign.
+  const [missingCitizenId, setMissingCitizenId] = useState(false)
+  useEffect(() => {
+    api<AccountProfile>('/api/auth/profile').then((p) => setMissingCitizenId(!p.citizenId?.trim())).catch(() => {})
+  }, [])
 
   useEffect(() => {
     api<UnitType[]>('/api/unit-types').then(setTypes).catch(() => {})
@@ -70,6 +76,18 @@ export default function Rent() {
   const selected = availability.find((a) => a.unitTypeId === selectedId)
   const selectedType = types.find((t) => t.unitTypeId === selectedId)
   const monthly = selected?.baseMonthlyRate ?? 0
+  // The facility's own policy (deposit %, hours to pay it, cancellation terms), as the backend will apply it.
+  const policy = useRentalPolicy(facilityId)
+  const deposit = depositFor(monthly, policy)
+  // Promo code (first rental only): checked again by the backend; the discount comes off the first month's rent.
+  const promos = usePromotions()
+  const [promo, setPromo] = useState('')
+  const promoCode = promo.trim().toUpperCase()
+  const promoFound = promoCode ? promos.find((p) => p.promoCode === promoCode) : undefined
+  const promoProblem = !promoCode ? '' : !promoFound ? 'Mã không có trong các chương trình đang chạy (hệ thống sẽ kiểm tra lại khi đặt)'
+    : months < promoFound.minRentalMonths ? `Mã ${promoFound.promoCode} cần thuê tối thiểu ${promoFound.minRentalMonths} tháng` : ''
+  const discount = promoFound && !promoProblem && monthly
+    ? Math.min(Math.round(monthly * promoFound.discountPercent / 100), promoFound.maxDiscountAmount ?? Infinity) : 0
 
   const signError = !agreed ? 'Vui lòng đọc và đồng ý với điều khoản hợp đồng' : ''
 
@@ -79,6 +97,7 @@ export default function Rent() {
       || (startDate < todayIso() && 'Ngày bắt đầu thuê không được ở quá khứ')
       || ((months < 1 || months > 60) && 'Số tháng thuê phải từ 1 đến 60')
     if (invalid) { setError(invalid); return }
+    if (missingCitizenId) return
     setError('')
     setSigning(true)
     setTimeout(() => document.getElementById('sign-contract')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
@@ -93,7 +112,7 @@ export default function Rent() {
     setBusy(true)
     try {
       const r = await api<Reservation>('/api/reservations', {
-        body: { facilityId, unitTypeId: selected.unitTypeId, expectedStartDate: startDate, durationMonths: months, promoCode: null },
+        body: { facilityId, unitTypeId: selected.unitTypeId, expectedStartDate: startDate, durationMonths: months, promoCode: promoCode || null },
       })
       saveSigned(r.reservationCode, { at: new Date().toISOString(), version: TERMS_VERSION })
       // Agreed and reserved: go straight to paying the deposit.
@@ -108,7 +127,7 @@ export default function Rent() {
   return (
     <>
       <PageHero center title="Đặt Kho Lưu Trữ">
-        Chọn kho, thời gian thuê, đồng ý điều khoản rồi thanh toán cọc. Đơn được giữ 24 giờ để bạn đặt cọc.
+        Chọn kho, thời gian thuê, đồng ý điều khoản rồi thanh toán cọc. Đơn được giữ {policy.depositPaymentHours} giờ để bạn đặt cọc.
       </PageHero>
 
       <div className="container page-body">
@@ -226,20 +245,44 @@ export default function Rent() {
             </dl>
             {/* What is paid now (only the deposit) apart from the rent invoices that come later, one per month. */}
             <div className="summary-total pay-now">
-              <span>Thanh toán hôm nay<small>Tiền cọc, hoàn lại khi trả kho</small></span>
-              <b>{selected ? fmtMoney(monthly) : '—'}</b>
+              <span>Thanh toán hôm nay<small>Tiền cọc {policy.depositPercent}% giá tháng, hoàn lại khi trả kho</small></span>
+              <b>{selected ? fmtMoney(deposit) : '—'}</b>
             </div>
             <dl className="summary-lines later">
               <dt className="later-title">Các kỳ sau</dt>
-              <div><dt>Tiền thuê tháng đầu</dt><dd>{selected ? fmtMoney(monthly) : '—'}<small>trả ngày nhận kho {fmtDate(startDate)}</small></dd></div>
+              <div><dt>Tiền thuê tháng đầu</dt><dd>{selected ? fmtMoney(monthly - discount) : '—'}<small>{discount > 0 ? `đã giảm ${fmtMoney(discount)} · ` : ''}trả ngày nhận kho {fmtDate(startDate)}</small></dd></div>
               {months > 1 && <div><dt>{months - 1} tháng tiếp theo</dt><dd>{selected ? `${fmtMoney(monthly)}/tháng` : '—'}<small>trả đầu mỗi kỳ</small></dd></div>}
-              <div className="later-total"><dt>Tổng dự kiến<small>gói {months} tháng</small></dt><dd>{selected ? fmtMoney(monthly * months) : '—'}<small>chưa gồm cọc (được hoàn)</small></dd></div>
+              <div className="later-total"><dt>Tổng dự kiến<small>gói {months} tháng</small></dt><dd>{selected ? fmtMoney(monthly * months - discount) : '—'}<small>chưa gồm cọc (được hoàn)</small></dd></div>
             </dl>
+            <div className="promo-box">
+              <label className="field"><span>Mã khuyến mãi <small className="muted">(nếu có)</small></span>
+                <input value={promo} maxLength={30} placeholder="vd: WELCOME10" onChange={(e) => setPromo(e.target.value.replace(/[^A-Za-z0-9_-]/g, ''))} />
+              </label>
+              {promos.length > 0 && (
+                <div className="promo-chips">
+                  {promos.map((p) => (
+                    <button key={p.promotionId} type="button" className={promoCode === p.promoCode ? 'active' : ''} disabled={months < p.minRentalMonths}
+                      title={months < p.minRentalMonths ? `Cần thuê tối thiểu ${p.minRentalMonths} tháng` : p.title} onClick={() => setPromo(promoCode === p.promoCode ? '' : p.promoCode)}>
+                      {p.promoCode} · −{p.discountPercent}%
+                    </button>
+                  ))}
+                </div>
+              )}
+              {promoProblem ? <small className="warn-text">{promoProblem}</small>
+                : promoFound && <small className="ok-text">{promoFound.title}: giảm {fmtMoney(discount)} vào tiền thuê tháng đầu. Chỉ áp dụng cho lần thuê đầu tiên.</small>}
+            </div>
             {error && !signing && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
-            <button className="btn primary block lg" disabled={!selected || busy || signing} onClick={openSigning}>
+            {missingCitizenId && (
+              <div className="alert warn">
+                <Icon name="idCard" size={16} />
+                <div>Tài khoản của bạn chưa cập nhật số CCCD. Vui lòng bổ sung CCCD trước khi đặt kho để nhân viên đối chiếu khi bàn giao.
+                  <div><Link to="/account/profile/edit" className="link">Bổ sung CCCD →</Link></div></div>
+              </div>
+            )}
+            <button className="btn primary block lg" disabled={!selected || busy || signing || missingCitizenId} onClick={openSigning}>
               {signing ? 'Xem điều khoản bên dưới ↓' : 'Tiếp tục: điều khoản hợp đồng'}
             </button>
-            <p className="fine-print">Đơn được giữ 24 giờ, không quá 20:00 ngày bắt đầu thuê. Muốn đổi ý, bạn gửi yêu cầu hủy; cọc được hoàn sau khi trừ phí hủy theo chính sách.</p>
+            <p className="fine-print">Đơn được giữ {policy.depositPaymentHours} giờ, không quá 20:00 ngày bắt đầu thuê. Hủy trong {policy.cancellationGraceHours} giờ đầu sau khi đặt được hoàn đủ cọc; sau đó trừ phí hủy {policy.cancellationFeePercent}% tiền cọc.</p>
           </aside>
         </div>
 
@@ -272,7 +315,7 @@ export default function Rent() {
                     <div><dt>Bắt đầu</dt><dd>{fmtDate(startDate)}</dd></div>
                     <div><dt>Thời hạn</dt><dd>{months} tháng</dd></div>
                     <div><dt>Giá thuê</dt><dd>{fmtMoney(selected.baseMonthlyRate)}/tháng</dd></div>
-                    <div><dt>Tiền cọc dự kiến</dt><dd>{fmtMoney(selected.baseMonthlyRate)}</dd></div>
+                    <div><dt>Tiền cọc dự kiến</dt><dd>{fmtMoney(deposit)}</dd></div>
                   </dl>
                 </div>
                 <label className="check-row">

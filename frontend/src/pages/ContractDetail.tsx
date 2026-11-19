@@ -5,8 +5,9 @@ import { useAuth } from '../auth'
 import { FormField } from '../components/form'
 import { Badge, Icon, StatusBadge, UnitArt, splitTypeName } from '../components/ui'
 import { photoVariant } from '../components/unitPhoto'
-import type { AccessRecord, ContractDetail as Detail, EarlyReturnQuote, EarlyReturnRequest, Facility, Invoice, Person, Renewal, StorageUnit, UnitType } from '../types'
+import type { AccessRecord, ContractDetail as Detail, EarlyReturnQuote, EarlyReturnRequest, Facility, Invoice, Person, Renewal } from '../types'
 import { textError } from '../validation'
+import { lateFeeText, useFees } from '../publicPolicy'
 import { Modal } from '../components/Modal'
 import { AuthorizedPeople, History } from './MyUnits'
 
@@ -71,14 +72,13 @@ export default function ContractDetail() {
   const [c, setC] = useState<Detail | null>(null)
   const [renewals, setRenewals] = useState<Renewal[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
-  const [unit, setUnit] = useState<StorageUnit | null>(null)
-  const [type, setType] = useState<UnitType | null>(null)
   const [facility, setFacility] = useState<Facility | null>(null)
   const [people, setPeople] = useState<Person[]>([])
   const [lastVisit, setLastVisit] = useState<AccessRecord | null>(null)
   const showRenew = wantRenew
   const [showEarly, setShowEarly] = useState(wantEarly)
   const [accessTab, setAccessTab] = useState<'people' | 'history' | null>(null)
+  const fees = useFees()
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
@@ -90,12 +90,8 @@ export default function ContractDetail() {
       setC(d)
       setRenewals(r)
       // Secondary data: the page still works if any of these fail.
-      void api<Invoice[]>('/api/invoices/my').then((all) => setInvoices(all.filter((i) => i.contractId === id))).catch(() => {})
-      void api<StorageUnit[]>(`/api/facilities/${d.facilityId}/units`).then((us) => {
-        const u = us.find((x) => x.unitId === d.unitId) ?? null
-        setUnit(u)
-        if (u) void api<UnitType[]>('/api/unit-types').then((ts) => setType(ts.find((t) => t.unitTypeId === u.unitTypeId) ?? null)).catch(() => {})
-      }).catch(() => {})
+      // Only this contract's invoices (backend filter); the client-side filter keeps older mocks working.
+      void api<Invoice[]>(`/api/invoices/my?contractId=${id}&pageSize=200`).then((all) => setInvoices(all.filter((i) => i.contractId === id))).catch(() => {})
       void api<Facility[]>('/api/facilities').then((fs) => setFacility(fs.find((f) => f.facilityId === d.facilityId) ?? null)).catch(() => {})
       void api<Person[]>(`/api/contracts/${id}/authorized-persons`).then(setPeople).catch(() => {})
       void api<AccessRecord[]>(`/api/contracts/${id}/access-history`).then((h) => setLastVisit(h.find((x) => x.result === 'Granted') ?? null)).catch(() => {})
@@ -117,11 +113,13 @@ export default function ContractDetail() {
   const left = daysUntil(c.endDate)
   const ended = c.status === 'Terminated' || c.status === 'Liquidated'
   const locked = c.unitStatus === 'OverdueLocked' || c.status === 'Overdue'
-  const typeName = unit ? splitTypeName(unit.unitTypeName) : null
+  const typeName = c.unitTypeName ? splitTypeName(c.unitTypeName) : null
   const pending = renewals.find((r) => r.status === 'Pending')
   const schedule = paymentSchedule(c, invoices)
   const next = schedule.find((r) => r.state !== 'paid' && r.state !== 'cancelled')
-  const area = type ? Math.round(type.lengthMeters * type.widthMeters * 100) / 100 : null
+  // Unit size and place come with the contract (GET /api/contracts/{id}); 0 / '' means an older backend without them.
+  const hasSize = c.lengthMeters > 0 && c.widthMeters > 0
+  const area = hasSize ? Math.round(c.lengthMeters * c.widthMeters * 100) / 100 : null
   // Until the day before the end date the customer can ask to hand the unit back early; on the end date it is a normal return.
   const canReturnEarly = c.status === 'Active' && left > 0
 
@@ -156,7 +154,7 @@ export default function ContractDetail() {
         {locked && (
           <section className="panel alert-panel">
             <h3 className="panel-title"><Icon name="lock" size={18} /> Kho đang bị khóa do quá hạn</h3>
-            <p className="muted">Kho bị khóa sau 24 giờ kể từ 20:00 ngày hết hạn. Phí lưu kho quá hạn tính mỗi ngày bằng phí tháng / 30 và được cấn trừ vào tiền cọc. Vui lòng đến cơ sở để trả kho.</p>
+            <p className="muted">Kho bị khóa sau 24 giờ kể từ 20:00 ngày hết hạn. Phí lưu kho quá hạn tính {lateFeeText(fees, c.monthlyRentFee)} và được cấn trừ vào tiền cọc. Vui lòng đến cơ sở để trả kho.</p>
             <dl className="summary-lines">
               <div><dt>Phí quá hạn đã tính</dt><dd>{fmtMoney(c.accumulatedLateFee)}</dd></div>
               <div><dt>Cọc còn lại sau cấn trừ</dt><dd>{fmtMoney(c.depositBalance)}</dd></div>
@@ -194,7 +192,7 @@ export default function ContractDetail() {
           <div className="stack-lg detail-main">
             {/* the unit: photo beside its specs */}
             <section className="panel cd-unit">
-              <div className="cd-unit-photo"><UnitArt variant={unit ? photoVariant(unit.unitTypeName, unit.unitTypeId) : 2} /></div>
+              <div className="cd-unit-photo"><UnitArt variant={c.unitTypeName || c.unitTypeId ? photoVariant(c.unitTypeName, c.unitTypeId) : 2} /></div>
               <div className="cd-unit-info">
                 <div className="row between wrap">
                   <div>
@@ -203,20 +201,20 @@ export default function ContractDetail() {
                   </div>
                   <span className={`badge ${locked ? 'bad' : ended ? 'muted' : 'ok'}`}>{locked ? 'Khóa do quá hạn' : ended ? 'Đã trả kho' : 'Truy cập bình thường'}</span>
                 </div>
-                {/* Only what is known: the public unit list leaves out rented units, so size or floor can be missing. */}
+                {/* Rows without data (older backend) are left out rather than shown as "—". */}
                 <dl className="cd-specs">
                   <div><dt>Cơ sở</dt><dd>{c.facilityName}</dd></div>
-                  <div><dt>Giờ mở cửa</dt><dd>{facility?.operatingHours ?? '—'}</dd></div>
-                  {type && <div><dt>Kích thước</dt><dd>{`${type.lengthMeters} × ${type.widthMeters} × ${type.heightMeters}m`}</dd></div>}
-                  {unit && <div><dt>Vị trí</dt><dd>{`Tầng ${unit.floorNumber}${unit.zoneArea ? ` · ${unit.zoneArea}` : ''}`}</dd></div>}
-                  {type && <div><dt>Điều hòa</dt><dd>{type.hasClimateControl ? 'Có' : 'Không'}</dd></div>}
+                  <div><dt>Giờ mở cửa</dt><dd>{c.operatingHours || facility?.operatingHours || '—'}</dd></div>
+                  {hasSize && <div><dt>Kích thước</dt><dd>{`${c.lengthMeters} × ${c.widthMeters} × ${c.heightMeters}m`}</dd></div>}
+                  {c.floorNumber > 0 && <div><dt>Vị trí</dt><dd>{`Tầng ${c.floorNumber}${c.zoneArea ? ` · ${c.zoneArea}` : ''}`}</dd></div>}
+                  {c.unitTypeName && <div><dt>Điều hòa</dt><dd>{c.hasClimateControl ? 'Có' : 'Không'}</dd></div>}
                   <div><dt>Trạng thái kho</dt><dd><StatusBadge status={c.unitStatus} /></dd></div>
                 </dl>
               </div>
             </section>
 
             {showRenew && !ended && <section className="panel"><h3 className="panel-title">Gia hạn hợp đồng</h3><RenewalPanel contract={c} renewals={renewals} onChanged={load} /></section>}
-            {showEarly && canReturnEarly && <section id="early-return" className="panel scroll-target"><EarlyReturnPanel contract={c} facility={facility} /></section>}
+            {showEarly && canReturnEarly && <section id="early-return" className="panel scroll-target"><EarlyReturnPanel contract={c} facility={facility} pendingRenewal={pending} /></section>}
 
             <section className="panel stack">
               <div className="row between wrap">
@@ -283,6 +281,21 @@ function RenewalPanel({ contract: c, renewals, onChanged }: { contract: Detail; 
   const pending = renewals.find((r) => r.status === 'Pending')
   const windowOpen = c.status === 'Active' && now >= opensAt && now < closesAt
 
+  // Cancel an unpaid request (DELETE …/renewals/{id}); its renewal invoice is cancelled with it.
+  const cancelPending = async () => {
+    if (!pending || !window.confirm(`Hủy yêu cầu gia hạn ${pending.extensionMonths} tháng? Hóa đơn gia hạn chưa thanh toán sẽ bị hủy.`)) return
+    setBusy(true); setError(''); setNotice('')
+    try {
+      await api(`/api/contracts/${c.contractId}/renewals/${pending.renewalId}`, { method: 'DELETE' })
+      setNotice('Đã hủy yêu cầu gia hạn. Bạn có thể chọn lại số tháng.')
+      await onChanged()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const submit = async () => {
     setBusy(true)
     setError('')
@@ -306,6 +319,10 @@ function RenewalPanel({ contract: c, renewals, onChanged }: { contract: Detail; 
           <div>
             <b>Yêu cầu gia hạn {pending.extensionMonths} tháng đang chờ thanh toán</b>
             <p>Phí {fmtMoney(pending.renewalFee)} — thanh toán ở mục <Link to="/invoices" className="link">Thanh Toán</Link> trước 20:00 ngày {fmtDate(pending.oldEndDate)}. Sau khi thanh toán, ngày hết hạn đổi thành <b>{fmtDate(pending.newEndDate)}</b>.</p>
+            <div className="row wrap">
+              <Link to={pending.invoiceId ? `/invoices/${pending.invoiceId}` : '/invoices'} className="btn primary sm"><Icon name="wallet" size={14} /> Thanh toán ngay</Link>
+              <button type="button" className="btn outline sm" disabled={busy} onClick={() => void cancelPending()}>Hủy yêu cầu gia hạn</button>
+            </div>
           </div>
         </div>
       ) : windowOpen ? (
@@ -357,7 +374,8 @@ const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padSt
  * Ask to hand the unit back before the end date: pick the day, give a reason and see the fee and the deposit
  * left before sending. While the request is pending it can be cancelled; staff finish it at the facility.
  */
-function EarlyReturnPanel({ contract: c, facility }: { contract: Detail; facility: Facility | null }) {
+/** `pendingRenewal`: an unpaid renewal blocks an early return (the backend refuses both at once). */
+function EarlyReturnPanel({ contract: c, facility, pendingRenewal }: { contract: Detail; facility: Facility | null; pendingRenewal?: Renewal }) {
   const navigate = useNavigate()
   const today = isoDay(new Date())
   const lastDay = isoDay(new Date(asLocal(c.endDate).getTime() - DAY))
@@ -437,6 +455,15 @@ function EarlyReturnPanel({ contract: c, facility }: { contract: Detail; facilit
               <Link to={`/my-units/${c.contractId}/early-return`} className="btn primary sm"><Icon name="file" size={14} /> Xem chi tiết yêu cầu</Link>
               <button type="button" className="btn outline sm" onClick={() => void cancel(pending)}>Hủy yêu cầu</button>
             </div>
+          </div>
+        </div>
+      ) : pendingRenewal ? (
+        <div className="notice">
+          <span className="notice-icon warn"><Icon name="refresh" size={16} /></span>
+          <div className="grow">
+            <b>Đang có yêu cầu gia hạn {pendingRenewal.extensionMonths} tháng chờ thanh toán</b>
+            <p>Chưa gửi được yêu cầu trả kho sớm. Hãy hủy yêu cầu gia hạn trước (ở khung Gia hạn), hoặc thanh toán để hoàn tất gia hạn.</p>
+            <Link to={`/my-units/${c.contractId}/renew`} className="btn outline sm self-start">Đến trang gia hạn</Link>
           </div>
         </div>
       ) : (

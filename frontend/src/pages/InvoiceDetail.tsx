@@ -7,6 +7,7 @@ import { INVOICE_TYPE, moneyInWords, PAY_METHOD, PAY_STATUS, PayButtons, TYPE_IC
 import { Icon, StatusBadge } from '../components/ui'
 import type { ContractDetail, Facility, Invoice, Reservation } from '../types'
 import { termsHref } from './Terms'
+import { fillFees, useFees } from '../publicPolicy'
 
 /**
  * One invoice in full (GET /api/invoices/{id}): who issued it and to whom, the contract or reservation and unit it bills,
@@ -25,14 +26,15 @@ const NOTES: Record<string, string[]> = {
   ],
   MONTHLY_RENT: [
     'Tiền thuê thanh toán trước cho từng kỳ một tháng.',
-    'Quá hạn, kho có thể bị khóa và tính phí mỗi ngày bằng phí tháng / 30, cấn trừ vào tiền cọc.',
+    'Quá hạn, kho có thể bị khóa và tính phí lưu kho quá hạn {LATE_FEE}, cấn trừ vào tiền cọc.',
   ],
   RENEWAL: ['Thời hạn hợp đồng được kéo dài sau khi hóa đơn gia hạn được thanh toán.'],
-  OVERDUE_FINE: ['Phí quá hạn là phần vượt quá tiền cọc khi trả kho trễ hạn (phí mỗi ngày = phí tháng / 30).'],
+  OVERDUE_FINE: ['Phí quá hạn là phần vượt quá tiền cọc khi trả kho trễ hạn (phí lưu kho quá hạn {LATE_FEE}).'],
   EXTRA_CHARGE: ['Phụ phí theo bảng phí hiện hành của cơ sở (mất chìa khóa, thẻ từ, vệ sinh, thay ổ khóa…).'],
 }
 
 export default function InvoiceDetail() {
+  const fees = useFees()
   const id = Number(useParams().id)
   const { user } = useAuth()
   const [invoice, setInvoice] = useState<Invoice | null>(null)
@@ -190,7 +192,7 @@ export default function InvoiceDetail() {
             {NOTES[invoice.invoiceType] && (
               <div className="paper-notes">
                 <span className="label">Ghi chú</span>
-                <ul>{NOTES[invoice.invoiceType].map((n) => <li key={n}>{n}</li>)}</ul>
+                <ul>{NOTES[invoice.invoiceType].map((n) => <li key={n}>{fillFees(n, fees)}</li>)}</ul>
                 <small className="muted">Chi tiết xem <Link className="link" to={termsHref({ back: `/invoices/${invoice.invoiceId}`, label: 'Quay lại hóa đơn' })}>Điều khoản hợp đồng</Link>.</small>
               </div>
             )}

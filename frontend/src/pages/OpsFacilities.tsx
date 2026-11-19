@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { api, fmtDate } from '../api'
+import { api, fmtDate, saveTable } from '../api'
 import { Badge, Empty, Icon } from '../components/ui'
 import type { Facility, FacilityReport, OperationsReport } from '../types'
 import { FormField, useValidatedForm } from '../components/form'
@@ -37,7 +37,6 @@ function badgeOf(f: Facility, r?: FacilityReport): { label: string; tone: 'ok' |
   if (!r?.totalUnits) return { label: 'Chưa có kho', tone: 'muted' }
   const pct = occupancy(r)
   if (pct >= 90) return { label: 'Gần đầy', tone: 'warn' }
-  if (pct < 70) return { label: 'Cần thúc đẩy', tone: 'info' }
   return { label: 'Hoạt động tốt', tone: 'ok' }
 }
 
@@ -87,14 +86,7 @@ export default function OpsFacilities() {
         String(r?.totalUnits ?? 0), String(occupied(r)), String(r?.availableUnits ?? 0), String(r?.maintenanceUnits ?? 0),
         String(occupancy(r)), String(r?.netRevenue ?? 0)])
     }
-    const csv = rows.map((row) => row.map((v) => `"${v.replace(/"/g, '""')}"`).join(',')).join('\r\n')
-    // BOM so Excel reads the Vietnamese text as UTF-8.
-    const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }))
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `co-so-${localToday()}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    saveTable(`co-so-${localToday()}.csv`, rows)
   }
 
   const totalOccupied = report ? report.rentedUnits + report.overdueLockedUnits : 0

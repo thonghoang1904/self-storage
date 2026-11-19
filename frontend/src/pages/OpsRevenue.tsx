@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, downloadFile, fmtDate, fmtMoney } from '../api'
+import { api, downloadFile, fmtDate, fmtMoney, saveTable } from '../api'
 import { Empty, Icon } from '../components/ui'
 import type { OperationsReport, OperationsReportRow, UnitType } from '../types'
 import { Metric } from './FacilityOverview'
@@ -49,12 +49,7 @@ export default function OpsRevenue({ title = 'Doanh Thu' }: { title?: string }) 
     const head = ['Cơ sở', 'Doanh thu thuần', 'Tỷ trọng %', 'Tổng kho', 'Đang thuê', 'Còn trống', 'Bảo trì', 'Khóa quá hạn', 'HĐ hiệu lực', 'HĐ quá hạn', 'Yêu cầu hỗ trợ đang mở']
     const lines = rows.map((r) => [r.facilityName, String(r.netRevenue), total ? ((r.netRevenue / total) * 100).toFixed(1) : '0', String(r.totalUnits), String(r.rentedUnits),
       String(r.availableUnits), String(r.maintenanceUnits), String(r.overdueLockedUnits), String(r.activeContracts), String(r.overdueContracts), String(r.openSupportRequests)])
-    const csv = '﻿' + [head, ...lines].map((l) => l.map((v) => `"${v.replaceAll('"', '""')}"`).join(',')).join('\r\n')
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
-    a.download = `doanh-thu-${from}-${to}.csv`
-    a.click()
-    URL.revokeObjectURL(a.href)
+    saveTable(`doanh-thu-${from}-${to}.csv`, [head, ...lines])
   }
 
   return (
