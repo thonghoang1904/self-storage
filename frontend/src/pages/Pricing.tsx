@@ -4,7 +4,7 @@ import { api, fmtMoney } from '../api'
 import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
 import { Icon, splitTypeName, UnitArt } from '../components/ui'
-import { depositFor, fillFees, useFees, useRentalPolicy } from '../publicPolicy'
+import { depositFor, fillFees, fillPolicy, useFees, useRentalPolicy } from '../publicPolicy'
 import { homeFor, type Availability, type Facility, type UnitType } from '../types'
 
 /**
@@ -29,11 +29,11 @@ const FAQS = [
   },
   {
     q: 'Thủ tục đặt và nhận kho diễn ra thế nào?',
-    a: 'Bạn chọn cơ sở, loại kho và số tháng rồi đặt chỗ trực tuyến. Hệ thống giữ chỗ để bạn đặt cọc theo chính sách của cơ sở (mặc định bằng một tháng tiền thuê, giữ chỗ 24 giờ). Sau khi cọc được xác nhận, bạn hẹn giờ đến nhận kho và nhân viên bàn giao, tạo hợp đồng.',
+    a: 'Bạn chọn cơ sở, loại kho và số tháng rồi đặt chỗ trực tuyến. Hệ thống giữ chỗ {HOLD_HOURS} để bạn đặt cọc {DEPOSIT} (theo chính sách hiện hành, từng cơ sở có thể khác). Sau khi cọc được xác nhận, bạn hẹn giờ đến nhận kho và nhân viên bàn giao, tạo hợp đồng.',
   },
   {
     q: 'Nếu trả kho trễ hạn thì sao?',
-    a: 'Bạn trả kho trước 20:00 ngày hết hạn. Nếu quá 24 giờ chưa trả hoặc chưa gia hạn, kho bị khóa và tính phí lưu kho quá hạn {LATE_FEE} theo bảng phí hiện hành, trừ dần vào tiền cọc.',
+    a: 'Bạn trả kho trước 20:00 ngày hết hạn. Nếu chưa trả hoặc chưa gia hạn, kho bị khóa {LOCK_DELAY} và tính phí lưu kho quá hạn {LATE_FEE} theo bảng phí hiện hành, trừ dần vào tiền cọc.',
   },
 ]
 
@@ -165,7 +165,7 @@ export default function Pricing() {
                 <button type="button" className="faq-q" aria-expanded={open === i} onClick={() => setOpen(open === i ? -1 : i)}>
                   <span>{f.q}</span><Icon name="plus" size={18} />
                 </button>
-                {open === i && <p className="faq-a">{fillFees(f.a, fees)}</p>}
+                {open === i && <p className="faq-a">{fillPolicy(fillFees(f.a, fees), policy)}</p>}
               </div>
             ))}
           </div>

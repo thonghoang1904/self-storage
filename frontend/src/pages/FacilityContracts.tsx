@@ -3,7 +3,8 @@ import { Link, useLocation } from 'react-router-dom'
 import { api, billingLink, fmtDate, fmtMoney } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
-import { ExtraChargeFees, type Contract, type ExtraChargeInvoice, type Invoice, type StaffContract } from '../types'
+import type { Contract, ExtraChargeInvoice, Invoice, StaffContract } from '../types'
+import { chargeableFees, extraChargePrice, useFees } from '../publicPolicy'
 import { Modal } from '../components/Modal'
 import { InvoiceView } from '../components/InvoiceView'
 import { Select } from '../components/Select'
@@ -120,15 +121,20 @@ export default function FacilityContracts() {
 }
 
 function ChargeForm({ contract: c, facilityId, onDone }: { contract: Contract; facilityId: number; onDone: (x: ExtraChargeInvoice | null) => void }) {
-  const [feeTypeId, setFeeTypeId] = useState(ExtraChargeFees[1].feeTypeId)
+  // The fee table as operations configured it (GET /api/fees), minus the fees the system charges by itself.
+  const options = chargeableFees(useFees())
+  const [pickedId, setFeeTypeId] = useState<number | null>(null)
   const [quantity, setQuantity] = useState(1)
   const [dueDate, setDueDate] = useState(todayIso)
   const [notes, setNotes] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const fee = ExtraChargeFees.find((f) => f.feeTypeId === feeTypeId)!
+  const fee = options.find((f) => f.feeTypeId === pickedId) ?? options[0]
+  const feeTypeId = fee?.feeTypeId
+  const unitPrice = fee ? extraChargePrice(fee, c.monthlyRentFee) : 0
 
   const submit = async () => {
+    if (!fee) return setError('Chưa đọc được bảng phí, vui lòng tải lại trang')
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 365) return setError('Số lượng từ 1 đến 365')
     if (dueDate && dueDate < todayIso()) return setError('Hạn thanh toán không được ở quá khứ')
     if (notes.trim().length > 255) return setError('Ghi chú tối đa 255 ký tự')
@@ -150,11 +156,12 @@ function ChargeForm({ contract: c, facilityId, onDone }: { contract: Contract; f
       <b>Phụ thu cho hợp đồng {c.contractNumber} · kho {c.unitCode}</b>
       <div className="form-grid four">
         <label className="field"><span>Loại phí</span>
-          <Select value={feeTypeId} onChange={(e) => setFeeTypeId(Number(e.target.value))}>
-            {ExtraChargeFees.map((f) => <option key={f.feeTypeId} value={f.feeTypeId}>{f.feeName}</option>)}
+          <Select value={feeTypeId ?? ''} onChange={(e) => setFeeTypeId(Number(e.target.value))} disabled={!options.length}>
+            {!options.length && <option value="">Đang tải bảng phí…</option>}
+            {options.map((f) => <option key={f.feeTypeId} value={f.feeTypeId}>{f.feeName}</option>)}
           </Select>
         </label>
-        <label className="field"><span>{fee.perDay ? 'Số ngày' : 'Số lượng'}</span>
+        <label className="field"><span>{fee?.calculationMethod === 'DailyRate' ? 'Số ngày' : 'Số lượng'}</span>
           <input type="number" min={1} max={365} value={quantity} onChange={(e) => setQuantity(Math.max(1, Math.min(365, Number(e.target.value) || 1)))} />
         </label>
         <label className="field"><span>Hạn thanh toán</span>
@@ -165,10 +172,10 @@ function ChargeForm({ contract: c, facilityId, onDone }: { contract: Contract; f
         </label>
       </div>
       <div className="row between wrap">
-        <span className="muted">Dự kiến: {fmtMoney(fee.defaultAmount)} × {quantity} = <b>{fmtMoney(fee.defaultAmount * quantity)}</b> (theo bảng phí chuẩn, hệ thống tính lại khi lập)</span>
+        <span className="muted">{fee ? <>Dự kiến: {fmtMoney(unitPrice)}{fee.calculationMethod === 'Percentage' ? ` (${fee.defaultAmount}% tiền thuê tháng)` : ''} × {quantity} = <b>{fmtMoney(unitPrice * quantity)}</b> (theo bảng phí hiện hành, hệ thống tính lại khi lập)</> : 'Đang tải bảng phí…'}</span>
         <span className="row">
           <button type="button" className="btn ghost sm" onClick={() => onDone(null)}>Hủy</button>
-          <button type="button" className="btn primary sm" disabled={busy} onClick={submit}>{busy ? 'Đang lập…' : 'Lập hóa đơn phụ thu'}</button>
+          <button type="button" className="btn primary sm" disabled={busy || !fee} onClick={submit}>{busy ? 'Đang lập…' : 'Lập hóa đơn phụ thu'}</button>
         </span>
       </div>
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}

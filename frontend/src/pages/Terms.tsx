@@ -33,7 +33,7 @@ export const TERMS: { title: string; icon: string; items: string[] }[] = [
     title: 'Đặt chỗ & tiền cọc',
     icon: 'card',
     items: [
-      'Đơn đặt kho được giữ trong thời gian giữ chỗ (mặc định 24 giờ). Quá hạn mà chưa đặt cọc, đơn tự hết hiệu lực.',
+      'Đơn đặt kho được giữ trong thời gian giữ chỗ theo chính sách của cơ sở. Quá hạn mà chưa đặt cọc, đơn tự hết hiệu lực.',
       'Tiền cọc tính theo chính sách thuê của cơ sở (mặc định bằng 1 tháng tiền thuê), thanh toán trực tuyến qua VNPay.',
       'Mã khuyến mãi chỉ áp dụng cho lần thuê đầu tiên, đúng thời gian và số tháng tối thiểu của chương trình; mức giảm trừ vào tiền thuê tháng đầu.',
     ],
@@ -60,7 +60,7 @@ export const TERMS: { title: string; icon: string; items: string[] }[] = [
     items: [
       'Có thể gia hạn sớm bất cứ lúc nào khi hợp đồng còn hiệu lực (chậm nhất 20:00 ngày hết hạn); thời hạn mới cộng tiếp từ ngày hết hạn hiện tại và có hiệu lực sau khi thanh toán phí gia hạn.',
       'Trả kho trước 20:00 ngày hết hạn. Nhân viên kiểm tra kho, đối soát phí và hoàn lại phần cọc còn lại.',
-      'Quá 24 giờ kể từ 20:00 ngày hết hạn, kho bị khóa và tính phí lưu kho quá hạn {LATE_FEE} theo bảng phí hiện hành, cấn trừ vào tiền cọc. Phần vượt cọc lập thành hóa đơn.',
+      'Chưa trả kho hoặc gia hạn sau số ngày ân hạn trong chính sách của cơ sở (tính từ 20:00 ngày hết hạn), kho bị khóa và tính phí lưu kho quá hạn {LATE_FEE} theo bảng phí hiện hành, cấn trừ vào tiền cọc. Phần vượt cọc lập thành hóa đơn.',
     ],
   },
   {
