@@ -101,7 +101,12 @@ export default function OpsFacilities() {
           <h1>Cơ Sở & Chi Nhánh</h1>
           <p className="muted">Theo dõi công suất, tỷ lệ lấp đầy và hiệu quả vận hành toàn hệ thống.</p>
         </div>
-        <button className="btn primary" onClick={() => { setNotice(''); setEditId(null); setCreating(true) }}><Icon name="building" size={16} /> Thêm cơ sở</button>
+        <div className="row wrap">
+          <button className="btn outline" onClick={() => document.getElementById('unit-types')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+            <Icon name="plus" size={16} /> Loại kho & Hình ảnh
+          </button>
+          <button className="btn primary" onClick={() => { setNotice(''); setEditId(null); setCreating(true) }}><Icon name="building" size={16} /> Thêm cơ sở</button>
+        </div>
       </div>
 
       <div className="stat-grid">
