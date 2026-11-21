@@ -19,6 +19,7 @@ namespace SelfStorage.Api.Controllers;
 public class ContractsController(
     SelfStorageDbContext db,
     AccessService access,
+    StoredItemService storedItems,
     BillingService billing,
     EmailOutboxService emailOutbox,
     TimeProvider clock) : ControllerBase
@@ -307,6 +308,23 @@ public class ContractsController(
         });
         contract.Status = ContractStatus.Terminated;
         contract.Unit.Status = UnitStatus.Available;
+        var activeStoredItems = await db.StoredItems
+            .Where(i => i.ContractId == id
+                && (i.Status == StoredItemStatus.Stored || i.Status == StoredItemStatus.PendingMoveIn))
+            .ToListAsync(ct);
+        foreach (var storedItem in activeStoredItems)
+        {
+            if (storedItem.Status == StoredItemStatus.Stored)
+            {
+                storedItem.Status = StoredItemStatus.Removed;
+                storedItem.RemovedAt = now;
+            }
+            else
+            {
+                storedItem.Status = StoredItemStatus.Cancelled;
+            }
+            storedItem.UpdatedAt = now;
+        }
         if (overdue is not null)
         {
             overdue.ActionTaken = stillOwed == 0 ? "Resolved" : "NoticeSent";
@@ -814,6 +832,26 @@ public class ContractsController(
     [Authorize(Roles = AppRoles.Customer)]
     public Task<VisitRegistrationDto> CancelVisitRegistration(int id, long registrationId, CancellationToken ct) =>
         access.CancelVisitRegistrationAsync(User.GetUserId(), id, registrationId, ct);
+
+    [HttpGet("{id:int}/items")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public Task<ContractInventoryDto> Inventory(
+        int id, [FromQuery] string? status, [FromQuery] bool includeHistory = false, CancellationToken ct = default) =>
+        storedItems.GetCustomerInventoryAsync(User.GetUserId(), id, status, includeHistory, ct);
+
+    [HttpPut("{id:int}/items/{itemId:long}")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public Task<StoredItemDto> UpdateStoredItem(
+        int id, long itemId, UpdateStoredItemRequest req, CancellationToken ct) =>
+        storedItems.UpdateCustomerItemAsync(User.GetUserId(), id, itemId, req, ct);
+
+    [HttpDelete("{id:int}/items/{itemId:long}")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public async Task<IActionResult> DeletePendingStoredItem(int id, long itemId, CancellationToken ct)
+    {
+        await storedItems.DeleteCustomerPendingItemAsync(User.GetUserId(), id, itemId, ct);
+        return NoContent();
+    }
 
     private async Task<Contract> LoadOwnAsync(int id, CancellationToken ct)
     {

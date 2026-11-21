@@ -61,3 +61,11 @@ public static class VerificationMethods
 {
     public const string CitizenId = "CitizenID";
 }
+
+public static class StoredItemStatus
+{
+    public const string PendingMoveIn = "PendingMoveIn";
+    public const string Stored = "Stored";
+    public const string Removed = "Removed";
+    public const string Cancelled = "Cancelled";
+}

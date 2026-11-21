@@ -11,7 +11,7 @@ namespace SelfStorage.Api.Controllers;
 [ApiController]
 [Route("api/gate")]
 [Authorize(Roles = AppRoles.GateRoles)]
-public class GateController(AccessService access) : ControllerBase
+public class GateController(AccessService access, StoredItemService storedItems) : ControllerBase
 {
     /// <summary>Facilities the signed-in staff member is assigned to.</summary>
     [HttpGet("my-facilities")]
@@ -63,4 +63,23 @@ public class GateController(AccessService access) : ControllerBase
     public Task<VisitRegistrationDto> ReviewVisitRegistration(
         int facilityId, long registrationId, ReviewVisitRegistrationRequest req, CancellationToken ct) =>
         access.ReviewVisitRegistrationAsync(User.GetUserId(), facilityId, registrationId, req, ct);
+
+    [HttpGet("facilities/{facilityId:int}/contracts/{contractId:int}/items")]
+    public Task<ContractInventoryDto> ContractItems(
+        int facilityId,
+        int contractId,
+        [FromQuery] string? status,
+        [FromQuery] bool includeHistory = false,
+        CancellationToken ct = default) =>
+        storedItems.GetFacilityInventoryAsync(User.GetUserId(), facilityId, contractId, status, includeHistory, ct);
+
+    [HttpPost("facilities/{facilityId:int}/contracts/{contractId:int}/items")]
+    public Task<StoredItemDto> AddContractItem(
+        int facilityId, int contractId, MoveInItemRequest req, CancellationToken ct) =>
+        storedItems.AddFacilityItemAsync(User.GetUserId(), facilityId, contractId, req, ct);
+
+    [HttpPost("facilities/{facilityId:int}/contracts/{contractId:int}/items/{itemId:long}/remove")]
+    public Task<StoredItemDto> RemoveContractItem(
+        int facilityId, int contractId, long itemId, RemoveStoredItemRequest req, CancellationToken ct) =>
+        storedItems.RemoveFacilityItemAsync(User.GetUserId(), facilityId, contractId, itemId, req, ct);
 }

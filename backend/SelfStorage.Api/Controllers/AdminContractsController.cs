@@ -6,6 +6,7 @@ using SelfStorage.Api.Data;
 using SelfStorage.Api.Data.Entities;
 using SelfStorage.Api.Dtos;
 using SelfStorage.Api.Infrastructure;
+using SelfStorage.Api.Services;
 
 namespace SelfStorage.Api.Controllers;
 
@@ -14,6 +15,7 @@ namespace SelfStorage.Api.Controllers;
 [Authorize(Roles = AppRoles.Admin)]
 public sealed class AdminContractsController(
     SelfStorageDbContext db,
+    StoredItemService storedItems,
     TimeProvider clock,
     ILogger<AdminContractsController> logger) : ControllerBase
 {
@@ -60,6 +62,14 @@ public sealed class AdminContractsController(
     public async Task<AdminContractDto> Detail(int contractId, CancellationToken ct) =>
         await Project(db.Contracts.Where(c => c.ContractId == contractId)).SingleOrDefaultAsync(ct)
         ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
+
+    [HttpGet("{contractId:int}/items")]
+    public Task<ContractInventoryDto> Items(
+        int contractId,
+        [FromQuery] string? status,
+        [FromQuery] bool includeHistory = false,
+        CancellationToken ct = default) =>
+        storedItems.GetAdminInventoryAsync(contractId, status, includeHistory, ct);
 
     [HttpPut("{contractId:int}")]
     public async Task<AdminContractDto> Update(

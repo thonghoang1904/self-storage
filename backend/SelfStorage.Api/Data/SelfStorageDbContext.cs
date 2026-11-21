@@ -24,6 +24,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
     public DbSet<AuthorizedPerson> AuthorizedPersons => Set<AuthorizedPerson>();
     public DbSet<AccessRecord> AccessRecords => Set<AccessRecord>();
     public DbSet<VisitRegistration> VisitRegistrations => Set<VisitRegistration>();
+    public DbSet<StoredItem> StoredItems => Set<StoredItem>();
     public DbSet<EarlyReturnRequest> EarlyReturnRequests => Set<EarlyReturnRequest>();
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
     public DbSet<EmailOutboxMessage> EmailOutboxMessages => Set<EmailOutboxMessage>();
@@ -194,6 +195,32 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
             e.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId);
             e.HasOne(x => x.AuthorizedPerson).WithMany().HasForeignKey(x => x.AuthorizedPersonId);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.ReviewedByStaffId);
+        });
+
+        b.Entity<StoredItem>(e =>
+        {
+            e.ToTable("StoredItems");
+            e.HasKey(x => x.StoredItemId);
+            e.Property(x => x.ItemName).HasMaxLength(100);
+            e.Property(x => x.Category).HasMaxLength(80);
+            e.Property(x => x.LengthCm).HasColumnType("decimal(7,2)");
+            e.Property(x => x.WidthCm).HasColumnType("decimal(7,2)");
+            e.Property(x => x.HeightCm).HasColumnType("decimal(7,2)");
+            e.Property(x => x.UnitVolumeM3)
+                .HasColumnType("decimal(12,6)")
+                .HasComputedColumnSql("CAST(([LengthCm] * [WidthCm] * [HeightCm]) / 1000000.0 AS DECIMAL(12,6))", stored: true);
+            e.Property(x => x.TotalVolumeM3)
+                .HasColumnType("decimal(14,6)")
+                .HasComputedColumnSql("CAST((([LengthCm] * [WidthCm] * [HeightCm]) / 1000000.0) * [Quantity] AS DECIMAL(14,6))", stored: true);
+            e.Property(x => x.Status).HasMaxLength(20).IsUnicode(false);
+            e.Property(x => x.Notes).HasMaxLength(300);
+            e.Property(x => x.ImageUrl).HasMaxLength(500);
+            e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
+            e.HasIndex(x => new { x.ContractId, x.Status });
+            e.HasIndex(x => x.VisitRegistrationId).HasFilter("[VisitRegistrationID] IS NOT NULL");
+            e.HasOne(x => x.Contract).WithMany().HasForeignKey(x => x.ContractId);
+            e.HasOne(x => x.VisitRegistration).WithMany(v => v.StoredItems).HasForeignKey(x => x.VisitRegistrationId);
+            e.HasOne(x => x.CreatedByUser).WithMany().HasForeignKey(x => x.CreatedByUserId);
         });
 
         b.Entity<ActivityLog>(e =>

@@ -33,6 +33,7 @@ builder.Services.AddTransient<IEmailSender, SmtpEmailSender>();
 builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddScoped<AccessService>();
+builder.Services.AddScoped<StoredItemService>();
 builder.Services.AddScoped<BillingService>();
 builder.Services.AddScoped<RentalPolicyService>();
 builder.Services.AddScoped<EmailOutboxService>();

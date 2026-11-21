@@ -63,4 +63,32 @@ public class VisitRegistration
     public Contract Contract { get; set; } = null!;
     public User Customer { get; set; } = null!;
     public AuthorizedPerson? AuthorizedPerson { get; set; }
+    public ICollection<StoredItem> StoredItems { get; set; } = new List<StoredItem>();
+}
+
+public class StoredItem
+{
+    public long StoredItemId { get; set; }
+    public int ContractId { get; set; }
+    public long? VisitRegistrationId { get; set; }
+    public string ItemName { get; set; } = null!;
+    public string? Category { get; set; }
+    public int Quantity { get; set; } = 1;
+    public decimal LengthCm { get; set; }
+    public decimal WidthCm { get; set; }
+    public decimal HeightCm { get; set; }
+    public decimal UnitVolumeM3 { get; set; }     // computed column in SQL
+    public decimal TotalVolumeM3 { get; set; }    // computed column in SQL
+    public string Status { get; set; } = StoredItemStatus.PendingMoveIn;
+    public string? Notes { get; set; }
+    public string? ImageUrl { get; set; }
+    public int CreatedByUserId { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? MovedInAt { get; set; }
+    public DateTime? RemovedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+
+    public Contract Contract { get; set; } = null!;
+    public VisitRegistration? VisitRegistration { get; set; }
+    public User CreatedByUser { get; set; } = null!;
 }
