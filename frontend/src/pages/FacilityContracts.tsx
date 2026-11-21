@@ -8,6 +8,7 @@ import { chargeableFees, extraChargePrice, useFees } from '../publicPolicy'
 import { Modal } from '../components/Modal'
 import { InvoiceView } from '../components/InvoiceView'
 import { Select } from '../components/Select'
+import { InventoryPanel } from '../components/InventoryPanel'
 
 /**
  * Contracts of the facility (GET /api/facilities/{id}/contracts?status) and billing an extra charge on one
@@ -225,6 +226,11 @@ export function ContractDialog({ contract: c, facilityId, onClose, actions }: { 
           <div className="info-row"><span className="muted">Thời hạn</span><b>{fmtDate(c.startDate)} – {fmtDate(c.endDate)}</b></div>
           <div className="info-row"><span className="muted">Giá thuê</span><b>{fmtMoney(c.monthlyRentFee)}/tháng</b></div>
         </div>
+      </div>
+      <div className="stack-sm">
+        <b>Đồ vật & dung tích kho</b>
+        <InventoryPanel mode="staff" contractId={c.contractId} facilityId={facilityId}
+          canAddAtFacility={c.status === 'Active' && !!info && info.unitStatus !== 'OverdueLocked' && info.unitStatus !== 'UnderMaintenance'} />
       </div>
       <div className="stack-sm">
         <b>Hóa đơn của hợp đồng</b>

@@ -3,8 +3,9 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, ApiError, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useAuth } from '../auth'
 import { FormField } from '../components/form'
-import { Badge, Icon, StatusBadge, UnitArt, splitTypeName } from '../components/ui'
-import { photoVariant } from '../components/unitPhoto'
+import { Badge, Icon, StatusBadge, splitTypeName } from '../components/ui'
+import { ContractUnitArt } from '../components/unitPhoto'
+import { InventoryPanel } from '../components/InventoryPanel'
 import type { AccessRecord, ContractDetail as Detail, EarlyReturnQuote, EarlyReturnRequest, Facility, Invoice, Person, Renewal } from '../types'
 import { textError } from '../validation'
 import { lateFeeText, lockDelayText, useFees, useRentalPolicy } from '../publicPolicy'
@@ -193,7 +194,7 @@ export default function ContractDetail() {
           <div className="stack-lg detail-main">
             {/* the unit: photo beside its specs */}
             <section className="panel cd-unit">
-              <div className="cd-unit-photo"><UnitArt variant={c.unitTypeName || c.unitTypeId ? photoVariant(c.unitTypeName, c.unitTypeId) : 2} /></div>
+              <div className="cd-unit-photo"><ContractUnitArt facilityId={c.facilityId} unitId={c.unitId} contractId={c.contractId} unitTypeName={c.unitTypeName} unitTypeId={c.unitTypeId} imageUrl={c.unitTypeImageUrl} /></div>
               <div className="cd-unit-info">
                 <div className="row between wrap">
                   <div>
@@ -216,6 +217,16 @@ export default function ContractDetail() {
 
             {showRenew && !ended && <section className="panel"><h3 className="panel-title">Gia hạn hợp đồng</h3><RenewalPanel contract={c} renewals={renewals} onChanged={load} /></section>}
             {showEarly && canReturnEarly && <section id="early-return" className="panel scroll-target"><EarlyReturnPanel contract={c} facility={facility} pendingRenewal={pending} /></section>}
+
+            <section className="panel stack" id="inventory">
+              <div>
+                <h3 className="panel-title">Tồn Kho & Mức Lưu Trữ</h3>
+                <p className="muted">Đồ đang lưu và đồ chờ đưa vào kho {c.unitCode}, cùng phần dung tích còn trống.</p>
+              </div>
+              <InventoryPanel mode="customer" contractId={c.contractId}
+                canEdit={!ended && (c.status === 'Active' || c.status === 'Renewed' || c.status === 'Overdue')}
+                moveInLink={(c.status === 'Active' || c.status === 'Renewed') && !locked ? `/my-units/${c.contractId}/move-in` : null} />
+            </section>
 
             <section className="panel stack">
               <div className="row between wrap">

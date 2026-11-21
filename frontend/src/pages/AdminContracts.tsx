@@ -5,6 +5,7 @@ import { Empty, Icon, StatusBadge } from '../components/ui'
 import type { AdminContract, Facility } from '../types'
 import { Select } from '../components/Select'
 import { Modal } from '../components/Modal'
+import { InventoryPanel } from '../components/InventoryPanel'
 
 /**
  * System administrator: contracts across all facilities, view only (AdminContractsController).
@@ -147,6 +148,11 @@ function ContractPanel({ contractId, onClose }: { contractId: number; onClose: (
         <div><dt>Giá thuê</dt><dd>{fmtMoney(c.monthlyRentFee)}/tháng</dd></div>
         <div><dt>Tiền cọc</dt><dd>{fmtMoney(c.depositPaid)}</dd></div>
       </dl>
+
+      <div className="stack-sm">
+        <h3 className="panel-title">Đồ vật & mức lưu trữ</h3>
+        <InventoryPanel mode="admin" contractId={c.contractId} />
+      </div>
 
       {c.termsConditions && (
         <div className="stack-sm">

@@ -8,6 +8,7 @@ import { CITIZEN_ID_FILTER } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
 import { Select } from '../components/Select'
 import { scrollToList } from '../components/StatCard'
+import { InventoryPanel } from '../components/InventoryPanel'
 
 const REFRESH_MS = 5000
 const hhmm = (iso: string) => iso.slice(11, 16)
@@ -401,6 +402,7 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
 }) {
   // CCCD recorded at the gate in this session (PUT .../customers/{id}/citizen-id) replaces the one on file.
   const [holderCid, setHolderCid] = useState<string | null>(null)
+  const [showItems, setShowItems] = useState(false)
   const holder = holderCid ? { ...v.customer, citizenId: holderCid } : v.customer
   const people: Person[] = [holder, ...v.authorizedPersons]
   // Searched by someone's CCCD or phone: preselect that person.
@@ -569,6 +571,16 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
             <button className="btn danger" disabled={busy} onClick={deny}>Ghi nhận từ chối</button>
           </div>
         </div>
+      </section>
+      <section className="panel stack-sm">
+        <button type="button" className="row between link-btn" aria-expanded={showItems} onClick={() => setShowItems(!showItems)}>
+          <b>Đồ vật & dung tích kho {v.unitCode}</b>
+          <span><Icon name="package" size={14} /> {showItems ? 'Ẩn' : 'Xem để đối chiếu'}</span>
+        </button>
+        {showItems && (
+          <InventoryPanel mode="staff" contractId={v.contractId} facilityId={facilityId}
+            canAddAtFacility={v.contractStatus === 'Active' && v.unitStatus !== 'OverdueLocked' && v.unitStatus !== 'UnderMaintenance'} />
+        )}
       </section>
     </div>
   )

@@ -120,6 +120,8 @@ export interface UnitType {
   baseDailyRate: number
   baseMonthlyRate: number
   description: string | null
+  /** Photo uploaded by an admin (Cloudinary URL); null → the drawn fallback. */
+  imageUrl?: string | null
 }
 
 export interface Availability {
@@ -127,6 +129,7 @@ export interface Availability {
   typeName: string
   baseMonthlyRate: number
   availableUnits: number
+  imageUrl?: string | null
 }
 
 export interface StorageUnit {
@@ -315,6 +318,8 @@ export interface ContractDetail {
   volumeCubicMeters: number
   hasClimateControl: boolean
   operatingHours: string
+  /** Photo of the unit type (Cloudinary URL), null when none was uploaded. */
+  unitTypeImageUrl?: string | null
 }
 
 export interface Renewal {
@@ -604,6 +609,30 @@ export interface StoredItem {
   movedInAt: string | null
   removedAt: string | null
   updatedAt: string | null
+}
+
+/** Volume picture of one contract's unit and the items in it (ContractInventoryDto). */
+export interface ContractInventory {
+  contractId: number
+  contractNumber: string
+  unitCode: string
+  unitLengthCm: number
+  unitWidthCm: number
+  unitHeightCm: number
+  unitVolumeM3: number
+  storedVolumeM3: number
+  pendingVolumeM3: number
+  remainingVolumeM3: number
+  occupancyPercent: number
+  items: StoredItem[]
+}
+
+/** StoredItem.status → Vietnamese label + badge tone. */
+export const StoredItemStatuses: Record<string, { label: string; tone: 'ok' | 'warn' | 'muted' }> = {
+  PendingMoveIn: { label: 'Chờ đưa vào kho', tone: 'warn' },
+  Stored: { label: 'Đang lưu trong kho', tone: 'ok' },
+  Removed: { label: 'Đã lấy ra', tone: 'muted' },
+  Cancelled: { label: 'Đã hủy', tone: 'muted' },
 }
 
 /** A customer's booked entry/exit window for their unit, approved by facility staff (VisitRegistrationDto). */

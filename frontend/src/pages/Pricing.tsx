@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
 import { api, fmtMoney } from '../api'
 import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
-import { Icon, splitTypeName, UnitArt } from '../components/ui'
+import { Icon, splitTypeName } from '../components/ui'
+import { UnitTypePhoto } from '../components/unitPhoto'
 import { depositFor, fillFees, fillPolicy, useFees, useRentalPolicy } from '../publicPolicy'
 import { homeFor, type Availability, type Facility, type UnitType } from '../types'
 
@@ -96,12 +97,12 @@ export default function Pricing() {
         <div className="container">
           {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
           <div className="unit-grid pricing-grid">
-            {types.map((t, i) => {
+            {types.map((t) => {
               const { name, size } = splitTypeName(t.typeName)
               const popular = t.unitTypeId === popularId
               return (
                 <article key={t.unitTypeId} className={`unit-card ${popular ? 'featured' : ''}`}>
-                  <div className="unit-card-media"><UnitArt variant={i} /></div>
+                  <div className="unit-card-media"><UnitTypePhoto src={t.imageUrl} typeName={t.typeName} typeId={t.unitTypeId} alt={name} /></div>
                   <div className="unit-card-body">
                     <div className="row between">
                       <h3>{name}</h3>

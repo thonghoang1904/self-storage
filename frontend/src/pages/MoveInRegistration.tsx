@@ -7,7 +7,8 @@ import { parseOperatingHours } from '../components/appointment'
 import { useAuth } from '../auth'
 import { Empty, Icon } from '../components/ui'
 import { ContractUnitArt } from '../components/unitPhoto'
-import type { Contract, ContractDetail, Facility, Person, StorageUnit, StoredItem, UnitType, VisitRegistration } from '../types'
+import type { Contract, ContractDetail, ContractInventory, Facility, Person, StorageUnit, StoredItem, UnitType, VisitRegistration } from '../types'
+import { CapacityBar } from '../components/InventoryPanel'
 import { termsHref } from './Terms'
 
 /**
@@ -191,6 +192,10 @@ export default function MoveInRegistration() {
 
   const loadRows = useCallback(() => api<VisitRegistration[]>(`/api/contracts/${id}/visit-registrations`)
     .then((rs) => setRows(rs.filter((r) => r.purpose.startsWith(MOVE_IN_PREFIX)))).catch(() => {}), [id])
+  // What is already in the unit or on its way (GET /api/contracts/{id}/items: Stored + PendingMoveIn): the room left is
+  // checked against it, as StoredItemService does, so an overflow shows on the form instead of as a 400 from the server.
+  const [inventory, setInventory] = useState<ContractInventory | null>(null)
+  const loadInventory = useCallback(() => api<ContractInventory>(`/api/contracts/${id}/items`).then(setInventory).catch(() => setInventory(null)), [id])
 
   useEffect(() => {
     setC(null)
@@ -208,7 +213,8 @@ export default function MoveInRegistration() {
     api<Contract[]>('/api/contracts/my').then(setContracts).catch(() => {})
     api<Person[]>(`/api/contracts/${id}/authorized-persons`).then((ps) => setPeople(ps.filter((p) => p.authorizedPersonId != null))).catch(() => {})
     void loadRows()
-  }, [id, loadRows, today])
+    void loadInventory()
+  }, [id, loadRows, loadInventory, today])
 
   const hoursText = c?.operatingHours || facility?.operatingHours
   // A 24-hour facility closes at 24:00; cap at 23:30 so no "24:00" time is sent.
@@ -243,13 +249,31 @@ export default function MoveInRegistration() {
   const unitH = (c.heightMeters || type?.heightMeters || 0) * 100
   const hasUnitDims = unitL > 0 && unitW > 0 && unitH > 0
   const unitSizeLabel = hasUnitDims ? `${fmtCm(unitL)}×${fmtCm(unitW)}×${fmtCm(unitH)} cm` : ''
-  const capacity = c?.volumeCubicMeters || (c?.lengthMeters ? c.lengthMeters * c.widthMeters * c.heightMeters : 0)
+  const capacity = inventory?.unitVolumeM3 || c?.volumeCubicMeters || (c?.lengthMeters ? c.lengthMeters * c.widthMeters * c.heightMeters : 0)
     || (type ? type.volumeCubicMeters || type.lengthMeters * type.widthMeters * type.heightMeters : 0)
-  const fill = capacity ? Math.round(volume / capacity * 100) : 0
-  const exceedsCapacity = capacity > 0 && volume > capacity + 1e-9
+  // Items already stored or waiting to move in count towards the unit's volume and its packing limits.
+  const existingItems = (inventory?.items ?? []).filter((x) => x.status === 'Stored' || x.status === 'PendingMoveIn')
+  const existingVolume = inventory ? inventory.storedVolumeM3 + inventory.pendingVolumeM3 : 0
+  const totalAfter = existingVolume + volume
+  const fill = capacity ? Math.round(totalAfter / capacity * 100) : 0
+  const exceedsCapacity = capacity > 0 && totalAfter > capacity + 1e-9
+  const capacityError = existingVolume > 0
+    ? `Tổng thể tích sau đợt này (${fmtVol(totalAfter)} m³, gồm ${fmtVol(existingVolume)} m³ đồ đã có hoặc đang chờ và ${fmtVol(volume)} m³ đợt này) vượt quá sức chứa của kho (${fmtVol(capacity)} m³). Vui lòng giảm số lượng/kích thước hoặc thuê thêm kho.`
+    : `Tổng thể tích đồ khai báo (${fmtVol(volume)} m³) vượt quá sức chứa của kho (${fmtVol(capacity)} m³). Vui lòng giảm số lượng/kích thước hoặc thuê thêm kho.`
   const placementErrorOf = (it: Item, idx: number) =>
     checkItemPlacement(it, it.name.trim() || `Món ${idx + 1}`, unitL, unitW, unitH, unitSizeLabel)
   const firstPlacementError = activeItems.map((it, idx) => placementErrorOf(it, idx)).find((msg): msg is string => Boolean(msg)) ?? null
+  const existingCross = existingItems.reduce(
+    (acc, x) => {
+      const minItem = Math.min(x.lengthCm, x.widthCm)
+      if (hasUnitDims && minItem > unitL / 2 + 1e-6 && minItem > unitW / 2 + 1e-6 && x.heightCm > unitH / 2 + 1e-6)
+        acc.centerBlockers += x.quantity
+      if (hasUnitDims && x.heightCm > unitH / 2 + 1e-6)
+        acc.tallFootprintCm2 += x.lengthCm * x.widthCm * x.quantity
+      return acc
+    },
+    { centerBlockers: 0, tallFootprintCm2: 0 },
+  )
   const crossStats = activeItems.reduce(
     (acc, it) => {
       const l = num(it.l), w = num(it.w), h = num(it.h)
@@ -263,15 +287,16 @@ export default function MoveInRegistration() {
       }
       return acc
     },
-    { centerBlockers: 0, tallFootprintCm2: 0 },
+    { ...existingCross },
   )
   const unitFloorAreaCm2 = unitL * unitW
   const exceedsCenterBlockers = hasUnitDims && crossStats.centerBlockers > 1
   const exceedsTallFootprint = hasUnitDims && crossStats.tallFootprintCm2 > unitFloorAreaCm2 + 1e-4
+  const withStored = existingItems.length ? ' (tính cả đồ đã có trong kho)' : ''
   const crossError = exceedsCenterBlockers
-    ? `Các món đồ có kích thước lớn hơn một nửa chiều kho (${unitSizeLabel}) không thể xếp cùng lúc quá 1 món`
+    ? `Các món đồ có kích thước lớn hơn một nửa chiều kho (${unitSizeLabel}) không thể xếp cùng lúc quá 1 món${withStored}`
     : exceedsTallFootprint
-      ? `Tổng diện tích đáy các món cao quá nửa kho (${fmtVol(crossStats.tallFootprintCm2 / 10_000)} m²) vượt quá diện tích sàn kho (${fmtVol(unitFloorAreaCm2 / 10_000)} m²)`
+      ? `Tổng diện tích đáy các món cao quá nửa kho (${fmtVol(crossStats.tallFootprintCm2 / 10_000)} m²) vượt quá diện tích sàn kho (${fmtVol(unitFloorAreaCm2 / 10_000)} m²)${withStored}`
       : null
   const hasFitError = Boolean(firstPlacementError || crossError || exceedsCapacity)
   const visitor = who == null ? null : people.find((p) => p.authorizedPersonId === who) ?? null
@@ -335,7 +360,7 @@ export default function MoveInRegistration() {
     }
     if (crossError) return crossError
     if (exceedsCapacity)
-      return `Tổng thể tích đồ khai báo (${fmtVol(volume)} m³) vượt quá sức chứa của kho (${fmtVol(capacity)} m³). Vui lòng giảm số lượng/kích thước hoặc thuê thêm kho.`
+      return capacityError
     return undefined
   }
 
@@ -356,6 +381,7 @@ export default function MoveInRegistration() {
       fd.append('file', file)
       await api<StoredItem>(`/api/contracts/${id}/items/${itemId}/image`, { body: fd })
       await loadRows()
+      void loadInventory()
     } catch (uploadErr) {
       setHistoryPhotoError({ itemId, message: (uploadErr as Error).message })
     } finally {
@@ -441,6 +467,7 @@ export default function MoveInRegistration() {
       setCitizenId('')
       setAgree(false)
       await loadRows()
+      void loadInventory()
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (err) {
       setFieldErr({ submit: (err as Error).message })
@@ -458,6 +485,7 @@ export default function MoveInRegistration() {
       await api(`/api/contracts/${id}/visit-registrations/${r.visitRegistrationId}`, { method: 'DELETE' })
       setNotice(`Đã hủy lịch chuyển đồ ${hhmm(r.scheduledEntryAt)} ngày ${dmy(r.scheduledEntryAt)}.`)
       await loadRows()
+      void loadInventory()
     } catch (err) {
       setError((err as Error).message)
     }
@@ -658,14 +686,14 @@ export default function MoveInRegistration() {
                       <div><dt>Thời gian</dt><dd>{entry} – {exit}, ngày {dmy(date)}</dd></div>
                       <div><dt>Người vào kho</dt><dd>{visitor ? visitor.fullName : user?.fullName}</dd></div>
                       <div><dt>Phương tiện</dt><dd>{vehicle}{helpers > 0 && ` · ${helpers} người phụ`}</dd></div>
-                      <div><dt>Thể tích ước tính</dt><dd>{volume > 0 ? `${fmtVol(volume)} m³` : '—'}{capacity > 0 && volume > 0 && <small className={exceedsCapacity ? 'danger-text' : 'muted'}> · {fill}% kho ({fmtVol(capacity)} m³)</small>}</dd></div>
+                      <div><dt>Thể tích ước tính</dt><dd>{volume > 0 ? `${fmtVol(volume)} m³ đợt này` : '—'}{capacity > 0 && volume > 0 && <small className={exceedsCapacity ? 'danger-text' : fill > 80 ? 'warn-text' : 'muted'}> · sau đợt này {fmtVol(totalAfter)} / {fmtVol(capacity)} m³ ({fill}% kho)</small>}</dd></div>
                       <div><dt>Ảnh đồ vật</dt><dd>{photoCount > 0 ? `${photoCount} ảnh đính kèm` : 'Không có'}</dd></div>
                     </dl>
                     {hasFitError && (
                       <p className="alert bad"><Icon name="alert" size={15} />
                         {firstPlacementError
                           ?? crossError
-                          ?? `Tổng thể tích đồ khai báo (${fmtVol(volume)} m³) lớn hơn thể tích kho (${fmtVol(capacity)} m³). Vui lòng giảm số lượng/kích thước hoặc thuê thêm kho.`}
+                          ?? capacityError}
                       </p>
                     )}
                     <div className="purpose-preview">
@@ -774,8 +802,18 @@ export default function MoveInRegistration() {
               <div className="info-row"><span className="muted">Giờ mở cửa</span><b>{hoursText ?? '—'}</b></div>
               {capacity > 0 && (
                 <div className="stack-sm">
-                  <div className="info-row"><span className="muted">Đồ khai báo lần này</span><b>{fmtVol(volume)} / {fmtVol(capacity)} m³</b></div>
-                  <div className="pay-progress" role="progressbar" aria-valuenow={Math.min(fill, 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Tỷ lệ chiếm kho"><i style={{ width: `${Math.min(fill, 100)}%`, background: hasFitError ? 'var(--bad)' : fill > 80 ? 'var(--warn)' : undefined }} /></div>
+                  <div className="info-row"><span className="muted">Tổng dung tích kho</span><b>{fmtVol(capacity)} m³</b></div>
+                  {inventory && (
+                    <>
+                      <div className="info-row"><span className="muted">Đã lưu trong kho</span><b>{fmtVol(inventory.storedVolumeM3)} m³</b></div>
+                      <div className="info-row"><span className="muted">Đang chờ đưa vào</span><b>{fmtVol(inventory.pendingVolumeM3)} m³</b></div>
+                      <div className="info-row"><span className="muted">Còn trống</span><b>{fmtVol(inventory.remainingVolumeM3)} m³</b></div>
+                    </>
+                  )}
+                  <div className="info-row"><span className="muted">Đợt khai báo này</span><b>{fmtVol(volume)} m³</b></div>
+                  {inventory
+                    ? <CapacityBar inv={{ ...inventory, unitVolumeM3: capacity }} extraM3={volume} />
+                    : <div className="pay-progress" role="progressbar" aria-valuenow={Math.min(fill, 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Tỷ lệ chiếm kho"><i style={{ width: `${Math.min(fill, 100)}%`, background: hasFitError ? 'var(--bad)' : fill > 80 ? 'var(--warn)' : undefined }} /></div>}
                 </div>
               )}
               <div className="notice info-notice">

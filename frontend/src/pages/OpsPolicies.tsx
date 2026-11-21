@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { checkInt, checkMoney, checkText, firstError, localToday } from '../validation'
 import { api, fmtDate, fmtMoney } from '../api'
-import { Badge, Empty, Icon, splitTypeName } from '../components/ui'
+import { Badge, Empty, Icon } from '../components/ui'
 import { FeeMethods, type Facility, type FeeConfiguration, type Promotion, type RentalPolicy, type UnitType } from '../types'
 import { CODE_FILTER } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
 import { Select } from '../components/Select'
+import { UnitTypeManager } from '../components/UnitTypeManager'
 
 /**
  * #44 Operations manager, Figma "policy-fee-discount-management" (75:29417): rental policies, the fee table,
@@ -18,7 +19,7 @@ const TABS: { key: Tab; label: string; add?: string }[] = [
   { key: 'policies', label: 'Chính sách thuê', add: 'Thêm chính sách' },
   { key: 'fees', label: 'Bảng phí', add: 'Thêm loại phí' },
   { key: 'promotions', label: 'Khuyến mãi', add: 'Thêm khuyến mãi' },
-  { key: 'pricing', label: 'Loại kho & giá', add: 'Thêm loại kho' },
+  { key: 'pricing', label: 'Loại kho & giá' },
 ]
 
 const todayIso = () => localToday()
@@ -76,7 +77,6 @@ export default function OpsPolicies() {
   const shownPolicies = useMemo(() => policies.filter((p) => match(p.policyName, facilityName(p.facilityId)) && (status === 'all' || (status === 'on') === p.isActive)), [policies, s, status, facilities]) // eslint-disable-line react-hooks/exhaustive-deps
   const shownFees = useMemo(() => fees.filter((f) => match(f.feeCode, f.feeName, f.description)), [fees, s]) // eslint-disable-line react-hooks/exhaustive-deps
   const shownPromos = useMemo(() => promos.filter((p) => match(p.promoCode, p.title) && (status === 'all' || (status === 'on') === (promoState(p).label === 'Đang chạy'))), [promos, s, status]) // eslint-disable-line react-hooks/exhaustive-deps
-  const shownTypes = useMemo(() => types.filter((t) => match(t.typeName, t.description)), [types, s]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const current = currentPolicy(policies)
   const running = promos.filter((p) => promoState(p).label === 'Đang chạy').length
@@ -130,13 +130,14 @@ export default function OpsPolicies() {
             <p className="muted">{tab === 'policies' ? 'Tỷ lệ cọc, thời gian hủy miễn phí, hạn gia hạn và khóa kho khi quá hạn.'
               : tab === 'fees' ? 'Các khoản phí phát sinh nhân viên cơ sở có thể áp vào hợp đồng.'
               : tab === 'promotions' ? 'Mã giảm giá khách nhập khi đặt kho, áp một lần trên hóa đơn thuê đầu tiên.'
-              : 'Thêm loại kho mới, sửa kích thước, mô tả và giá. Đổi giá tháng sẽ cập nhật giá của mọi kho thuộc loại đó.'}</p>
+              : 'Thêm loại kho mới, sửa kích thước, mô tả, giá và ảnh. Đổi giá tháng sẽ cập nhật giá của mọi kho thuộc loại đó.'}</p>
           </div>
 
           {editing?.tab === 'policies' && <PolicyForm policy={policies.find((p) => p.policyId === editing.id)} facilities={facilities} onCancel={() => setEditing(null)} onSaved={saved} />}
           {editing?.tab === 'fees' && <FeeForm fee={fees.find((f) => f.feeTypeId === editing.id)} onCancel={() => setEditing(null)} onSaved={saved} />}
-          {editing?.tab === 'pricing' && <UnitTypeForm key={editing.id ?? 'new'} type={types.find((t) => t.unitTypeId === editing.id)} onCancel={() => setEditing(null)} onSaved={saved} />}
           {editing?.tab === 'promotions' && <PromotionForm promo={promos.find((p) => p.promotionId === editing.id)} onCancel={() => setEditing(null)} onSaved={saved} />}
+
+          {tab === 'pricing' && <UnitTypeManager query={q} onChanged={() => { void load() }} />}
 
           <div className="policy-list">
             {tab === 'policies' && shownPolicies.map((p) => (
@@ -163,9 +164,8 @@ export default function OpsPolicies() {
                 </PolicyItem>
               )
             })}
-            {tab === 'pricing' && shownTypes.map((t) => <PriceRow key={t.unitTypeId} type={t} onSaved={saved} onEdit={() => { setNotice(''); setEditing({ tab: 'pricing', id: t.unitTypeId }) }} />)}
 
-            {((tab === 'policies' && !shownPolicies.length) || (tab === 'fees' && !shownFees.length) || (tab === 'promotions' && !shownPromos.length) || (tab === 'pricing' && !shownTypes.length)) &&
+            {((tab === 'policies' && !shownPolicies.length) || (tab === 'fees' && !shownFees.length) || (tab === 'promotions' && !shownPromos.length)) &&
               <Empty icon="clipboard">Không có mục nào khớp bộ lọc.</Empty>}
           </div>
         </section>
@@ -385,130 +385,6 @@ function PromotionForm({ promo, onCancel, onSaved }: { promo?: Promotion; onCanc
         <label className="field"><span>Đến ngày *</span><input type="date" value={f.endDate} min={f.startDate} onChange={(e) => set('endDate', e.target.value)} required /></label>
       </div>
       <label className="check-line"><input type="checkbox" checked={f.isActive} onChange={(e) => set('isActive', e.target.checked)} /><span>Bật chương trình</span></label>
-    </FormShell>
-  )
-}
-
-/** One unit type with its prices, edited in place. */
-function PriceRow({ type: t, onSaved, onEdit }: { type: UnitType; onSaved: (m: string) => void; onEdit: () => void }) {
-  const [edit, setEdit] = useState(false)
-  const [daily, setDaily] = useState(String(t.baseDailyRate))
-  const [monthly, setMonthly] = useState(String(t.baseMonthlyRate))
-  const { busy, error, save } = useSave((m) => { setEdit(false); onSaved(m) })
-  const { name, size } = splitTypeName(t.typeName)
-  return (
-    <article className="policy-item">
-      <div className="row between wrap">
-        <span className="row"><span className="code-chip">LK-{String(t.unitTypeId).padStart(2, '0')}</span>{t.hasClimateControl && <Badge tone="info">Điều hòa</Badge>}</span>
-        {!edit && <b className="policy-amount">{fmtMoney(t.baseMonthlyRate)}<small>/tháng</small></b>}
-      </div>
-      <b className="policy-title">{name} <small className="muted">{size}</small></b>
-      {edit ? (
-        <form className="stack-sm" onSubmit={(e) => { e.preventDefault(); void save(`/api/operations/unit-types/${t.unitTypeId}/pricing`, 'PUT', { baseDailyRate: Number(daily), baseMonthlyRate: Number(monthly) }, `Đã cập nhật giá ${name}.`, firstError(
-              checkMoney(monthly, 'Giá theo tháng', 1000),
-              checkMoney(daily, 'Giá theo ngày', 0),
-              Number(daily) > Number(monthly) ? 'Giá theo ngày không được lớn hơn giá theo tháng' : '',
-            )) }}>
-          <div className="form-grid">
-            <label className="field"><span>Giá theo ngày (đ)</span><input type="number" min={0} value={daily} onChange={(e) => setDaily(e.target.value)} /></label>
-            <label className="field"><span>Giá theo tháng (đ) *</span><input type="number" min={1} value={monthly} onChange={(e) => setMonthly(e.target.value)} required /></label>
-          </div>
-          {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
-          <div className="row">
-            <button className="btn primary sm" type="submit" disabled={busy}>{busy ? 'Đang lưu…' : 'Lưu giá'}</button>
-            <button className="btn ghost sm" type="button" onClick={() => setEdit(false)}>Hủy</button>
-          </div>
-        </form>
-      ) : (
-        <div className="row between wrap">
-          <small className="muted">{t.lengthMeters} × {t.widthMeters} × {t.heightMeters} m · Giá ngày {fmtMoney(t.baseDailyRate)}{t.description ? ` · ${t.description}` : ''}</small>
-          <span className="row">
-            <button className="link-btn" onClick={() => setEdit(true)}><Icon name="wallet" size={14} /> Đổi giá</button>
-            <button className="link-btn" onClick={onEdit}><Icon name="settings" size={14} /> Sửa loại kho</button>
-          </span>
-        </div>
-      )}
-    </article>
-  )
-}
-
-/**
- * Create, edit or delete a unit type (POST /api/operations/unit-types, PUT/DELETE /unit-types/{id}).
- * Sizes are inside measurements in metres, 0.1–20 with at most 2 decimals, as SaveUnitTypeRequest checks.
- * The backend refuses to change the size or climate control while the type has live contracts or reservations,
- * and refuses to delete a type that units or reservations use; its message is shown as it comes.
- */
-function UnitTypeForm({ type, onCancel, onSaved }: { type?: UnitType; onCancel: () => void; onSaved: (m: string) => void }) {
-  const [f, setF] = useState(() => ({
-    typeName: type?.typeName ?? '',
-    lengthMeters: String(type?.lengthMeters ?? ''),
-    widthMeters: String(type?.widthMeters ?? ''),
-    heightMeters: String(type?.heightMeters ?? ''),
-    hasClimateControl: type?.hasClimateControl ?? false,
-    baseDailyRate: String(type?.baseDailyRate ?? ''),
-    baseMonthlyRate: String(type?.baseMonthlyRate ?? ''),
-    description: type?.description ?? '',
-  }))
-  const { busy, error, save } = useSave(onSaved)
-  const [removing, setRemoving] = useState(false)
-  const [removeError, setRemoveError] = useState('')
-  const set = (k: keyof typeof f, v: unknown) => setF({ ...f, [k]: v })
-
-  const dim = (v: string, label: string) => {
-    const n = Number(v)
-    if (!v.trim() || !Number.isFinite(n) || n < 0.1 || n > 20) return `${label} từ 0,1 đến 20 m`
-    return Math.round(n * 100) / 100 === n ? '' : `${label} tối đa 2 chữ số thập phân`
-  }
-
-  const submit = (e: FormEvent) => {
-    e.preventDefault()
-    const body = {
-      typeName: f.typeName.trim(),
-      lengthMeters: Number(f.lengthMeters), widthMeters: Number(f.widthMeters), heightMeters: Number(f.heightMeters),
-      hasClimateControl: f.hasClimateControl,
-      baseDailyRate: Number(f.baseDailyRate || 0), baseMonthlyRate: Number(f.baseMonthlyRate),
-      description: f.description.trim() || null,
-    }
-    void save(type ? `/api/operations/unit-types/${type.unitTypeId}` : '/api/operations/unit-types', type ? 'PUT' : 'POST', body,
-      `Đã lưu loại kho "${body.typeName}".`, firstError(
-        checkText(f.typeName, 'Tên loại kho', 100, false, 2),
-        dim(f.lengthMeters, 'Chiều dài'), dim(f.widthMeters, 'Chiều rộng'), dim(f.heightMeters, 'Chiều cao'),
-        checkMoney(f.baseMonthlyRate, 'Giá theo tháng', 1000),
-        checkMoney(f.baseDailyRate || '0', 'Giá theo ngày', 0),
-        body.baseDailyRate > body.baseMonthlyRate ? 'Giá theo ngày không được lớn hơn giá theo tháng' : '',
-        checkText(f.description, 'Mô tả', 500, true),
-      ))
-  }
-
-  const remove = async () => {
-    if (!type || !window.confirm(`Xóa loại kho "${type.typeName}"? Chỉ xóa được khi chưa có ô kho hay đơn đặt chỗ nào thuộc loại này.`)) return
-    setRemoving(true)
-    setRemoveError('')
-    try {
-      await api(`/api/operations/unit-types/${type.unitTypeId}`, { method: 'DELETE' })
-      onSaved(`Đã xóa loại kho "${type.typeName}".`)
-    } catch (err) {
-      setRemoveError((err as Error).message)
-    } finally {
-      setRemoving(false)
-    }
-  }
-
-  return (
-    <FormShell title={type ? 'Sửa loại kho' : 'Thêm loại kho'} busy={busy || removing} error={error || removeError} onCancel={onCancel} onSubmit={submit}>
-      <div className="form-grid">
-        <label className="field"><span>Tên loại kho *</span><input value={f.typeName} maxLength={100} placeholder="VD: Kho Siêu Lớn XL (4.0m x 5.0m)" onChange={(e) => set('typeName', e.target.value)} required /></label>
-        <label className="field"><span>Mô tả</span><input value={f.description} maxLength={500} onChange={(e) => set('description', e.target.value)} /></label>
-        <label className="field"><span>Chiều dài (m) *</span><input type="number" min={0.1} max={20} step="0.01" value={f.lengthMeters} onChange={(e) => set('lengthMeters', e.target.value)} required /></label>
-        <label className="field"><span>Chiều rộng (m) *</span><input type="number" min={0.1} max={20} step="0.01" value={f.widthMeters} onChange={(e) => set('widthMeters', e.target.value)} required /></label>
-        <label className="field"><span>Chiều cao (m) *</span><input type="number" min={0.1} max={20} step="0.01" value={f.heightMeters} onChange={(e) => set('heightMeters', e.target.value)} required /></label>
-        <span />
-        <label className="field"><span>Giá theo tháng (đ) *</span><input type="number" min={1000} value={f.baseMonthlyRate} onChange={(e) => set('baseMonthlyRate', e.target.value)} required /></label>
-        <label className="field"><span>Giá theo ngày (đ)</span><input type="number" min={0} value={f.baseDailyRate} onChange={(e) => set('baseDailyRate', e.target.value)} /></label>
-      </div>
-      <label className="check-line"><input type="checkbox" checked={f.hasClimateControl} onChange={(e) => set('hasClimateControl', e.target.checked)} /><span>Có điều hòa kiểm soát nhiệt độ, độ ẩm</span></label>
-      {type && <small className="muted">Loại kho đang có hợp đồng hoặc đơn đặt chỗ hiệu lực thì chỉ đổi được tên, mô tả và giá.</small>}
-      {type && <button type="button" className="link-btn danger-text" disabled={busy || removing} onClick={() => { void remove() }}><Icon name="trash" size={14} /> {removing ? 'Đang xóa…' : 'Xóa loại kho này'}</button>}
     </FormShell>
   )
 }

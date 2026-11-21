@@ -4,7 +4,8 @@ import { api, fmtDate, fmtMoney } from '../api'
 import { useAuth } from '../auth'
 import { PageHero } from '../components/layout'
 import { depositDueAt } from '../components/appointment'
-import { Icon, splitTypeName, UnitArt } from '../components/ui'
+import { Icon, splitTypeName } from '../components/ui'
+import { UnitTypePhoto } from '../components/unitPhoto'
 import { Select } from '../components/Select'
 import { TermsList, TERMS_VERSION } from './Terms'
 import { type AccountProfile, type Availability, type Facility, type Reservation, type UnitType } from '../types'
@@ -175,7 +176,7 @@ export default function Rent() {
               )}
 
               <div className="size-list">
-                {availability.map((a, i) => {
+                {availability.map((a) => {
                   const t = types.find((x) => x.unitTypeId === a.unitTypeId)
                   const { name, size } = splitTypeName(a.typeName)
                   const isSel = a.unitTypeId === selectedId
@@ -183,7 +184,7 @@ export default function Rent() {
                   return (
                     <div key={a.unitTypeId} className={`size-row ${isSel ? 'selected' : ''} ${soldOut ? 'disabled' : ''}`}
                       onClick={() => !soldOut && setSelectedId(a.unitTypeId)}>
-                      <div className="size-thumb"><UnitArt variant={i} /></div>
+                      <div className="size-thumb"><UnitTypePhoto src={a.imageUrl ?? t?.imageUrl} typeName={a.typeName} typeId={a.unitTypeId} alt={name} /></div>
                       <div className="size-info">
                         <div className="row between wrap">
                           <h3>{name} {t && <span className="cyan">{(t.lengthMeters * t.widthMeters).toLocaleString('vi-VN')}m²</span>}</h3>

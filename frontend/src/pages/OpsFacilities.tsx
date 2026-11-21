@@ -5,11 +5,13 @@ import type { Facility, FacilityReport, OperationsReport } from '../types'
 import { FormField, useValidatedForm } from '../components/form'
 import { hotlineError, localToday, normalizePhone, PHONE_FILTER, operatingHoursError, textError } from '../validation'
 import { Select } from '../components/Select'
+import { UnitTypeManager } from '../components/UnitTypeManager'
 
 /**
  * #44 Operations manager, Figma "facility-branch-management": every facility (GET /api/operations/facilities)
  * with its occupancy, vacant/maintenance units and net revenue of the last 30 days from the operations report
  * (GET /api/operations/reports/facilities). Adds a facility (POST) or edits one, status included (PUT).
+ * Below the facilities: every unit type with its photo (UnitTypeManager, shared with /ops/policies).
  * "Xuất báo cáo" downloads the list shown as CSV.
  */
 
@@ -179,6 +181,14 @@ export default function OpsFacilities() {
           })}
           {shown.length === 0 && <Empty icon="building">Không có cơ sở nào khớp bộ lọc.</Empty>}
         </div>
+      </section>
+
+      <section className="panel stack" id="unit-types">
+        <div>
+          <h2 className="panel-title">Loại kho & Hình ảnh</h2>
+          <p className="muted">Mọi loại kho của hệ thống kèm ảnh thật hiển thị cho khách. Thêm loại mới, đổi ảnh, giá và kích thước tại đây.</p>
+        </div>
+        <UnitTypeManager />
       </section>
 
       {report && (

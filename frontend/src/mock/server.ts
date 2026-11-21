@@ -6,7 +6,7 @@
  */
 import type {
   AccessIssue, ActivityLog, EarlyReturnQuote, EarlyReturnRequest, AdminUser, AdminContract, EmailOutboxMessage, OperationsReportRow, CancellationRequest, CancellationRefund, ExtraChargeInvoice, FacilityStaff, FacilityWorkQueue, FacilityTaskContract, FacilityReport, OperationsReport, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
-  OverdueSummary, Person, Renewal, StoredItem, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate, VisitRegistration, RentalPolicy, FeeConfiguration, Promotion, SecuritySettings, LoginSession, AccountProfile, AccountActivity,
+  OverdueSummary, Person, Renewal, StoredItem, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate, VisitRegistration, RentalPolicy, FeeConfiguration, Promotion, SecuritySettings, LoginSession, AccountProfile, AccountActivity, ContractInventory,
 } from '../types'
 import { Roles } from '../types'
 
@@ -41,6 +41,8 @@ interface Db {
   records: Rec[]
   /** Visit registrations (VisitRegistrations table): customer books a time, staff approves, the gate only admits approved ones. */
   visits: Vreg[]
+  /** StoredItems without a visit registration (recorded by staff at the facility). */
+  looseItems?: StoredItem[]
   policies?: RentalPolicy[]
   fees?: FeeConfiguration[]
   promotions?: Promotion[]
@@ -259,6 +261,73 @@ function visitDto(v: Vreg): VisitRegistration {
   }
 }
 const visitsOf = () => (db.visits ??= [])
+/** All StoredItems of a contract, whichever visit registration (or none) they came with. */
+const itemsOf = (contractId: number): StoredItem[] => [
+  ...visitsOf().filter((v) => v.contractId === contractId).flatMap((v) => v.items ?? []),
+  ...(db.looseItems ??= []).filter((i) => i.contractId === contractId),
+]
+function addItem(item: StoredItem) {
+  const v = item.visitRegistrationId == null ? null : visitsOf().find((x) => x.visitRegistrationId === item.visitRegistrationId)
+  if (v) (v.items ??= []).push(item)
+  else (db.looseItems ??= []).push(item)
+}
+function dropItem(item: StoredItem) {
+  for (const v of visitsOf()) if (v.items?.includes(item)) v.items = v.items.filter((x) => x !== item)
+  db.looseItems = (db.looseItems ?? []).filter((x) => x !== item)
+}
+const round3 = (x: number) => Number(x.toFixed(3))
+/** ContractInventoryDto: the unit's volume and how much of it the items take, plus the item rows. */
+function inventoryOf(c: Ctr, query: URLSearchParams): ContractInventory {
+  const u = unitById(c.unitId)
+  const t = typeById(u.unitTypeId)
+  const all = itemsOf(c.contractId)
+  const sum = (st: string) => all.filter((i) => i.status === st).reduce((a, i) => a + i.totalVolumeM3, 0)
+  const unitVol = t.volumeCubicMeters > 0 ? t.volumeCubicMeters : t.lengthMeters * t.widthMeters * t.heightMeters
+  const stored = sum('Stored'), pending = sum('PendingMoveIn')
+  const status = query.get('status')
+  const history = query.get('includeHistory') === 'true'
+  const items = all
+    .filter((i) => (status ? i.status === status : history || i.status === 'Stored' || i.status === 'PendingMoveIn'))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.storedItemId - a.storedItemId)
+  return {
+    contractId: c.contractId, contractNumber: c.contractNumber, unitCode: u.unitCode,
+    unitLengthCm: t.lengthMeters * 100, unitWidthCm: t.widthMeters * 100, unitHeightCm: t.heightMeters * 100,
+    unitVolumeM3: round3(unitVol), storedVolumeM3: round3(stored), pendingVolumeM3: round3(pending),
+    remainingVolumeM3: round3(Math.max(0, unitVol - stored - pending)),
+    occupancyPercent: unitVol > 0 ? Number((((stored + pending) / unitVol) * 100).toFixed(1)) : 0,
+    items,
+  }
+}
+function checkItemStatusFilter(query: URLSearchParams) {
+  const st = query.get('status')
+  if (st && !['PendingMoveIn', 'Stored', 'Removed', 'Cancelled'].includes(st)) throw bad('Trạng thái đồ vật không hợp lệ')
+}
+function newItem(c: Ctr, it: Record<string, unknown>, status: string, vregId: number | null): StoredItem {
+  const now = localIso(new Date())
+  const qty = Math.trunc(Number(it.quantity) || 1)
+  const l = Number(it.lengthCm), w = Number(it.widthCm), h = Number(it.heightCm)
+  const unitVol = Number(((l * w * h) / 1e6).toFixed(6))
+  return {
+    storedItemId: nextId(), contractId: c.contractId, visitRegistrationId: vregId,
+    itemName: String(it.name ?? it.itemName ?? '').trim(), category: it.category ? String(it.category).trim() : null,
+    quantity: qty, lengthCm: l, widthCm: w, heightCm: h, unitVolumeM3: unitVol, totalVolumeM3: Number((unitVol * qty).toFixed(6)),
+    status, notes: it.notes ? String(it.notes).trim() : null, imageUrl: it.imageUrl ? String(it.imageUrl) : null,
+    createdAt: now, movedInAt: status === 'Stored' ? now : null, removedAt: null, updatedAt: null,
+  }
+}
+/** A contract at one facility, for the gate/staff item routes. */
+function facilityContract(fid: number, cid: number): Ctr {
+  const c = db.contracts.find((x) => x.contractId === cid && unitById(x.unitId).facilityId === fid)
+  if (!c) throw notFound('Không tìm thấy hợp đồng tại cơ sở này')
+  return c
+}
+function readImage(body: unknown): File {
+  const file = body instanceof FormData ? body.get('file') : null
+  if (!(file instanceof File) || file.size === 0) throw bad('Vui lòng chọn tệp hình ảnh')
+  if (file.size > 5 * 1024 * 1024) throw bad('Ảnh tải lên không được vượt quá 5 MB')
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw bad('Chỉ hỗ trợ ảnh định dạng JPG, PNG hoặc WebP')
+  return file
+}
 // Operations manager data, same seed rows as 01_schema.sql (created on first use).
 const policiesOf = () => (db.policies ??= [
   { policyId: 1, policyName: 'Chính sách thuê kho tiêu chuẩn 2026', facilityId: null, depositPercent: 100, cancellationGraceHours: 24, cancellationFeePercent: 10, renewalNoticeDays: 7, maxOverdueDaysBeforeLock: 1, isActive: true, effectiveDate: '2026-01-01' },
@@ -374,6 +443,64 @@ function resolveVisitor(c: Ctr, authorizedPersonId: number | null): string | nul
   const p = db.persons.find((x) => x.authorizedPersonId === authorizedPersonId && x.contractId === c.contractId && x.status === 'Active')
   if (!p) throw bad('Người này không có trong danh sách được ủy quyền của hợp đồng')
   return p.citizenId
+}
+
+/** StoredItemService.ValidateItemsAgainstUnit: each new item must fit the unit, and the totals include items already Stored/PendingMoveIn. */
+type ItemSpec = { name?: unknown; quantity?: unknown; lengthCm?: unknown; widthCm?: unknown; heightCm?: unknown }
+function validateItemsForUnit(c: Ctr, rawItems: ItemSpec[], existing: StoredItem[] = []) {
+  const unit = db.units.find((u) => u.unitId === c.unitId)
+  const unitType = unit ? db.unitTypes.find((t) => t.unitTypeId === unit.unitTypeId) : undefined
+  if (unitType) {
+    const unitL = unitType.lengthMeters * 100, unitW = unitType.widthMeters * 100, unitH = unitType.heightMeters * 100
+    const shortFloor = Math.min(unitL, unitW), longFloor = Math.max(unitL, unitW)
+    const unitFloorAreaCm2 = unitL * unitW
+    const uVol = unitType.volumeCubicMeters > 0 ? unitType.volumeCubicMeters : unitType.lengthMeters * unitType.widthMeters * unitType.heightMeters
+    const fmtN = (x: number) => Number(x.toFixed(2)).toLocaleString('vi-VN', { maximumFractionDigits: 2 })
+    const fmtV = (v: number) => Number(v.toFixed(3)).toLocaleString('vi-VN', { maximumFractionDigits: 3 })
+    const uLabel = `${fmtN(unitL)}×${fmtN(unitW)}×${fmtN(unitH)} cm`
+    const fdiv = (a: number, b: number) => Math.floor(a / b + 1e-9)
+    let totalVol = 0, centerBlockers = 0, tallFootprintCm2 = 0
+    for (const it of existing) {
+      if (it.status !== 'Stored' && it.status !== 'PendingMoveIn') continue
+      const minItem = Math.min(it.lengthCm, it.widthCm)
+      if (minItem > unitL / 2 + 1e-6 && minItem > unitW / 2 + 1e-6 && it.heightCm > unitH / 2 + 1e-6) centerBlockers += it.quantity
+      if (it.heightCm > unitH / 2 + 1e-6) tallFootprintCm2 += it.lengthCm * it.widthCm * it.quantity
+      totalVol += it.totalVolumeM3
+    }
+    for (const it of rawItems) {
+      const name = String(it.name ?? '').trim()
+      const qty = Number(it.quantity), l = Number(it.lengthCm), w = Number(it.widthCm), h = Number(it.heightCm)
+      if (!name) throw bad('Vui lòng nhập tên cho tất cả món đồ khai báo')
+      if (!Number.isInteger(qty) || qty < 1 || qty > 999) throw bad(`Số lượng của "${name}" phải từ 1 đến 999`)
+      if (!(l >= 0.1 && l <= 2000 && w >= 0.1 && w <= 2000 && h >= 0.1 && h <= 2000))
+        throw bad(`Kích thước "${name}" không hợp lệ (mỗi chiều từ 0,1 đến 2000 cm)`)
+      if (h > unitH + 1e-6)
+        throw bad(`Món "${name}" cao ${fmtN(h)} cm vượt quá chiều cao kho (${fmtN(unitH)} cm)`)
+      const minItem = Math.min(l, w), maxItem = Math.max(l, w)
+      if (minItem > shortFloor + 1e-6 || maxItem > longFloor + 1e-6)
+        throw bad(`Món "${name}" (đáy ${fmtN(l)}×${fmtN(w)} cm) tràn quá chiều dài/rộng mặt sàn kho (${fmtN(unitL)}×${fmtN(unitW)} cm)`)
+      const maxLayers = fdiv(unitH, h)
+      const maxPerLayer = maxItem > shortFloor + 1e-6
+        ? fdiv(longFloor, maxItem) * fdiv(shortFloor, minItem)
+        : Math.abs(l - w) < 1e-6
+          ? fdiv(unitL, l) * fdiv(unitW, l)
+          : l + w > longFloor + 1e-6
+            ? Math.max(fdiv(unitL, l) * fdiv(unitW, w), fdiv(unitL, w) * fdiv(unitW, l))
+            : Math.min(fdiv(unitL * unitW, l * w), fdiv(unitL, minItem) * fdiv(unitW, minItem))
+      const maxQty = maxLayers * maxPerLayer
+      if (qty > maxQty)
+        throw bad(`Kho (${uLabel}) chỉ xếp được tối đa ${maxQty} món "${name}" (${fmtN(l)}×${fmtN(w)}×${fmtN(h)} cm)`)
+      if (minItem > unitL / 2 + 1e-6 && minItem > unitW / 2 + 1e-6 && h > unitH / 2 + 1e-6) centerBlockers += qty
+      if (h > unitH / 2 + 1e-6) tallFootprintCm2 += l * w * qty
+      totalVol += (l * w * h / 1e6) * qty
+    }
+    if (centerBlockers > 1)
+      throw bad(`Các món đồ có kích thước lớn hơn một nửa chiều kho (${uLabel}) không thể xếp cùng lúc quá 1 món`)
+    if (tallFootprintCm2 > unitFloorAreaCm2 + 1e-4)
+      throw bad(`Tổng diện tích đáy các món cao quá nửa kho (${fmtV(tallFootprintCm2 / 10_000)} m²) vượt quá diện tích sàn kho (${fmtV(unitFloorAreaCm2 / 10_000)} m²)`)
+    if (totalVol > uVol + 1e-9)
+      throw bad(`Tổng thể tích đồ ${existing.length ? '(cộng cả đồ đang lưu và đang chờ đưa vào) ' : 'khai báo '}(${fmtV(totalVol)} m³) vượt quá sức chứa của kho (${fmtV(uVol)} m³)`)
+  }
 }
 
 function ownContract(user: User, id: number): Ctr {
@@ -893,7 +1020,7 @@ const routes: [string, RegExp, Handler][] = [
       const free = db.units.filter((u) => u.facilityId === fid && u.unitTypeId === t.unitTypeId && u.status === 'Available').length
       const held = db.reservations.filter((r) => r.facilityId === fid && r.unitTypeId === t.unitTypeId
         && (r.status === 'Confirmed' || (r.status === 'PendingDeposit' && r.depositDeadline > now))).length
-      return { unitTypeId: t.unitTypeId, typeName: t.typeName, baseMonthlyRate: t.baseMonthlyRate, availableUnits: Math.max(0, free - held) }
+      return { unitTypeId: t.unitTypeId, typeName: t.typeName, baseMonthlyRate: t.baseMonthlyRate, availableUnits: Math.max(0, free - held), imageUrl: t.imageUrl ?? null }
     })
   }],
   ['GET', /^\/api\/facilities\/(\d+)\/units$/, (m, { query }) => {
@@ -1026,6 +1153,7 @@ const routes: [string, RegExp, Handler][] = [
       floorNumber: u.floorNumber, zoneArea: u.zoneArea, unitTypeId: u.unitTypeId, unitTypeName: typeById(u.unitTypeId).typeName,
       lengthMeters: typeById(u.unitTypeId).lengthMeters, widthMeters: typeById(u.unitTypeId).widthMeters, heightMeters: typeById(u.unitTypeId).heightMeters,
       volumeCubicMeters: typeById(u.unitTypeId).volumeCubicMeters, hasClimateControl: typeById(u.unitTypeId).hasClimateControl, operatingHours: f.operatingHours,
+      unitTypeImageUrl: typeById(u.unitTypeId).imageUrl ?? null,
     }
     return d
   }],
@@ -1603,52 +1731,7 @@ const routes: [string, RegExp, Handler][] = [
         throw bad('Vui lòng khai báo ít nhất một món đồ và nhập đủ 3 chiều kích thước (Dài × Rộng × Cao tính bằng cm)')
       if (rawItems.length > 100)
         throw bad('Tối đa 100 món đồ cho mỗi lần đăng ký đưa đồ vào kho')
-      const unit = db.units.find((u) => u.unitId === c.unitId)
-      const unitType = unit ? db.unitTypes.find((t) => t.unitTypeId === unit.unitTypeId) : undefined
-      if (unitType) {
-        const unitL = unitType.lengthMeters * 100, unitW = unitType.widthMeters * 100, unitH = unitType.heightMeters * 100
-        const shortFloor = Math.min(unitL, unitW), longFloor = Math.max(unitL, unitW)
-        const unitFloorAreaCm2 = unitL * unitW
-        const uVol = unitType.volumeCubicMeters > 0 ? unitType.volumeCubicMeters : unitType.lengthMeters * unitType.widthMeters * unitType.heightMeters
-        const fmtN = (x: number) => Number(x.toFixed(2)).toLocaleString('vi-VN', { maximumFractionDigits: 2 })
-        const fmtV = (v: number) => Number(v.toFixed(3)).toLocaleString('vi-VN', { maximumFractionDigits: 3 })
-        const uLabel = `${fmtN(unitL)}×${fmtN(unitW)}×${fmtN(unitH)} cm`
-        const fdiv = (a: number, b: number) => Math.floor(a / b + 1e-9)
-        let totalVol = 0, centerBlockers = 0, tallFootprintCm2 = 0
-        for (const it of rawItems) {
-          const name = String(it.name ?? '').trim()
-          const qty = Number(it.quantity), l = Number(it.lengthCm), w = Number(it.widthCm), h = Number(it.heightCm)
-          if (!name) throw bad('Vui lòng nhập tên cho tất cả món đồ khai báo')
-          if (!Number.isInteger(qty) || qty < 1 || qty > 999) throw bad(`Số lượng của "${name}" phải từ 1 đến 999`)
-          if (!(l >= 0.1 && l <= 2000 && w >= 0.1 && w <= 2000 && h >= 0.1 && h <= 2000))
-            throw bad(`Kích thước "${name}" không hợp lệ (mỗi chiều từ 0,1 đến 2000 cm)`)
-          if (h > unitH + 1e-6)
-            throw bad(`Món "${name}" cao ${fmtN(h)} cm vượt quá chiều cao kho (${fmtN(unitH)} cm)`)
-          const minItem = Math.min(l, w), maxItem = Math.max(l, w)
-          if (minItem > shortFloor + 1e-6 || maxItem > longFloor + 1e-6)
-            throw bad(`Món "${name}" (đáy ${fmtN(l)}×${fmtN(w)} cm) tràn quá chiều dài/rộng mặt sàn kho (${fmtN(unitL)}×${fmtN(unitW)} cm)`)
-          const maxLayers = fdiv(unitH, h)
-          const maxPerLayer = maxItem > shortFloor + 1e-6
-            ? fdiv(longFloor, maxItem) * fdiv(shortFloor, minItem)
-            : Math.abs(l - w) < 1e-6
-              ? fdiv(unitL, l) * fdiv(unitW, l)
-              : l + w > longFloor + 1e-6
-                ? Math.max(fdiv(unitL, l) * fdiv(unitW, w), fdiv(unitL, w) * fdiv(unitW, l))
-                : Math.min(fdiv(unitL * unitW, l * w), fdiv(unitL, minItem) * fdiv(unitW, minItem))
-          const maxQty = maxLayers * maxPerLayer
-          if (qty > maxQty)
-            throw bad(`Kho (${uLabel}) chỉ xếp được tối đa ${maxQty} món "${name}" (${fmtN(l)}×${fmtN(w)}×${fmtN(h)} cm)`)
-          if (minItem > unitL / 2 + 1e-6 && minItem > unitW / 2 + 1e-6 && h > unitH / 2 + 1e-6) centerBlockers += qty
-          if (h > unitH / 2 + 1e-6) tallFootprintCm2 += l * w * qty
-          totalVol += (l * w * h / 1e6) * qty
-        }
-        if (centerBlockers > 1)
-          throw bad(`Các món đồ có kích thước lớn hơn một nửa chiều kho (${uLabel}) không thể xếp cùng lúc quá 1 món`)
-        if (tallFootprintCm2 > unitFloorAreaCm2 + 1e-4)
-          throw bad(`Tổng diện tích đáy các món cao quá nửa kho (${fmtV(tallFootprintCm2 / 10_000)} m²) vượt quá diện tích sàn kho (${fmtV(unitFloorAreaCm2 / 10_000)} m²)`)
-        if (totalVol > uVol + 1e-9)
-          throw bad(`Tổng thể tích đồ khai báo (${fmtV(totalVol)} m³) vượt quá sức chứa của kho (${fmtV(uVol)} m³)`)
-      }
+      validateItemsForUnit(c, rawItems, itemsOf(c.contractId))
     }
     const nowIso = localIso(new Date())
     const vregId = nextId()
@@ -1699,21 +1782,13 @@ const routes: [string, RegExp, Handler][] = [
     requireRole(me, [Roles.Customer])
     const c = ownContract(me, Number(m[1]))
     const itemId = Number(m[2])
-    const item = visitsOf()
-      .filter((v) => v.contractId === c.contractId)
-      .flatMap((v) => v.items ?? [])
-      .find((it) => it.storedItemId === itemId)
+    const item = itemsOf(c.contractId).find((it) => it.storedItemId === itemId)
     if (!item) throw notFound('Không tìm thấy món đồ trong kho')
     if (item.status !== 'PendingMoveIn' && item.status !== 'Stored')
       throw conflict('Chỉ có thể tải ảnh cho món đồ đang chờ đưa vào hoặc đang lưu trong kho')
     if (c.status !== 'Active' && c.status !== 'Overdue')
       throw conflict('Hợp đồng đã kết thúc, không thể cập nhật ảnh đồ vật')
-    const raw = body as unknown
-    const file = raw instanceof FormData ? raw.get('file') : null
-    if (!(file instanceof File) || file.size === 0) throw bad('Vui lòng chọn tệp hình ảnh')
-    if (file.size > 5 * 1024 * 1024) throw bad('Ảnh tải lên không được vượt quá 5 MB')
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw bad('Chỉ hỗ trợ ảnh định dạng JPG, PNG hoặc WebP')
-    item.imageUrl = URL.createObjectURL(file)
+    item.imageUrl = URL.createObjectURL(readImage(body as unknown))
     item.updatedAt = localIso(new Date())
     return item
   }],
@@ -1819,6 +1894,7 @@ const routes: [string, RegExp, Handler][] = [
       throw conflict('Người này đang ở trong kho, hãy xác nhận ra trước')
     const rec: Rec & { visitRegistrationId?: number } = { accessRecordId: nextId(), contractId: c.contractId, facilityId: fid, unitId: c.unitId, authorizedPersonId: apId, verifiedByStaffId: me.userId, result: 'Granted', denyReason: null, purpose: (body.purpose as string) || reg.purpose, entryTime: localIso(new Date()), exitTime: null, visitRegistrationId: reg.visitRegistrationId }
     db.records.push(rec)
+    reg.items?.forEach((it) => { if (it.status === 'PendingMoveIn') { it.status = 'Stored'; it.movedInAt = rec.entryTime; it.updatedAt = rec.entryTime } })
     return recordDto(rec)
   }],
   ['POST', /^\/api\/gate\/facilities\/(\d+)\/denials$/, (m, { token, body }) => {
@@ -1975,6 +2051,123 @@ const routes: [string, RegExp, Handler][] = [
     if (db.reservations.some((r) => r.unitTypeId === id)) throw conflict('Loại kho đã phát sinh đơn đặt chỗ nên không thể xóa')
     db.unitTypes = db.unitTypes.filter((x) => x.unitTypeId !== id)
     return undefined
+  }],
+  ['POST', /^\/api\/operations\/unit-types\/(\d+)\/image$/, (m, { token, body }) => {
+    opsOnly(token)
+    const t = db.unitTypes.find((x) => x.unitTypeId === Number(m[1]))
+    if (!t) throw notFound('Không tìm thấy loại kho')
+    t.imageUrl = URL.createObjectURL(readImage(body as unknown))
+    return t
+  }],
+  ['DELETE', /^\/api\/operations\/unit-types\/(\d+)\/image$/, (m, { token }) => {
+    opsOnly(token)
+    const t = db.unitTypes.find((x) => x.unitTypeId === Number(m[1]))
+    if (!t) throw notFound('Không tìm thấy loại kho')
+    t.imageUrl = null
+    return t
+  }],
+  // ---- stored items (StoredItemService): customer, gate staff, admin
+  ['GET', /^\/api\/contracts\/(\d+)\/items$/, (m, { token, query }) => {
+    const c = ownContract(customerOnly(token), Number(m[1]))
+    checkItemStatusFilter(query)
+    return inventoryOf(c, query)
+  }],
+  ['PUT', /^\/api\/contracts\/(\d+)\/items\/(\d+)$/, (m, { token, body }) => {
+    const c = ownContract(customerOnly(token), Number(m[1]))
+    const item = itemsOf(c.contractId).find((i) => i.storedItemId === Number(m[2]))
+    if (!item) throw notFound('Không tìm thấy món đồ trong kho')
+    if (item.status !== 'PendingMoveIn' && item.status !== 'Stored')
+      throw conflict('Chỉ có thể chỉnh sửa món đồ đang chờ đưa vào hoặc đang lưu trong kho')
+    if (c.status !== 'Active' && c.status !== 'Overdue') throw conflict('Hợp đồng đã kết thúc, không thể chỉnh sửa đồ vật')
+    const name = String(body.itemName ?? '').trim()
+    if (!name) throw bad('Vui lòng nhập tên món đồ')
+    const qty = Number(body.quantity), l = Number(body.lengthCm), w = Number(body.widthCm), h = Number(body.heightCm)
+    const changed = qty !== item.quantity || l !== item.lengthCm || w !== item.widthCm || h !== item.heightCm
+    if (changed) {
+      if (item.status !== 'PendingMoveIn')
+        throw conflict('Món đồ đã xác nhận đưa vào kho; không thể tự đổi số lượng hoặc kích thước. Vui lòng liên hệ nhân viên cơ sở khi lấy/thêm đồ')
+      const reg = visitsOf().find((v) => v.visitRegistrationId === item.visitRegistrationId)
+      if (reg && reg.status !== 'Pending') throw conflict('Lịch chuyển đồ đã được xử lý nên không thể thay đổi kích thước hoặc số lượng')
+      validateItemsForUnit(c, [{ name, quantity: qty, lengthCm: l, widthCm: w, heightCm: h }], itemsOf(c.contractId).filter((i) => i !== item))
+      const unitVol = Number(((l * w * h) / 1e6).toFixed(6))
+      Object.assign(item, { quantity: qty, lengthCm: l, widthCm: w, heightCm: h, unitVolumeM3: unitVol, totalVolumeM3: Number((unitVol * qty).toFixed(6)) })
+    }
+    item.itemName = name
+    item.category = body.category ? String(body.category).trim().slice(0, 80) : null
+    item.notes = body.notes ? String(body.notes).trim().slice(0, 300) : null
+    if (body.imageUrl !== undefined) item.imageUrl = body.imageUrl ? String(body.imageUrl) : null
+    item.updatedAt = localIso(new Date())
+    return item
+  }],
+  ['DELETE', /^\/api\/contracts\/(\d+)\/items\/(\d+)$/, (m, { token }) => {
+    const c = ownContract(customerOnly(token), Number(m[1]))
+    const item = itemsOf(c.contractId).find((i) => i.storedItemId === Number(m[2]))
+    if (!item) throw notFound('Không tìm thấy món đồ trong kho')
+    if (item.status !== 'PendingMoveIn') throw conflict('Chỉ có thể xóa món đồ đang chờ đưa vào kho')
+    const reg = visitsOf().find((v) => v.visitRegistrationId === item.visitRegistrationId)
+    if (reg && reg.status !== 'Pending') throw conflict('Lịch chuyển đồ đã được xử lý nên không thể xóa món đồ')
+    if (reg && (reg.items ?? []).filter((i) => i.status === 'PendingMoveIn').length <= 1)
+      throw conflict('Đây là món cuối cùng của lịch chuyển đồ; vui lòng hủy cả lịch chuyển đồ thay vì xóa món này')
+    dropItem(item)
+    return undefined
+  }],
+  ['GET', /^\/api\/gate\/facilities\/(\d+)\/contracts\/(\d+)\/items$/, (m, { token, query }) => {
+    const me = currentUser(token)
+    requireRole(me, STAFF)
+    ensureAssigned(me.userId, Number(m[1]))
+    checkItemStatusFilter(query)
+    return inventoryOf(facilityContract(Number(m[1]), Number(m[2])), query)
+  }],
+  ['POST', /^\/api\/gate\/facilities\/(\d+)\/contracts\/(\d+)\/items$/, (m, { token, body }) => {
+    const me = currentUser(token)
+    requireRole(me, STAFF)
+    ensureAssigned(me.userId, Number(m[1]))
+    const name = String(body.name ?? '').trim()
+    if (!name) throw bad('Vui lòng nhập tên món đồ')
+    const c = facilityContract(Number(m[1]), Number(m[2]))
+    if (c.status !== 'Active') throw conflict('Chỉ có thể ghi nhận thêm đồ cho hợp đồng đang hoạt động')
+    const st = unitById(c.unitId).status
+    if (st === 'OverdueLocked' || st === 'UnderMaintenance') throw conflict('Kho đang bị khóa hoặc bảo trì nên không thể đưa thêm đồ vào')
+    const qty = Number(body.quantity)
+    if (!Number.isInteger(qty) || qty < 1 || qty > 999) throw bad(`Số lượng của "${name}" phải từ 1 đến 999`)
+    validateItemsForUnit(c, [{ ...body, name }], itemsOf(c.contractId))
+    const item = newItem(c, { ...body, name }, 'Stored', null)
+    addItem(item)
+    return item
+  }],
+  ['POST', /^\/api\/gate\/facilities\/(\d+)\/contracts\/(\d+)\/items\/(\d+)\/remove$/, (m, { token, body }) => {
+    const me = currentUser(token)
+    requireRole(me, STAFF)
+    ensureAssigned(me.userId, Number(m[1]))
+    const c = facilityContract(Number(m[1]), Number(m[2]))
+    const item = itemsOf(c.contractId).find((i) => i.storedItemId === Number(m[3]))
+    if (!item) throw notFound('Không tìm thấy món đồ trong kho tại cơ sở này')
+    if (item.status !== 'Stored') throw conflict('Chỉ có thể xác nhận lấy ra đối với đồ đang lưu trong kho')
+    const n = Number(body.quantityToRemove)
+    if (!Number.isInteger(n) || n < 1 || n > item.quantity) throw bad(`Số lượng lấy ra phải từ 1 đến ${item.quantity}`)
+    const now = localIso(new Date())
+    const note = body.notes ? String(body.notes).trim().slice(0, 300) : null
+    if (n === item.quantity) {
+      Object.assign(item, { status: 'Removed', removedAt: now, updatedAt: now })
+      if (note) item.notes = item.notes ? `${item.notes} | ${note}` : note
+      return item
+    }
+    item.quantity -= n
+    item.totalVolumeM3 = Number((item.unitVolumeM3 * item.quantity).toFixed(6))
+    item.updatedAt = now
+    const split: StoredItem = {
+      ...item, storedItemId: nextId(), quantity: n, totalVolumeM3: Number((item.unitVolumeM3 * n).toFixed(6)),
+      status: 'Removed', notes: note ?? item.notes, createdAt: now, removedAt: now, updatedAt: now,
+    }
+    addItem(split)
+    return split
+  }],
+  ['GET', /^\/api\/admin\/contracts\/(\d+)\/items$/, (m, { token, query }) => {
+    requireRole(currentUser(token), [Roles.Admin])
+    checkItemStatusFilter(query)
+    const c = db.contracts.find((x) => x.contractId === Number(m[1]))
+    if (!c) throw notFound('Không tìm thấy hợp đồng')
+    return inventoryOf(c, query)
   }],
   ['PUT', /^\/api\/operations\/unit-types\/(\d+)\/pricing$/, (m, { token, body }) => {
     opsOnly(token)

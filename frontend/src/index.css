@@ -1527,3 +1527,24 @@ a.stat-link { text-decoration: none; color: inherit; }
 tr.row-click { cursor: pointer; }
 tr.row-click:hover td { background: var(--bg-tint); }
 tr.row-selected td { background: var(--cyan-25); }
+
+/* Inventory & unit fill (InventoryPanel, MoveInRegistration) */
+.capacity-bar { display: flex; height: 10px; border-radius: 99px; background: var(--border); overflow: hidden; }
+.capacity-bar i { display: block; height: 100%; }
+.capacity-bar .stored { background: var(--ok); }
+.capacity-bar .stored.high { background: var(--warn); }
+.capacity-bar .pending { background: var(--warn); opacity: 0.55; }
+.capacity-bar .extra { background: var(--cyan-600, #1f8fb0); opacity: 0.7; }
+.capacity-bar .over { background: var(--bad); opacity: 1; }
+.inventory-table td { vertical-align: middle; }
+.inventory-form-row td { background: var(--bg-tint); }
+.inventory-form { padding: 12px 4px; }
+.panel-tint { background: var(--bg-tint); border-radius: 12px; padding: 14px 16px; }
+.inventory-panel .segmented { flex-wrap: wrap; }
+
+/* Uploaded unit-type photos fill their frame whatever their size */
+.size-thumb img, .unit-card-media img, .cd-unit-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.unit-type-row { display: flex; gap: 14px; align-items: flex-start; }
+.unit-type-thumb { flex: none; width: 112px; height: 84px; border-radius: 10px; overflow: hidden; background: var(--bg-tint); border: 1px solid var(--border); }
+.unit-type-thumb img, .unit-type-thumb svg { display: block; width: 100%; height: 100%; object-fit: cover; }
+@media (max-width: 640px) { .unit-type-row { flex-direction: column; } .unit-type-thumb { width: 100%; height: 140px; } }
