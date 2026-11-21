@@ -349,6 +349,7 @@ export default function MoveInRegistration() {
       const it = activeItems[idx]
       const title = it.name.trim() || `Món ${idx + 1}`
       if (!it.name.trim()) return `Vui lòng nhập tên cho Món ${idx + 1}`
+      if (!Number.isInteger(it.quantity) || it.quantity < 1 || it.quantity > 999) return `Số lượng của "${title}" phải từ 1 đến 999`
       if (!it.l.trim() || !it.w.trim() || !it.h.trim())
         return `Vui lòng nhập đủ 3 chiều Dài × Rộng × Cao (cm) cho "${title}"`
       const l = num(it.l), w = num(it.w), h = num(it.h)
@@ -581,7 +582,7 @@ export default function MoveInRegistration() {
                         </label>
                       </div>
                       <div className="item-measure">
-                        <label className="field"><span>Số lượng *</span><input type="number" min={1} max={999} value={it.quantity} onChange={(e) => setItem(it.key, { quantity: Math.max(1, Math.min(999, Number(e.target.value) || 1)) })} /></label>
+                        <label className="field"><span>Số lượng *</span><input inputMode="numeric" maxLength={4} value={it.quantity || ''} placeholder="1" onChange={(e) => { const v = e.target.value.replace(/\D/g, ''); setItem(it.key, { quantity: v ? Number(v) : 0 }) }} aria-required="true" /></label>
                         <div className="field"><span>Kích thước mỗi món (cm) * · Dài × Rộng × Cao</span>
                           <div className="dims">
                             <input inputMode="decimal" value={it.l} onChange={(e) => setItem(it.key, { l: e.target.value })} placeholder="Dài" aria-label="Dài (cm)" aria-required="true" />
