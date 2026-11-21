@@ -117,7 +117,8 @@ export function UnitTypeManager({ query = '', onChanged }: { query?: string; onC
  * Add or edit a unit type. Sizes are inside measurements in metres, 0.1–20 with at most 2 decimals (SaveUnitTypeRequest).
  * The type is saved first; its photo goes after it, so a failed upload keeps the type and says to upload again.
  */
-function UnitTypeForm({ type, onCancel, onSaved }: { type?: UnitType; onCancel: () => void; onSaved: (m: string, created?: UnitType) => Promise<void> }) {
+/** Add/edit form for one unit type (with its photo); also used from the "Thêm kho mới" dialog. */
+export function UnitTypeForm({ type, onCancel, onSaved }: { type?: UnitType; onCancel: () => void; onSaved: (m: string, created?: UnitType) => Promise<void> }) {
   const [f, setF] = useState(() => ({
     typeName: type?.typeName ?? '',
     lengthMeters: String(type?.lengthMeters ?? ''),

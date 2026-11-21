@@ -7,6 +7,8 @@ import { Modal } from '../components/Modal'
 import { EMPTY_UNIT_FORM, LOCKED_UNIT_STATUSES, saveUnit, UnitForm, unitFormOf, type UnitFormValue } from '../components/UnitForm'
 import type { AdminContract, Facility, StorageUnit, UnitType } from '../types'
 import { Select } from '../components/Select'
+import { UnitTypeForm } from '../components/UnitTypeManager'
+import { resetUnitTypeImages } from '../components/unitPhoto'
 
 /**
  * System administrator "Kho Lưu Trữ" (Figma "storage-management"): every unit of every facility as cards or a table,
@@ -39,6 +41,10 @@ export default function AdminStorage() {
   const [units, setUnits] = useState<Unit[] | null>(null)
   const [contracts, setContracts] = useState<AdminContract[] | null>(null)
   const [types, setTypes] = useState<UnitType[]>([])
+  /** "Thêm loại kho mới" opened from the add-unit dialog; the new type is picked for the unit once saved. */
+  const [addingType, setAddingType] = useState(false)
+  const [typeNotice, setTypeNotice] = useState('')
+  const closeForm = () => { setForm(null); setAddingType(false); setTypeNotice('') }
   // ?facility=<id>&q=<unit code> (links from the overview and the old "Kho từng cơ sở" page) open filtered.
   const [search, setSearch] = useState(() => params.get('q') ?? '')
   const [facilityId, setFacilityId] = useState(() => params.get('facility') ?? '')
@@ -119,7 +125,7 @@ export default function AdminStorage() {
     e.preventDefault()
     if (!form) return
     const same = (units ?? []).filter((u) => u.facilityId === form.facilityId)
-    if (await run(() => saveUnit(form.facilityId, form.value, same, types))) setForm(null)
+    if (await run(() => saveUnit(form.facilityId, form.value, same, types))) closeForm()
   }
   const setUnitStatus = (u: Unit, next: 'Available' | 'UnderMaintenance') => run(
     () => api(`${unitPath(u)}/status`, { method: 'PUT', body: { status: next } }),
@@ -153,7 +159,7 @@ export default function AdminStorage() {
       </div>
 
       {form && (
-        <Modal title={form.value.unitId ? `Sửa kho ${form.value.unitCode}` : 'Thêm kho mới'} onClose={() => setForm(null)} wide>
+        <Modal title={form.value.unitId ? `Sửa kho ${form.value.unitCode}` : 'Thêm kho mới'} onClose={closeForm} wide>
           {form.value.unitId ? (
             <p className="muted">Cơ sở: <b>{formFacility?.facilityName}</b></p>
           ) : (
@@ -164,8 +170,33 @@ export default function AdminStorage() {
             </label>
           )}
           {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
-          <UnitForm form={form.value} onChange={(value) => setForm({ ...form, value })} units={formUnits} types={types} busy={busy}
-            onSubmit={save} onClose={() => setForm(null)} bare />
+          {typeNotice && <p className="alert ok"><Icon name="check" size={16} />{typeNotice}</p>}
+          {addingType ? (
+            <div className="panel panel-tint stack">
+              <h3 className="panel-title">Thêm loại kho mới</h3>
+              <UnitTypeForm onCancel={() => setAddingType(false)} onSaved={async (msg, created) => {
+                resetUnitTypeImages()
+                const list = await api<UnitType[]>('/api/unit-types').catch(() => types)
+                setTypes(list)
+                setTypeNotice(created ? `${msg} Đã chọn loại này cho kho mới.` : msg)
+                if (created) setForm((f) => f && { ...f, value: { ...f.value, unitTypeId: created.unitTypeId } })
+                setAddingType(false)
+              }} />
+            </div>
+          ) : (
+            <>
+              <UnitForm form={form.value} onChange={(value) => setForm({ ...form, value })} units={formUnits} types={types} busy={busy}
+                onSubmit={save} onClose={closeForm} bare />
+              {!form.value.unitId && (
+                <p className="muted small">
+                  Chưa có loại kho phù hợp?{' '}
+                  <button type="button" className="link-btn" onClick={() => { setTypeNotice(''); setAddingType(true) }}>
+                    <Icon name="plus" size={14} /> Thêm loại kho mới
+                  </button>
+                </p>
+              )}
+            </>
+          )}
         </Modal>
       )}
 
