@@ -421,6 +421,8 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
   const reg = activeRegistration(regs, v.contractId, person.authorizedPersonId)
   const isHolder = person.authorizedPersonId == null
   const [cidSaved, setCidSaved] = useState('')
+  const blocked = v.issues.length > 0
+  const moveInCount = reg?.items?.filter((i) => i.status === 'PendingMoveIn').length ?? 0
 
   // Only the holder's CCCD can be recorded here (staff checked the card in person); a co-signer's lives in the contract.
   const recordCid = async () => {
@@ -490,25 +492,56 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
           </div>
           <StatusBadge status={v.unitStatus} />
         </div>
-        {v.issues.map((i) => <p key={i.code} className="alert bad"><Icon name="alert" size={16} />{i.message}</p>)}
-        {/* OverdueLocked has two causes (AccessService.FindIssues): unpaid rent/extra-charge bills, which the billing page
-            collects; or the contract itself past its end and locked, which is settled by renewing or returning the unit. */}
-        {v.issues.some((i) => i.code === 'OverdueLocked' && i.message.startsWith('Còn hóa đơn')) && (
-          <Link to={billingLink(v.contractNumber)} className="btn outline sm self-start"><Icon name="wallet" size={14} /> Xem hóa đơn hợp đồng này</Link>
-        )}
-        {v.issues.some((i) => i.code === 'OverdueLocked' && !i.message.startsWith('Còn hóa đơn')) && (
-          <span className="row wrap">
-            <Link to={`/staff-contracts`} className="btn outline sm"><Icon name="refresh" size={14} /> Gia hạn & quá hạn</Link>
-            <Link to={`/staff-return?contract=${v.contractId}`} className="btn outline sm"><Icon name="door" size={14} /> Trả kho</Link>
-          </span>
-        )}
       </section>
 
+      {blocked ? (
+        <section className="panel stack gate-blocked">
+          <div className="row">
+            <span className="gate-blocked-icon"><Icon name="alert" size={22} /></span>
+            <div>
+              <h3 className="panel-title">Không thể cho vào kho</h3>
+              <p className="muted">Không cần xác minh CCCD. Giải thích lý do cho khách và ghi nhận lượt từ chối.</p>
+            </div>
+          </div>
+          <ul className="gate-issues">
+            {v.issues.map((i) => <li key={i.code}><Icon name="x" size={14} /> {i.message}</li>)}
+          </ul>
+          {/* OverdueLocked has two causes (AccessService.FindIssues): unpaid rent/extra-charge bills, which the billing page
+              collects; or the contract itself past its end and locked, which is settled by renewing or returning the unit. */}
+          {v.issues.some((i) => i.code === 'OverdueLocked' && i.message.startsWith('Còn hóa đơn')) && (
+            <Link to={billingLink(v.contractNumber)} className="btn outline sm self-start"><Icon name="wallet" size={14} /> Xem hóa đơn hợp đồng này</Link>
+          )}
+          {v.issues.some((i) => i.code === 'OverdueLocked' && !i.message.startsWith('Còn hóa đơn')) && (
+            <span className="row wrap">
+              <Link to={`/staff-contracts`} className="btn outline sm"><Icon name="refresh" size={14} /> Gia hạn & quá hạn</Link>
+              <Link to={`/staff-return?contract=${v.contractId}`} className="btn outline sm"><Icon name="door" size={14} /> Trả kho</Link>
+            </span>
+          )}
+          {people.length > 1 && (
+            <label className="field"><span>Người đang ở cổng</span>
+              <Select value={String(personIdx)} onChange={(e) => setPersonIdx(Number(e.target.value))}>
+                {people.map((p, i) => <option key={i} value={i}>{p.fullName} · {p.relationship ?? 'Người vào kho'}</option>)}
+              </Select>
+            </label>
+          )}
+          {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+          <div className="decision blocked">
+            <span className="label">Lý do từ chối</span>
+            <div className="deny-row">
+              <Select value={denyReason} onChange={(e) => setDenyReason(e.target.value)}>
+                {Object.entries(DenyReasons).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+              </Select>
+              <button className="btn danger" disabled={busy} onClick={deny}>Ghi nhận từ chối</button>
+            </div>
+          </div>
+        </section>
+      ) : (
       <section className="panel stack">
         <div>
-          <h3 className="panel-title">Xác minh danh tính</h3>
-          <p className="muted">Chọn người đang đứng tại cổng và gõ số trên thẻ CCCD của họ.</p>
+          <h3 className="panel-title">Xác minh & cho vào</h3>
+          <p className="muted">Làm lần lượt: chọn người ở cổng → kiểm tra lịch → đối chiếu CCCD → cho vào.</p>
         </div>
+        <span className="gate-step"><b>1</b> Người đang ở cổng</span>
         <div className="person-picker">
           {people.map((p, i) => (
             <button key={i} type="button" className={`person-option ${i === personIdx ? 'active' : ''}`} onClick={() => { setPersonIdx(i); setCitizenId(''); setError(''); setCidSaved('') }}>
@@ -522,6 +555,18 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
           ))}
         </div>
 
+        <span className="gate-step"><b>2</b> Lịch vào kho hôm nay</span>
+        {reg
+          ? <p className="reg-match ok"><Icon name="calendar" size={15} /> Đã duyệt {hhmm(reg.scheduledEntryAt)} – {hhmm(reg.scheduledExitAt)} · {reg.purpose}</p>
+          : <p className="reg-match bad"><Icon name="alert" size={15} /> {person.fullName} chưa có lịch đã duyệt trong giờ này. Hướng dẫn khách đăng ký trên web, hoặc ghi nhận từ chối.</p>}
+        {reg?.items && reg.items.length > 0 && (
+          <div className="stack-sm">
+            <small className="muted"><b>Đồ mang vào đã khai báo ({reg.items.length} món)</b>. Đối chiếu với đồ thực tế khách mang đến.</small>
+            <MoveInItemsPreview items={reg.items} />
+          </div>
+        )}
+
+        <span className="gate-step"><b>3</b> Đối chiếu CCCD</span>
         <label className="field">
           <span>Số CCCD trên thẻ</span>
           <span className={`input-wrap ${typed ? (matches ? 'is-ok' : 'is-bad') : ''}`}>
@@ -544,39 +589,43 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
           </div>
         )}
         {cidSaved && <p className="alert ok"><Icon name="check" size={16} />{cidSaved}</p>}
-        <label className="field">
-          <span>Mục đích (không bắt buộc)</span>
-          <input value={purpose} maxLength={255} placeholder={reg?.purpose ?? 'Gửi đồ, lấy đồ…'} onChange={(e) => setPurpose(e.target.value)} />
-        </label>
-        {reg
-          ? <p className="reg-match ok"><Icon name="calendar" size={15} /> Lịch đã duyệt: {hhmm(reg.scheduledEntryAt)} – {hhmm(reg.scheduledExitAt)} · {reg.purpose}</p>
-          : <p className="reg-match bad"><Icon name="alert" size={15} /> {person.fullName} chưa có lịch vào kho đã duyệt trong giờ này. Hướng dẫn khách đăng ký trên web, hoặc ghi nhận từ chối.</p>}
-        {reg?.items && reg.items.length > 0 && (
-          <div className="stack-sm">
-            <small className="muted"><b>Đồ mang vào đã khai báo ({reg.items.length} món)</b></small>
-            <MoveInItemsPreview items={reg.items} />
-          </div>
+        {reg && (
+          <label className="field">
+            <span>Ghi chú mục đích (không bắt buộc)</span>
+            <input value={purpose} maxLength={255} placeholder={reg.purpose || 'Gửi đồ, lấy đồ…'} onChange={(e) => setPurpose(e.target.value)} />
+          </label>
         )}
         {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
 
-        <div className={`decision ${reg && !v.issues.length ? '' : 'blocked'}`}>
-          <button className="btn primary block" disabled={busy || !reg || v.issues.length > 0 || !typed || alreadyInside} onClick={grant}>
-            <Icon name="check" size={16} /> Xác nhận đúng người, cho vào
+        <div className={`decision ${reg ? '' : 'blocked'}`}>
+          <button className="btn primary block" disabled={busy || !reg || !matches || alreadyInside} onClick={grant}>
+            <Icon name="check" size={16} /> {moveInCount ? `Cho vào & nhận ${moveInCount} món vào kho` : 'Xác nhận đúng người, cho vào'}
           </button>
-          {alreadyInside && <small className="muted">Người này đang ở trong kho, hãy xác nhận ra trước.</small>}
+          <small className="muted">
+            {alreadyInside ? 'Người này đang ở trong kho, hãy xác nhận ra trước.'
+              : !reg ? 'Chưa có lịch đã duyệt nên không thể cho vào.'
+                : !matches ? 'Gõ đúng số CCCD trên thẻ để mở nút cho vào.'
+                  : moveInCount ? 'Các món đã khai báo sẽ chuyển sang "Đang lưu trong kho". Món khách không mang đến thì bấm "Lấy ra" ở bảng đồ vật bên dưới.' : 'Đã đủ điều kiện cho vào.'}
+          </small>
           <div className="deny-row">
-            <Select value={denyReason} onChange={(e) => setDenyReason(e.target.value)}>
+            <Select value={denyReason} onChange={(e) => setDenyReason(e.target.value)} aria-label="Lý do từ chối">
               {Object.entries(DenyReasons).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
             </Select>
             <button className="btn danger" disabled={busy} onClick={deny}>Ghi nhận từ chối</button>
           </div>
         </div>
       </section>
-      <section className="panel stack-sm">
-        <button type="button" className="row between link-btn" aria-expanded={showItems} onClick={() => setShowItems(!showItems)}>
-          <b>Đồ vật & dung tích kho {v.unitCode}</b>
-          <span><Icon name="package" size={14} /> {showItems ? 'Ẩn' : 'Xem để đối chiếu'}</span>
-        </button>
+      )}
+      <section className="panel stack-sm span-all">
+        <div className="row between wrap">
+          <div>
+            <h3 className="panel-title">Đồ vật & dung tích kho {v.unitCode}{blocked ? ' (chỉ xem)' : ''}</h3>
+            <small className="muted block">Đồ đang lưu, đang chờ đưa vào và mức lấp đầy của kho.</small>
+          </div>
+          <button type="button" className="btn outline sm" aria-expanded={showItems} onClick={() => setShowItems(!showItems)}>
+            <Icon name="package" size={14} /> {showItems ? 'Ẩn danh sách' : 'Xem đồ trong kho'}
+          </button>
+        </div>
         {showItems && (
           <InventoryPanel mode="staff" contractId={v.contractId} facilityId={facilityId}
             canAddAtFacility={v.contractStatus === 'Active' && v.unitStatus !== 'OverdueLocked' && v.unitStatus !== 'UnderMaintenance'} />

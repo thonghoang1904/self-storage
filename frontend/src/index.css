@@ -1548,3 +1548,12 @@ tr.row-selected td { background: var(--cyan-25); }
 .unit-type-thumb { flex: none; width: 112px; height: 84px; border-radius: 10px; overflow: hidden; background: var(--bg-tint); border: 1px solid var(--border); }
 .unit-type-thumb img, .unit-type-thumb svg { display: block; width: 100%; height: 100%; object-fit: cover; }
 @media (max-width: 640px) { .unit-type-row { flex-direction: column; } .unit-type-thumb { width: 100%; height: 140px; } }
+
+/* Gate card: blocked contracts, numbered steps, full-width inventory */
+.visit-grid > .span-all { grid-column: 1 / -1; }
+.gate-step { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13.5px; color: var(--text); margin-top: 4px; }
+.gate-step b { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--cyan); color: #fff; font-size: 12px; }
+.gate-blocked { border: 1px solid #f6c9c9; background: #fffafa; }
+.gate-blocked-icon { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: #fde8e8; color: #c62828; flex: none; }
+.gate-issues { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.gate-issues li { display: flex; gap: 8px; align-items: center; padding: 10px 14px; border-radius: 10px; background: #fde8e8; color: #b42318; font-weight: 600; }
