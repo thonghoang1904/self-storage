@@ -585,6 +585,27 @@ export const DenyReasons: Record<string, string> = {
   Other: 'Lý do khác',
 }
 
+export interface StoredItem {
+  storedItemId: number
+  contractId: number
+  visitRegistrationId: number | null
+  itemName: string
+  category: string | null
+  quantity: number
+  lengthCm: number
+  widthCm: number
+  heightCm: number
+  unitVolumeM3: number
+  totalVolumeM3: number
+  status: 'PendingMoveIn' | 'Stored' | 'Removed' | 'Cancelled' | string
+  notes: string | null
+  imageUrl: string | null
+  createdAt: string
+  movedInAt: string | null
+  removedAt: string | null
+  updatedAt: string | null
+}
+
 /** A customer's booked entry/exit window for their unit, approved by facility staff (VisitRegistrationDto). */
 export interface VisitRegistration {
   visitRegistrationId: number
@@ -602,6 +623,7 @@ export interface VisitRegistration {
   requestedAt: string
   reviewedAt: string | null
   reviewNotes: string | null
+  items?: StoredItem[] | null
 }
 
 /** Purposes for "Đăng ký vào kho". Bringing items in is not one of them: it has its own flow ("Đăng ký đưa đồ vào kho"). */

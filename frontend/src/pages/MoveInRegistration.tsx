@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { checkCitizenId, checkPhone, CITIZEN_ID_FILTER, digitsOnly, PHONE_FILTER } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
@@ -7,30 +7,63 @@ import { parseOperatingHours } from '../components/appointment'
 import { useAuth } from '../auth'
 import { Empty, Icon } from '../components/ui'
 import { ContractUnitArt } from '../components/unitPhoto'
-import type { Contract, ContractDetail, Facility, Person, StorageUnit, UnitType, VisitRegistration } from '../types'
+import type { Contract, ContractDetail, Facility, Person, StorageUnit, StoredItem, UnitType, VisitRegistration } from '../types'
 import { termsHref } from './Terms'
 
 /**
- * Figma "Đăng ký đưa đồ vào kho" (120:2343): the customer declares the items to bring in, books the move-in slot
- * (vehicle, helpers, who escorts the goods) and sends it for staff approval.
- * It uses the existing visit-registration API (POST /api/contracts/{id}/visit-registrations): the declared items,
- * vehicle and contact are packed into the registration's purpose (max 255 characters), which gate staff read when
- * approving and at the gate. A dedicated item table would need a new backend endpoint.
+ * Figma "Đăng ký đưa đồ vào kho" (120:2343): the customer declares the items to bring in (with optional item photos),
+ * books the move-in slot (vehicle, helpers, who escorts the goods) and sends it for staff approval.
+ * Declared items are persisted in StoredItems via POST /api/contracts/{id}/visit-registrations, and optional item
+ * photos are uploaded to Cloudinary via POST /api/contracts/{id}/items/{itemId}/image.
  */
 
 export { MOVE_IN_PREFIX } from '../types'
 import { MOVE_IN_PREFIX } from '../types'
 import { Select } from '../components/Select'
 const PURPOSE_MAX = 255
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+function validateImageFile(file: File): string | null {
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type))
+    return 'Chỉ hỗ trợ ảnh định dạng JPG, PNG hoặc WebP'
+  if (file.size === 0)
+    return 'Tệp hình ảnh bị rỗng'
+  if (file.size > MAX_IMAGE_BYTES)
+    return 'Ảnh tải lên không được vượt quá 5 MB'
+  return null
+}
 
 const CATEGORIES = ['Đồ nội thất', 'Điện tử - điện máy', 'Thùng hàng / carton', 'Quần áo - chăn màn', 'Sách - hồ sơ giấy tờ', 'Dụng cụ - thể thao', 'Khác']
 const VEHICLES = ['Tự mang (xe máy)', 'Ô tô con', 'Xe ba gác', 'Xe tải ≤ 1,25 tấn', 'Xe tải > 1,25 tấn']
 const DURATIONS = [30, 60, 90, 120, 180]
 const FORBIDDEN = 'Chất cháy nổ, xăng dầu, bình gas; hóa chất, chất độc; thực phẩm tươi sống, đồ dễ hư thối; động vật, cây sống; vũ khí, hàng cấm, hàng không rõ nguồn gốc.'
 
-type Item = { key: number; name: string; category: string; quantity: number; l: string; w: string; h: string }
+type Item = {
+  key: number
+  name: string
+  category: string
+  quantity: number
+  l: string
+  w: string
+  h: string
+  imageFile: File | null
+  imagePreview: string
+  imageError: string
+}
 let nextKey = 1
-const newItem = (): Item => ({ key: nextKey++, name: '', category: CATEGORIES[0], quantity: 1, l: '', w: '', h: '' })
+const newItem = (): Item => ({
+  key: nextKey++,
+  name: '',
+  category: CATEGORIES[0],
+  quantity: 1,
+  l: '',
+  w: '',
+  h: '',
+  imageFile: null,
+  imagePreview: '',
+  imageError: '',
+})
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const isoDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
@@ -123,6 +156,20 @@ export default function MoveInRegistration() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  const [busyText, setBusyText] = useState('')
+  const [uploadingItemId, setUploadingItemId] = useState<number | null>(null)
+  const [historyPhotoError, setHistoryPhotoError] = useState<{ itemId: number; message: string } | null>(null)
+  const objectUrlsRef = useRef(new Set<string>())
+  const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({})
+  const historyFileInputRefs = useRef<Record<number, HTMLInputElement | null>>({})
+
+  useEffect(() => {
+    const urls = objectUrlsRef.current
+    return () => {
+      urls.forEach((u) => URL.revokeObjectURL(u))
+      urls.clear()
+    }
+  }, [])
 
   const today = isoDate(new Date())
   const [items, setItems] = useState<Item[]>(() => [newItem()])
@@ -185,8 +232,9 @@ export default function MoveInRegistration() {
   const ended = c.status !== 'Active' && c.status !== 'Renewed'
   const locked = c.unitStatus === 'OverdueLocked' || c.status === 'Overdue'
   const active = contracts.filter((x) => x.status === 'Active' || x.status === 'Renewed')
-  const activeItems = items.filter((i) => i.name.trim() || i.l.trim() || i.w.trim() || i.h.trim())
+  const activeItems = items.filter((i) => i.name.trim() || i.l.trim() || i.w.trim() || i.h.trim() || i.imageFile != null)
   const named = items.filter((i) => i.name.trim())
+  const photoCount = activeItems.filter((i) => i.imageFile != null).length
   const pieces = named.reduce((n, i) => n + Math.max(1, i.quantity), 0)
   const volume = named.reduce((n, i) => n + volumeOf(i), 0)
   // Unit dimensions and volume from the contract (newer backends), else from the unit type found in the public list.
@@ -231,6 +279,45 @@ export default function MoveInRegistration() {
 
   const setItem = (key: number, patch: Partial<Item>) => { setItems((is) => is.map((i) => (i.key === key ? { ...i, ...patch } : i))); clearErr('items') }
 
+  const revokePreview = (url: string) => {
+    if (!url) return
+    URL.revokeObjectURL(url)
+    objectUrlsRef.current.delete(url)
+  }
+
+  const clearItemImage = (key: number) => {
+    const prev = items.find((i) => i.key === key)?.imagePreview
+    if (prev) revokePreview(prev)
+    const input = fileInputRefs.current[key]
+    if (input) input.value = ''
+    setItem(key, { imageFile: null, imagePreview: '', imageError: '' })
+  }
+
+  const pickItemImage = (key: number, e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) { clearItemImage(key); return }
+    const prev = items.find((i) => i.key === key)?.imagePreview
+    if (prev) revokePreview(prev)
+    const err = validateImageFile(file)
+    if (err) {
+      const input = fileInputRefs.current[key]
+      if (input) input.value = ''
+      setItem(key, { imageFile: null, imagePreview: '', imageError: err })
+      return
+    }
+    const previewUrl = URL.createObjectURL(file)
+    objectUrlsRef.current.add(previewUrl)
+    setItem(key, { imageFile: file, imagePreview: previewUrl, imageError: '' })
+  }
+
+  const removeItem = (key: number) => {
+    const prev = items.find((i) => i.key === key)?.imagePreview
+    if (prev) revokePreview(prev)
+    delete fileInputRefs.current[key]
+    setItems((is) => is.filter((x) => x.key !== key))
+    clearErr('items')
+  }
+
   const validateItems = () => {
     if (activeItems.length === 0) return 'Vui lòng khai báo ít nhất một món đồ'
     for (let idx = 0; idx < activeItems.length; idx++) {
@@ -242,6 +329,7 @@ export default function MoveInRegistration() {
       const l = num(it.l), w = num(it.w), h = num(it.h)
       if (l < DIM_MIN || l > DIM_MAX || w < DIM_MIN || w > DIM_MAX || h < DIM_MIN || h > DIM_MAX)
         return `Kích thước "${title}" không hợp lệ (mỗi chiều từ 0,1 đến 2000 cm)`
+      if (it.imageError) return `Ảnh của "${title}" không hợp lệ: ${it.imageError}`
       const placeErr = checkItemPlacement(it, title, unitL, unitW, unitH, unitSizeLabel)
       if (placeErr) return placeErr
     }
@@ -249,6 +337,30 @@ export default function MoveInRegistration() {
     if (exceedsCapacity)
       return `Tổng thể tích đồ khai báo (${fmtVol(volume)} m³) vượt quá sức chứa của kho (${fmtVol(capacity)} m³). Vui lòng giảm số lượng/kích thước hoặc thuê thêm kho.`
     return undefined
+  }
+
+  const uploadRegisteredItemImage = async (itemId: number, e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    const input = historyFileInputRefs.current[itemId]
+    if (input) input.value = ''
+    if (!file) return
+    const err = validateImageFile(file)
+    if (err) {
+      setHistoryPhotoError({ itemId, message: err })
+      return
+    }
+    setUploadingItemId(itemId)
+    setHistoryPhotoError(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      await api<StoredItem>(`/api/contracts/${id}/items/${itemId}/image`, { body: fd })
+      await loadRows()
+    } catch (uploadErr) {
+      setHistoryPhotoError({ itemId, message: (uploadErr as Error).message })
+    } finally {
+      setUploadingItemId(null)
+    }
   }
 
   const submit = async (e: FormEvent) => {
@@ -272,7 +384,9 @@ export default function MoveInRegistration() {
       return
     }
     setBusy(true)
+    setBusyText('Đang gửi đăng ký…')
     try {
+      const submittedItems = [...activeItems]
       const r = await api<VisitRegistration>(`/api/contracts/${id}/visit-registrations`, {
         body: {
           citizenId: digitsOnly(citizenId),
@@ -280,8 +394,9 @@ export default function MoveInRegistration() {
           scheduledEntryAt: `${date}T${entry}:00+07:00`,
           scheduledExitAt: `${date}T${exit}:00+07:00`,
           purpose: purpose.text,
-          items: activeItems.map((i) => ({
+          items: submittedItems.map((i) => ({
             name: i.name.trim(),
+            category: i.category,
             quantity: Math.max(1, Math.min(999, i.quantity)),
             lengthCm: num(i.l),
             widthCm: num(i.w),
@@ -289,7 +404,38 @@ export default function MoveInRegistration() {
           })),
         },
       })
-      setNotice(`Đã gửi đăng ký đưa ${pieces} món đồ vào kho ${r.unitCode} lúc ${hhmm(r.scheduledEntryAt)} ngày ${dmy(r.scheduledEntryAt)}. Nhân viên cơ sở sẽ duyệt trước giờ hẹn.`)
+      const itemsToUpload = submittedItems
+        .map((localItem, index) => ({ localItem, created: r.items?.[index] }))
+        .filter((pair): pair is { localItem: Item & { imageFile: File }; created: StoredItem } =>
+          pair.localItem.imageFile != null && pair.created != null)
+
+      const failedUploads: string[] = []
+      for (let i = 0; i < itemsToUpload.length; i++) {
+        const { localItem, created } = itemsToUpload[i]
+        setBusyText(`Đang tải ảnh đồ vật (${i + 1}/${itemsToUpload.length})…`)
+        try {
+          const fd = new FormData()
+          fd.append('file', localItem.imageFile)
+          await api<StoredItem>(`/api/contracts/${id}/items/${created.storedItemId}/image`, { body: fd })
+        } catch (imgErr) {
+          failedUploads.push(`${localItem.name.trim()}: ${(imgErr as Error).message}`)
+        }
+      }
+
+      const uploadedCount = itemsToUpload.length - failedUploads.length
+      if (failedUploads.length > 0) {
+        setNotice(`Đã gửi đăng ký đưa ${pieces} món đồ vào kho ${r.unitCode} lúc ${hhmm(r.scheduledEntryAt)} ngày ${dmy(r.scheduledEntryAt)}.`)
+        setError(`Đăng ký đã được tạo nhưng có ${failedUploads.length}/${itemsToUpload.length} ảnh đồ vật tải lên thất bại (${failedUploads.join('; ')}). Bạn có thể thử đính kèm lại ngay trong danh sách "Lịch chuyển đồ đã đăng ký" bên dưới.`)
+      } else {
+        const photoSuffix = uploadedCount > 0 ? ` (kèm ${uploadedCount} ảnh đồ vật)` : ''
+        setNotice(`Đã gửi đăng ký đưa ${pieces} món đồ${photoSuffix} vào kho ${r.unitCode} lúc ${hhmm(r.scheduledEntryAt)} ngày ${dmy(r.scheduledEntryAt)}. Nhân viên cơ sở sẽ duyệt trước giờ hẹn.`)
+      }
+
+      for (const item of items) {
+        if (item.imagePreview) revokePreview(item.imagePreview)
+        const input = fileInputRefs.current[item.key]
+        if (input) input.value = ''
+      }
       setItems([newItem()])
       setNote('')
       setCitizenId('')
@@ -300,6 +446,7 @@ export default function MoveInRegistration() {
       setFieldErr({ submit: (err as Error).message })
     } finally {
       setBusy(false)
+      setBusyText('')
     }
   }
 
@@ -397,7 +544,7 @@ export default function MoveInRegistration() {
                     <div key={it.key} className="item-card">
                       <div className="row between">
                         <b className="item-title"><Icon name="package" size={16} /> Món {idx + 1}{it.name.trim() && <span className="muted"> · {it.name.trim()}</span>}</b>
-                        {items.length > 1 && <button type="button" className="icon-btn" aria-label={`Xóa món ${idx + 1}`} onClick={() => setItems((is) => is.filter((x) => x.key !== it.key))}><Icon name="trash" size={16} /></button>}
+                        {items.length > 1 && <button type="button" className="icon-btn" aria-label={`Xóa món ${idx + 1}`} onClick={() => removeItem(it.key)}><Icon name="trash" size={16} /></button>}
                       </div>
                       <div className="form-grid two">
                         <label className="field"><span>Tên đồ *</span><input value={it.name} maxLength={60} onChange={(e) => setItem(it.key, { name: e.target.value })} placeholder="vd: Tủ lạnh, thùng sách" /></label>
@@ -416,6 +563,29 @@ export default function MoveInRegistration() {
                             <input inputMode="decimal" value={it.h} onChange={(e) => setItem(it.key, { h: e.target.value })} placeholder="Cao" aria-label="Cao (cm)" aria-required="true" />
                           </div>
                         </div>
+                      </div>
+                      <div className="field">
+                        <span>Ảnh món đồ (không bắt buộc)</span>
+                        <div className="item-upload">
+                          <input
+                            ref={(el) => { fileInputRefs.current[it.key] = el }}
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            onChange={(e) => pickItemImage(it.key, e)}
+                            aria-label={`Chọn ảnh cho món ${idx + 1}`}
+                          />
+                          {it.imagePreview && (
+                            <div className="item-preview">
+                              <img src={it.imagePreview} alt={`Xem trước ảnh món ${idx + 1}`} className="item-photo" />
+                              <button type="button" className="btn ghost sm danger-text" onClick={() => clearItemImage(it.key)}>
+                                <Icon name="trash" size={14} /> Xóa ảnh
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        {it.imageError
+                          ? <FieldNote text={it.imageError} />
+                          : <small className="field-hint">JPG, PNG hoặc WebP · tối đa 5 MB (tùy chọn)</small>}
                       </div>
                       {placeErr && (
                         <p className="alert bad"><Icon name="alert" size={15} />{placeErr}</p>
@@ -489,6 +659,7 @@ export default function MoveInRegistration() {
                       <div><dt>Người vào kho</dt><dd>{visitor ? visitor.fullName : user?.fullName}</dd></div>
                       <div><dt>Phương tiện</dt><dd>{vehicle}{helpers > 0 && ` · ${helpers} người phụ`}</dd></div>
                       <div><dt>Thể tích ước tính</dt><dd>{volume > 0 ? `${fmtVol(volume)} m³` : '—'}{capacity > 0 && volume > 0 && <small className={exceedsCapacity ? 'danger-text' : 'muted'}> · {fill}% kho ({fmtVol(capacity)} m³)</small>}</dd></div>
+                      <div><dt>Ảnh đồ vật</dt><dd>{photoCount > 0 ? `${photoCount} ảnh đính kèm` : 'Không có'}</dd></div>
                     </dl>
                     {hasFitError && (
                       <p className="alert bad"><Icon name="alert" size={15} />
@@ -511,7 +682,7 @@ export default function MoveInRegistration() {
                   <p className="muted fine">Sau khi gửi, đăng ký ở trạng thái chờ duyệt. Bạn có thể hủy khi nhân viên chưa duyệt.</p>
                   <div className="row between wrap">
                     <Link to={`/my-units/${c.contractId}`} className="btn outline">Quay lại</Link>
-                    <button className="btn primary" type="submit" disabled={busy}><Icon name="package" size={15} /> {busy ? 'Đang gửi…' : 'Gửi đăng ký đưa đồ vào kho'}</button>
+                    <button className="btn primary" type="submit" disabled={busy}><Icon name="package" size={15} /> {busy ? (busyText || 'Đang gửi…') : 'Gửi đăng ký đưa đồ vào kho'}</button>
                   </div>
                 </section>
               </form>
@@ -529,6 +700,54 @@ export default function MoveInRegistration() {
                         <b>{hhmm(r.scheduledEntryAt)} – {hhmm(r.scheduledExitAt)} · {dmy(r.scheduledEntryAt)} · {r.visitorName}</b>
                         <small className="muted block">{r.purpose.slice(MOVE_IN_PREFIX.length + 2)}</small>
                         <small className="muted block">Gửi {fmtTime(r.requestedAt)}{r.reviewNotes && ` · Ghi chú nhân viên: ${r.reviewNotes}`}</small>
+                        {r.items && r.items.length > 0 && (
+                          <div className="movein-items-list">
+                            {r.items.map((it) => {
+                              const canEditPhoto = (r.status === 'Pending' || r.status === 'Approved')
+                                && (it.status === 'PendingMoveIn' || it.status === 'Stored')
+                              const itemUploading = uploadingItemId === it.storedItemId
+                              return (
+                                <div key={it.storedItemId} className="movein-item-row">
+                                  <div className="grow">
+                                    <b>{it.itemName}</b> <small className="muted">×{it.quantity}</small>
+                                    <small className="muted block">
+                                      {it.lengthCm}×{it.widthCm}×{it.heightCm} cm{it.category ? ` · ${it.category}` : ''}
+                                    </small>
+                                    {historyPhotoError?.itemId === it.storedItemId && (
+                                      <small className="field-error">{historyPhotoError.message}</small>
+                                    )}
+                                  </div>
+                                  <div className="movein-item-actions">
+                                    {it.imageUrl && (
+                                      <a href={it.imageUrl} target="_blank" rel="noreferrer" className="item-thumb-link" title="Bấm để xem ảnh kích thước đầy đủ">
+                                        <img src={it.imageUrl} alt={it.itemName} className="item-thumb" loading="lazy" />
+                                      </a>
+                                    )}
+                                    {canEditPhoto && (
+                                      <>
+                                        <input
+                                          ref={(el) => { historyFileInputRefs.current[it.storedItemId] = el }}
+                                          type="file"
+                                          accept="image/jpeg,image/png,image/webp"
+                                          hidden
+                                          onChange={(e) => uploadRegisteredItemImage(it.storedItemId, e)}
+                                        />
+                                        <button
+                                          type="button"
+                                          className="btn outline sm"
+                                          disabled={uploadingItemId !== null}
+                                          onClick={() => historyFileInputRefs.current[it.storedItemId]?.click()}
+                                        >
+                                          <Icon name="plus" size={13} /> {itemUploading ? 'Đang tải…' : it.imageUrl ? 'Đổi ảnh' : 'Đính kèm ảnh'}
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
                       </div>
                       <span className={`badge ${st.tone}`}>{st.label}</span>
                       {canCancel(r) && <button type="button" className="btn ghost sm danger-text" onClick={() => cancel(r)}>Hủy</button>}

@@ -12,7 +12,10 @@ namespace SelfStorage.Api.Services;
 /// Manages items stored inside rented storage units, enforces cumulative 3D dimension and volume bounds,
 /// and lets facility staff confirm partial or full item removals.
 /// </summary>
-public class StoredItemService(SelfStorageDbContext db, TimeProvider clock)
+public class StoredItemService(
+    SelfStorageDbContext db,
+    CloudinaryImageService cloudinary,
+    TimeProvider clock)
 {
     private static readonly CultureInfo ViCulture = CultureInfo.GetCultureInfo("vi-VN");
     private DateTime Now => clock.GetLocalNow().DateTime;
@@ -151,6 +154,48 @@ public class StoredItemService(SelfStorageDbContext db, TimeProvider clock)
         item.UpdatedAt = Now;
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
+    }
+
+    public async Task<StoredItemDto> UploadCustomerItemImageAsync(
+        int customerId, int contractId, long itemId, IFormFile? file, CancellationToken ct)
+    {
+        var existing = await db.StoredItems.AsNoTracking()
+            .Where(i => i.StoredItemId == itemId && i.ContractId == contractId
+                && i.Contract.CustomerId == customerId)
+            .Select(i => new
+            {
+                i.StoredItemId,
+                i.Status,
+                ContractStatus = i.Contract.Status,
+            })
+            .FirstOrDefaultAsync(ct)
+            ?? throw AppException.NotFound("Không tìm thấy món đồ trong kho");
+
+        if (existing.Status is not (StoredItemStatus.PendingMoveIn or StoredItemStatus.Stored))
+            throw AppException.Conflict("Chỉ có thể tải ảnh cho món đồ đang chờ đưa vào hoặc đang lưu trong kho");
+        if (existing.ContractStatus is not (ContractStatus.Active or ContractStatus.Overdue))
+            throw AppException.Conflict("Hợp đồng đã kết thúc, không thể cập nhật ảnh đồ vật");
+
+        // Upload outside the serializable transaction so external HTTP I/O never holds DB locks.
+        var imageUrl = await cloudinary.UploadImageAsync(file, "stored-items", $"item-{itemId}", ct);
+
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var item = await db.StoredItems
+            .Include(i => i.Contract)
+            .FirstOrDefaultAsync(i => i.StoredItemId == itemId && i.ContractId == contractId
+                && i.Contract.CustomerId == customerId, ct)
+            ?? throw AppException.NotFound("Không tìm thấy món đồ trong kho");
+
+        if (item.Status is not (StoredItemStatus.PendingMoveIn or StoredItemStatus.Stored))
+            throw AppException.Conflict("Chỉ có thể tải ảnh cho món đồ đang chờ đưa vào hoặc đang lưu trong kho");
+        if (item.Contract.Status is not (ContractStatus.Active or ContractStatus.Overdue))
+            throw AppException.Conflict("Hợp đồng đã kết thúc, không thể cập nhật ảnh đồ vật");
+
+        item.ImageUrl = imageUrl;
+        item.UpdatedAt = Now;
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return ToDto(item);
     }
 
     public async Task<StoredItemDto> AddFacilityItemAsync(

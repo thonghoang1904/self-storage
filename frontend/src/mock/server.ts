@@ -6,7 +6,7 @@
  */
 import type {
   AccessIssue, ActivityLog, EarlyReturnQuote, EarlyReturnRequest, AdminUser, AdminContract, EmailOutboxMessage, OperationsReportRow, CancellationRequest, CancellationRefund, ExtraChargeInvoice, FacilityStaff, FacilityWorkQueue, FacilityTaskContract, FacilityReport, OperationsReport, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
-  OverdueSummary, Person, Renewal, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate, VisitRegistration, RentalPolicy, FeeConfiguration, Promotion, SecuritySettings, LoginSession, AccountProfile, AccountActivity,
+  OverdueSummary, Person, Renewal, StoredItem, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate, VisitRegistration, RentalPolicy, FeeConfiguration, Promotion, SecuritySettings, LoginSession, AccountProfile, AccountActivity,
 } from '../types'
 import { Roles } from '../types'
 
@@ -25,7 +25,7 @@ interface Chk { checklistItemId: number; sortOrder: number; description: string;
 interface SupUpd { updateId: number; requestId: number; updatedByUserId: number; actionMessage: string; previousStatus: string | null; newStatus: string | null; createdAt: string }
 interface Ovd { overdueId: number; contractId: number; daysOverdue: number; accumulatedLateFee: number; lockAppliedAt: string; resolvedAt: string | null }
 interface AuthPerson { authorizedPersonId: number; contractId: number; fullName: string; phoneNumber: string; citizenId: string; relationship: string | null; status: string }
-interface Vreg { visitRegistrationId: number; contractId: number; customerId: number; authorizedPersonId: number | null; scheduledEntryAt: string; scheduledExitAt: string; purpose: string; status: string; requestedAt: string; reviewedAt: string | null; reviewNotes: string | null }
+interface Vreg { visitRegistrationId: number; contractId: number; customerId: number; authorizedPersonId: number | null; scheduledEntryAt: string; scheduledExitAt: string; purpose: string; status: string; requestedAt: string; reviewedAt: string | null; reviewNotes: string | null; items?: StoredItem[] }
 interface Rec { accessRecordId: number; contractId: number; facilityId: number; unitId: number; authorizedPersonId: number | null; verifiedByStaffId: number; result: 'Granted' | 'Denied'; denyReason: string | null; purpose: string | null; companionCount?: number; entryTime: string; exitTime: string | null }
 
 interface Db {
@@ -255,7 +255,7 @@ function visitDto(v: Vreg): VisitRegistration {
     facilityId: unitById(c.unitId).facilityId, unitCode: unitById(c.unitId).unitCode, authorizedPersonId: v.authorizedPersonId,
     visitorName: p ? p.fullName : userById(v.customerId).fullName,
     scheduledEntryAt: v.scheduledEntryAt, scheduledExitAt: v.scheduledExitAt, purpose: v.purpose, status: v.status,
-    requestedAt: v.requestedAt, reviewedAt: v.reviewedAt, reviewNotes: v.reviewNotes,
+    requestedAt: v.requestedAt, reviewedAt: v.reviewedAt, reviewNotes: v.reviewNotes, items: v.items ?? [],
   }
 }
 const visitsOf = () => (db.visits ??= [])
@@ -1597,7 +1597,7 @@ const routes: [string, RegExp, Handler][] = [
       throw conflict('Bạn đã có lịch ra/vào đang chờ duyệt hoặc được duyệt trong khung giờ này')
     const purpose = String(body.purpose ?? '').trim()
     if (!purpose) throw bad('Vui lòng nhập mục đích vào kho')
-    const rawItems = Array.isArray(body.items) ? body.items as { name?: string; quantity?: number; lengthCm?: number; widthCm?: number; heightCm?: number }[] : []
+    const rawItems = Array.isArray(body.items) ? body.items as { name?: string; category?: string; notes?: string; quantity?: number; lengthCm?: number; widthCm?: number; heightCm?: number }[] : []
     if (purpose.startsWith('Gửi đồ vào kho') || rawItems.length > 0) {
       if (rawItems.length === 0)
         throw bad('Vui lòng khai báo ít nhất một món đồ và nhập đủ 3 chiều kích thước (Dài × Rộng × Cao tính bằng cm)')
@@ -1650,7 +1650,35 @@ const routes: [string, RegExp, Handler][] = [
           throw bad(`Tổng thể tích đồ khai báo (${fmtV(totalVol)} m³) vượt quá sức chứa của kho (${fmtV(uVol)} m³)`)
       }
     }
-    const v: Vreg = { visitRegistrationId: nextId(), contractId: c.contractId, customerId: me.userId, authorizedPersonId: apId, scheduledEntryAt: entry, scheduledExitAt: exit, purpose, status: 'Pending', requestedAt: localIso(new Date()), reviewedAt: null, reviewNotes: null }
+    const nowIso = localIso(new Date())
+    const vregId = nextId()
+    const createdItems: StoredItem[] = rawItems.map((it) => {
+      const qty = Math.max(1, Math.min(999, Math.trunc(Number(it.quantity) || 1)))
+      const l = Number(it.lengthCm), w = Number(it.widthCm), h = Number(it.heightCm)
+      const unitVol = Number(((l * w * h) / 1e6).toFixed(6))
+      const totalVol = Number((unitVol * qty).toFixed(6))
+      return {
+        storedItemId: nextId(),
+        contractId: c.contractId,
+        visitRegistrationId: vregId,
+        itemName: String(it.name ?? '').trim(),
+        category: it.category ? String(it.category).trim() : null,
+        quantity: qty,
+        lengthCm: l,
+        widthCm: w,
+        heightCm: h,
+        unitVolumeM3: unitVol,
+        totalVolumeM3: totalVol,
+        status: 'PendingMoveIn',
+        notes: it.notes ? String(it.notes).trim() : null,
+        imageUrl: null,
+        createdAt: nowIso,
+        movedInAt: null,
+        removedAt: null,
+        updatedAt: null,
+      }
+    })
+    const v: Vreg = { visitRegistrationId: vregId, contractId: c.contractId, customerId: me.userId, authorizedPersonId: apId, scheduledEntryAt: entry, scheduledExitAt: exit, purpose, status: 'Pending', requestedAt: nowIso, reviewedAt: null, reviewNotes: null, items: createdItems }
     visitsOf().push(v)
     return visitDto(v)
   }],
@@ -1662,7 +1690,32 @@ const routes: [string, RegExp, Handler][] = [
     if (v.status !== 'Pending' && v.status !== 'Approved') throw conflict('Lịch ra/vào này đã được xử lý hoặc đã hủy')
     if (v.status === 'Approved' && new Date(v.scheduledExitAt).getTime() <= Date.now()) throw conflict('Không thể hủy lịch đã duyệt khi đã qua giờ ra dự kiến')
     v.status = 'Cancelled'
+    const nowIso = localIso(new Date())
+    v.items?.forEach((it) => { if (it.status === 'PendingMoveIn') { it.status = 'Cancelled'; it.updatedAt = nowIso } })
     return visitDto(v)
+  }],
+  ['POST', /^\/api\/contracts\/(\d+)\/items\/(\d+)\/image$/, (m, { token, body }) => {
+    const me = currentUser(token)
+    requireRole(me, [Roles.Customer])
+    const c = ownContract(me, Number(m[1]))
+    const itemId = Number(m[2])
+    const item = visitsOf()
+      .filter((v) => v.contractId === c.contractId)
+      .flatMap((v) => v.items ?? [])
+      .find((it) => it.storedItemId === itemId)
+    if (!item) throw notFound('Không tìm thấy món đồ trong kho')
+    if (item.status !== 'PendingMoveIn' && item.status !== 'Stored')
+      throw conflict('Chỉ có thể tải ảnh cho món đồ đang chờ đưa vào hoặc đang lưu trong kho')
+    if (c.status !== 'Active' && c.status !== 'Overdue')
+      throw conflict('Hợp đồng đã kết thúc, không thể cập nhật ảnh đồ vật')
+    const raw = body as unknown
+    const file = raw instanceof FormData ? raw.get('file') : null
+    if (!(file instanceof File) || file.size === 0) throw bad('Vui lòng chọn tệp hình ảnh')
+    if (file.size > 5 * 1024 * 1024) throw bad('Ảnh tải lên không được vượt quá 5 MB')
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw bad('Chỉ hỗ trợ ảnh định dạng JPG, PNG hoặc WebP')
+    item.imageUrl = URL.createObjectURL(file)
+    item.updatedAt = localIso(new Date())
+    return item
   }],
   ['GET', /^\/api\/gate\/facilities\/(\d+)\/visit-registrations$/, (m, { token, query }) => {
     const me = currentUser(token)
@@ -1687,9 +1740,13 @@ const routes: [string, RegExp, Handler][] = [
       const c = db.contracts.find((x) => x.contractId === v.contractId)!
       if (c.status !== 'Active' || findIssues(c).length) throw conflict('Hợp đồng hoặc kho không còn đủ điều kiện ra/vào')
     }
+    const nowIso = localIso(new Date())
     v.status = approve ? 'Approved' : 'Rejected'
-    v.reviewedAt = localIso(new Date())
+    v.reviewedAt = nowIso
     v.reviewNotes = String(body.notes ?? '').trim() || null
+    if (!approve) {
+      v.items?.forEach((it) => { if (it.status === 'PendingMoveIn') { it.status = 'Cancelled'; it.updatedAt = nowIso } })
+    }
     return visitDto(v)
   }],
 

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { api, billingLink, fmtDate, fmtTime, IS_DEMO } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
-import { DenyReasons, type AccessRecord, type Person, type VisitCandidate, type VisitRegistration } from '../types'
+import { DenyReasons, type AccessRecord, type Person, type StoredItem, type VisitCandidate, type VisitRegistration } from '../types'
 import { CITIZEN_ID_FILTER } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
 import { Select } from '../components/Select'
@@ -277,6 +277,8 @@ function RegistrationsPanel({ facilityId, regs, onReview }: { facilityId: number
         {shown.map((r) => {
           const live = new Date(r.scheduledEntryAt).getTime() <= now && new Date(r.scheduledExitAt).getTime() >= now
           const open = openId === r.visitRegistrationId
+          const itemCount = r.items?.length ?? 0
+          const itemPhotoCount = r.items?.filter((x) => Boolean(x.imageUrl)).length ?? 0
           return (
             <Fragment key={r.visitRegistrationId}>
             <div className={`reg-row ${open ? 'open' : ''}`}>
@@ -284,7 +286,7 @@ function RegistrationsPanel({ facilityId, regs, onReview }: { facilityId: number
               <span className="unit-code">{r.unitCode}</span>
               <div className="grow">
                 <b>{r.visitorName}</b> {r.authorizedPersonId != null && <span className="pill muted">Người vào kho</span>}
-                <small className="muted block">HĐ {r.contractNumber} · {r.purpose}</small>
+                <small className="muted block">HĐ {r.contractNumber} · {r.purpose}{itemCount > 0 ? ` · ${itemCount} món${itemPhotoCount > 0 ? ` (${itemPhotoCount} ảnh)` : ''}` : ''}</small>
                 <button type="button" className="link-btn" aria-expanded={open} onClick={() => setOpenId(open ? null : r.visitRegistrationId)}>
                   <Icon name={open ? 'x' : 'eye'} size={13} /> {open ? 'Ẩn thông tin' : 'Xem thông tin người đăng ký'}
                 </button>
@@ -376,6 +378,12 @@ function RegistrationDetail({ facilityId, reg }: { facilityId: number; reg: Visi
           </dl>
         </div>
       </div>
+      {reg.items && reg.items.length > 0 && (
+        <div className="stack-sm">
+          <span className="label">Danh sách đồ mang vào ({reg.items.length} món)</span>
+          <MoveInItemsPreview items={reg.items} />
+        </div>
+      )}
       {visit.issues.length > 0 && (
         <p className="alert warn"><Icon name="alert" size={15} />{visit.issues.map((i) => i.message).join(' · ')}: dù duyệt lịch, cổng vẫn chặn cho đến khi xử lý xong.</p>
       )}
@@ -541,6 +549,12 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
         {reg
           ? <p className="reg-match ok"><Icon name="calendar" size={15} /> Lịch đã duyệt: {hhmm(reg.scheduledEntryAt)} – {hhmm(reg.scheduledExitAt)} · {reg.purpose}</p>
           : <p className="reg-match bad"><Icon name="alert" size={15} /> {person.fullName} chưa có lịch vào kho đã duyệt trong giờ này. Hướng dẫn khách đăng ký trên web, hoặc ghi nhận từ chối.</p>}
+        {reg?.items && reg.items.length > 0 && (
+          <div className="stack-sm">
+            <small className="muted"><b>Đồ mang vào đã khai báo ({reg.items.length} món)</b></small>
+            <MoveInItemsPreview items={reg.items} />
+          </div>
+        )}
         {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
 
         <div className={`decision ${reg && !v.issues.length ? '' : 'blocked'}`}>
@@ -556,6 +570,29 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
           </div>
         </div>
       </section>
+    </div>
+  )
+}
+
+function MoveInItemsPreview({ items }: { items: StoredItem[] }) {
+  return (
+    <div className="movein-items-list">
+      {items.map((it) => (
+        <div key={it.storedItemId} className="movein-item-row">
+          <div className="grow">
+            <b>{it.itemName}</b> <small className="muted">×{it.quantity}</small>
+            <small className="muted block">
+              {it.lengthCm}×{it.widthCm}×{it.heightCm} cm{it.category ? ` · ${it.category}` : ''}
+            </small>
+            {it.notes && <small className="muted block">Ghi chú: {it.notes}</small>}
+          </div>
+          {it.imageUrl && (
+            <a href={it.imageUrl} target="_blank" rel="noreferrer" className="item-thumb-link" title="Bấm để xem ảnh kích thước đầy đủ">
+              <img src={it.imageUrl} alt={it.itemName} className="item-thumb" loading="lazy" />
+            </a>
+          )}
+        </div>
+      ))}
     </div>
   )
 }

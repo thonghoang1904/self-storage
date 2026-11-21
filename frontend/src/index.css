@@ -1110,7 +1110,16 @@ small.center { text-align: center; }
 .purpose-preview { background: var(--bg-tint); border-radius: 10px; padding: 10px 12px; }
 .purpose-preview p { margin: 4px 0 0; font-size: 13.5px; word-break: break-word; }
 .fine { font-size: 13px; margin: 0; }
-@media (max-width: 720px) { .item-measure, .movein-grid { grid-template-columns: 1fr; } }
+.item-upload { display: flex; flex-direction: column; gap: 10px; }
+.item-upload input[type="file"] { font-size: 13px; max-width: 100%; }
+.item-preview { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.item-photo { display: block; max-width: 220px; max-height: 140px; border-radius: var(--radius); border: 1px solid var(--border); object-fit: cover; background: #fff; }
+.movein-items-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.movein-item-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+.movein-item-actions { display: flex; align-items: center; gap: 8px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
+.item-thumb-link { display: inline-block; flex: none; }
+.item-thumb { display: block; width: 56px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-tint); }
+@media (max-width: 720px) { .item-measure, .movein-grid { grid-template-columns: 1fr; } .movein-item-row { flex-direction: column; align-items: flex-start; } .movein-item-actions { justify-content: flex-start; } }
 
 /* ---------- contract policy (Figma 96:11044, 110:362) ---------- */
 .contract-strip { display: grid; grid-template-columns: 120px minmax(0, 1.3fr) 1.2fr 1fr 1fr; gap: 20px; align-items: center; }

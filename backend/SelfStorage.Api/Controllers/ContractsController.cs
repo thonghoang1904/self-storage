@@ -853,6 +853,14 @@ public class ContractsController(
         return NoContent();
     }
 
+    [HttpPost("{id:int}/items/{itemId:long}/image")]
+    [Authorize(Roles = AppRoles.Customer)]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(6 * 1024 * 1024)]
+    public Task<StoredItemDto> UploadStoredItemImage(
+        int id, long itemId, IFormFile file, CancellationToken ct) =>
+        storedItems.UploadCustomerItemImageAsync(User.GetUserId(), id, itemId, file, ct);
+
     private async Task<Contract> LoadOwnAsync(int id, CancellationToken ct)
     {
         var me = User.GetUserId();
