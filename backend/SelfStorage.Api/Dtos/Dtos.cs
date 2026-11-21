@@ -133,6 +133,23 @@ public record SavePromotionRequest(
 
 public record UnitTypeDto(int UnitTypeId, string TypeName, decimal LengthMeters, decimal WidthMeters, decimal HeightMeters,
     decimal VolumeCubicMeters, bool HasClimateControl, decimal BaseDailyRate, decimal BaseMonthlyRate, string? Description);
+public record SaveUnitTypeRequest(
+    [Required(ErrorMessage = "Vui lòng nhập tên loại kho")]
+    [StringLength(100, MinimumLength = 2, ErrorMessage = "Tên loại kho dài từ 2 đến 100 ký tự")]
+    string TypeName,
+    [Range(typeof(decimal), "0.1", "20", ErrorMessage = "Chiều dài (m) phải từ 0,1 đến 20")]
+    decimal LengthMeters,
+    [Range(typeof(decimal), "0.1", "20", ErrorMessage = "Chiều rộng (m) phải từ 0,1 đến 20")]
+    decimal WidthMeters,
+    [Range(typeof(decimal), "0.1", "20", ErrorMessage = "Chiều cao (m) phải từ 0,1 đến 20")]
+    decimal HeightMeters,
+    bool HasClimateControl,
+    [Range(typeof(decimal), "0", "9999999999999999", ErrorMessage = "Giá theo ngày phải từ 0 trở lên")]
+    decimal BaseDailyRate,
+    [Range(typeof(decimal), "0.01", "9999999999999999", ErrorMessage = "Giá theo tháng phải lớn hơn 0")]
+    decimal BaseMonthlyRate,
+    [StringLength(500, ErrorMessage = "Mô tả tối đa 500 ký tự")]
+    string? Description = null);
 public record UpdateUnitTypePricingRequest(
     [Range(typeof(decimal), "0", "9999999999999999")] decimal BaseDailyRate,
     [Range(typeof(decimal), "0.01", "9999999999999999")] decimal BaseMonthlyRate);

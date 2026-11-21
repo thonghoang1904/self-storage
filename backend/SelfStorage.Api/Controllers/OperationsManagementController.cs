@@ -99,6 +99,108 @@ public sealed class OperationsManagementController(
                 t.BaseMonthlyRate, t.Description))
             .ToListAsync(ct);
 
+    [HttpPost("unit-types")]
+    public async Task<UnitTypeDto> CreateUnitType(SaveUnitTypeRequest req, CancellationToken ct)
+    {
+        ValidateUnitType(req);
+        var name = req.TypeName.Trim();
+        if (await db.UnitTypes.AnyAsync(t => t.TypeName == name, ct))
+            throw AppException.Conflict("Tên loại kho đã tồn tại");
+
+        var unitType = new UnitType
+        {
+            TypeName = name,
+            LengthMeters = req.LengthMeters,
+            WidthMeters = req.WidthMeters,
+            HeightMeters = req.HeightMeters,
+            HasClimateControl = req.HasClimateControl,
+            BaseDailyRate = req.BaseDailyRate,
+            BaseMonthlyRate = req.BaseMonthlyRate,
+            Description = Normalize(req.Description),
+        };
+        db.UnitTypes.Add(unitType);
+        AddLog("UnitTypeCreated", $"Created unit type {name}");
+        await db.SaveChangesAsync(ct);
+        return ToUnitTypeDto(unitType);
+    }
+
+    [HttpPut("unit-types/{unitTypeId:int}")]
+    public async Task<UnitTypeDto> UpdateUnitType(
+        int unitTypeId, SaveUnitTypeRequest req, CancellationToken ct)
+    {
+        ValidateUnitType(req);
+        var name = req.TypeName.Trim();
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            System.Data.IsolationLevel.Serializable, ct);
+        var unitType = await db.UnitTypes.FindAsync([unitTypeId], ct)
+            ?? throw AppException.NotFound("Không tìm thấy loại kho");
+        if (await db.UnitTypes.AnyAsync(t => t.UnitTypeId != unitTypeId && t.TypeName == name, ct))
+            throw AppException.Conflict("Tên loại kho đã tồn tại");
+
+        var specsChanged = unitType.LengthMeters != req.LengthMeters
+            || unitType.WidthMeters != req.WidthMeters
+            || unitType.HeightMeters != req.HeightMeters
+            || unitType.HasClimateControl != req.HasClimateControl;
+        if (specsChanged)
+        {
+            var now = clock.GetLocalNow().DateTime;
+            if (await db.Contracts.AnyAsync(c => c.Unit.UnitTypeId == unitTypeId
+                    && (c.Status == ContractStatus.Active || c.Status == ContractStatus.Overdue), ct)
+                || await db.Reservations.AnyAsync(r => r.UnitTypeId == unitTypeId
+                    && (r.Status == ReservationStatus.Confirmed
+                        || (r.Status == ReservationStatus.PendingDeposit && r.DepositDeadline > now)), ct))
+                throw AppException.Conflict(
+                    "Loại kho đang có hợp đồng hoặc đơn đặt chỗ hiệu lực; chỉ được đổi tên, mô tả và giá niêm yết");
+        }
+
+        var monthlyRateChanged = unitType.BaseMonthlyRate != req.BaseMonthlyRate;
+        unitType.TypeName = name;
+        unitType.LengthMeters = req.LengthMeters;
+        unitType.WidthMeters = req.WidthMeters;
+        unitType.HeightMeters = req.HeightMeters;
+        unitType.HasClimateControl = req.HasClimateControl;
+        unitType.BaseDailyRate = req.BaseDailyRate;
+        unitType.BaseMonthlyRate = req.BaseMonthlyRate;
+        unitType.Description = Normalize(req.Description);
+
+        if (monthlyRateChanged)
+        {
+            await db.StorageUnits.Where(u => u.UnitTypeId == unitTypeId)
+                .ExecuteUpdateAsync(update => update.SetProperty(u => u.MonthlyPrice, req.BaseMonthlyRate), ct);
+        }
+
+        AddLog("UnitTypeUpdated", $"Updated unit type {unitTypeId} ({name})");
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return ToUnitTypeDto(unitType);
+    }
+
+    [HttpDelete("unit-types/{unitTypeId:int}")]
+    public async Task<IActionResult> DeleteUnitType(int unitTypeId, CancellationToken ct)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            System.Data.IsolationLevel.Serializable, ct);
+        var unitType = await db.UnitTypes.FindAsync([unitTypeId], ct)
+            ?? throw AppException.NotFound("Không tìm thấy loại kho");
+        if (await db.StorageUnits.AnyAsync(u => u.UnitTypeId == unitTypeId, ct))
+            throw AppException.Conflict("Loại kho đang có ô kho thuộc loại này nên không thể xóa");
+        if (await db.Reservations.AnyAsync(r => r.UnitTypeId == unitTypeId, ct))
+            throw AppException.Conflict("Loại kho đã phát sinh đơn đặt chỗ nên không thể xóa");
+
+        db.UnitTypes.Remove(unitType);
+        AddLog("UnitTypeDeleted", $"Deleted unit type {unitTypeId} ({unitType.TypeName})");
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            throw AppException.Conflict("Loại kho đang được tham chiếu bởi dữ liệu khác nên không thể xóa");
+        }
+        await transaction.CommitAsync(ct);
+        return NoContent();
+    }
+
     [HttpPut("unit-types/{unitTypeId:int}/pricing")]
     public async Task<UnitTypeDto> UpdateUnitTypePricing(
         int unitTypeId, UpdateUnitTypePricingRequest req, CancellationToken ct)
@@ -115,9 +217,7 @@ public sealed class OperationsManagementController(
             $"Updated prices for unit type {unitTypeId}: daily {req.BaseDailyRate:N2}, monthly {req.BaseMonthlyRate:N2}");
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
-        return new UnitTypeDto(unitType.UnitTypeId, unitType.TypeName, unitType.LengthMeters,
-            unitType.WidthMeters, unitType.HeightMeters, unitType.VolumeCubicMeters,
-            unitType.HasClimateControl, unitType.BaseDailyRate, unitType.BaseMonthlyRate, unitType.Description);
+        return ToUnitTypeDto(unitType);
     }
 
     [HttpGet("rental-policies")]
@@ -348,6 +448,22 @@ public sealed class OperationsManagementController(
         if (req.EndDate < req.StartDate)
             throw AppException.BadRequest("Ngày kết thúc khuyến mãi phải từ ngày bắt đầu trở đi");
     }
+
+    private static void ValidateUnitType(SaveUnitTypeRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.TypeName) || req.TypeName.Trim().Length < 2)
+            throw AppException.BadRequest("Tên loại kho dài từ 2 đến 100 ký tự");
+        if (decimal.Round(req.LengthMeters, 2) != req.LengthMeters
+            || decimal.Round(req.WidthMeters, 2) != req.WidthMeters
+            || decimal.Round(req.HeightMeters, 2) != req.HeightMeters)
+            throw AppException.BadRequest("Kích thước (m) chỉ hỗ trợ tối đa 2 chữ số thập phân");
+        if (req.BaseDailyRate > req.BaseMonthlyRate)
+            throw AppException.BadRequest("Giá theo ngày không được lớn hơn giá theo tháng");
+    }
+
+    private static UnitTypeDto ToUnitTypeDto(UnitType t) =>
+        new(t.UnitTypeId, t.TypeName, t.LengthMeters, t.WidthMeters, t.HeightMeters,
+            t.VolumeCubicMeters, t.HasClimateControl, t.BaseDailyRate, t.BaseMonthlyRate, t.Description);
 
     private static FacilityDto ToFacilityDto(Facility facility) =>
         new(facility.FacilityId, facility.FacilityName, facility.Address, facility.City,
