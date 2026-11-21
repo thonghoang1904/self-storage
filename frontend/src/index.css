@@ -1563,3 +1563,5 @@ tr.row-selected td { background: var(--cyan-25); }
 .facility-pick { display: grid; gap: 10px; }
 .facility-pick-item { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); cursor: pointer; color: inherit; font: inherit; }
 .facility-pick-item:hover, .facility-pick-item:focus-visible { border-color: var(--cyan); background: var(--cyan-25); }
+.sidebar-nav .nav-count { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; display: inline-grid; place-items: center; background: #ef4444; color: #fff; font-size: 11.5px; font-weight: 800; line-height: 1; }
+.sidebar-nav a.active .nav-count { margin-right: 6px; }

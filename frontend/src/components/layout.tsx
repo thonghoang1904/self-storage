@@ -217,6 +217,49 @@ export function useStaffFacility() {
   return ctx
 }
 
+/** What waits for staff at a facility, per sidebar entry (null = could not load, so no badge). */
+type StaffTodo = Partial<Record<'gate' | 'reservations' | 'billing' | 'renewals' | 'returns' | 'support' | 'cancellations', { n: number; hint: string }>>
+function useStaffTodo(facilityId: number | null, pathname: string): StaffTodo {
+  const [todo, setTodo] = useState<StaffTodo>({})
+  useEffect(() => {
+    if (!facilityId) return
+    let live = true
+    const count = async <T,>(url: string, pick: (rows: T[]) => number) => pick(await api<T[]>(url))
+    const refresh = async () => {
+      const base = `/api/facilities/${facilityId}`
+      const [gate, rsv, bills, overdue, early, support, cancels] = await Promise.allSettled([
+        count<{ status: string }>(`/api/gate/facilities/${facilityId}/visit-registrations?status=Pending`, (r) => r.filter((x) => x.status === 'Pending').length),
+        count<{ status: string }>(`${base}/reservations`, (r) => r.filter((x) => x.status === 'Confirmed').length),
+        count<{ status: string }>(`/api/invoices/facilities/${facilityId}`, (r) => r.filter((x) => x.status === 'Overdue').length),
+        count<unknown>(`/api/contracts/facilities/${facilityId}/overdue`, (r) => r.length),
+        count<{ status: string }>(`/api/contracts/facilities/${facilityId}/early-return-requests`, (r) => r.filter((x) => x.status === 'Pending').length),
+        count<{ status: string }>(`/api/support-requests/facilities/${facilityId}`, (r) => r.filter((x) => x.status === 'Open' || x.status === 'InProgress').length),
+        count<{ status: string }>(`${base}/cancellation-requests`, (r) => r.filter((x) => x.status === 'Pending').length),
+      ])
+      if (!live) return
+      const v = (r: PromiseSettledResult<number>, hint: string) => (r.status === 'fulfilled' ? { n: r.value, hint } : undefined)
+      setTodo({
+        gate: v(gate, 'lịch vào kho chờ duyệt'),
+        reservations: v(rsv, 'đơn đã cọc chờ bàn giao kho'),
+        billing: v(bills, 'hóa đơn quá hạn cần nhắc thu'),
+        renewals: v(overdue, 'hợp đồng quá hạn'),
+        returns: v(early, 'yêu cầu trả kho sớm chờ duyệt'),
+        support: v(support, 'yêu cầu hỗ trợ cần xử lý'),
+        cancellations: v(cancels, 'yêu cầu hủy chờ duyệt'),
+      })
+    }
+    void refresh()
+    const timer = window.setInterval(() => { void refresh() }, 60_000)
+    return () => { live = false; window.clearInterval(timer) }
+  }, [facilityId, pathname])
+  return todo
+}
+/** Red count on a sidebar entry when something waits there. */
+function NavCount({ item }: { item?: { n: number; hint: string } }) {
+  if (!item || item.n <= 0) return null
+  return <span className="nav-count" title={`${item.n} ${item.hint}`} aria-label={`${item.n} ${item.hint}`}>{item.n > 99 ? '99+' : item.n}</span>
+}
+
 export function StaffLayout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
@@ -237,6 +280,7 @@ export function StaffLayout() {
       .catch((e) => setError((e as Error).message))
   }, [])
 
+  const todo = useStaffTodo(facilityId, pathname)
   const title = pathname === '/facility' ? 'Tổng Quan Cơ Sở'
     : pathname.startsWith('/facility-units') ? 'Kho Lưu Trữ'
     : pathname.startsWith('/facility-staff') ? 'Nhân Viên Cơ Sở'
@@ -254,13 +298,13 @@ export function StaffLayout() {
         <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
           <div className="sidebar-brand"><Logo area="Facility" light /></div>
           <nav className="sidebar-nav">
-            <NavLink to="/gate"><Icon name="door" /> Cổng Ra Vào</NavLink>
-            <NavLink to="/reservations"><Icon name="clipboard" /> Đặt Kho</NavLink>
-            <NavLink to="/staff-billing"><Icon name="wallet" /> Hóa Đơn</NavLink>
-            <NavLink to="/staff-contracts"><Icon name="refresh" /> Gia Hạn</NavLink>
-            <NavLink to="/staff-return"><Icon name="key" /> Trả Kho</NavLink>
-            <NavLink to="/staff-support"><Icon name="phone" /> Hỗ Trợ</NavLink>
-            <NavLink to="/staff-cancellations"><Icon name="x" /> Hủy Đặt Kho</NavLink>
+            <NavLink to="/gate"><Icon name="door" /> Cổng Ra Vào <NavCount item={todo.gate} /></NavLink>
+            <NavLink to="/reservations"><Icon name="clipboard" /> Đặt Kho <NavCount item={todo.reservations} /></NavLink>
+            <NavLink to="/staff-billing"><Icon name="wallet" /> Hóa Đơn <NavCount item={todo.billing} /></NavLink>
+            <NavLink to="/staff-contracts"><Icon name="refresh" /> Gia Hạn <NavCount item={todo.renewals} /></NavLink>
+            <NavLink to="/staff-return"><Icon name="key" /> Trả Kho <NavCount item={todo.returns} /></NavLink>
+            <NavLink to="/staff-support"><Icon name="phone" /> Hỗ Trợ <NavCount item={todo.support} /></NavLink>
+            <NavLink to="/staff-cancellations"><Icon name="x" /> Hủy Đặt Kho <NavCount item={todo.cancellations} /></NavLink>
             <NavLink to="/facility-contracts"><Icon name="file" /> Hợp Đồng</NavLink>
           </nav>
           {user && (
