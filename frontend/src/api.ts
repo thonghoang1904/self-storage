@@ -188,6 +188,7 @@ const FIELD_LABELS: Record<string, string> = {
   PhoneNumber: 'Số điện thoại', CitizenId: 'Số CCCD', Title: 'Tiêu đề', Description: 'Mô tả', Relationship: 'Quan hệ',
   FacilityName: 'Tên cơ sở', Address: 'Địa chỉ', City: 'Thành phố', District: 'Quận/Huyện', Hotline: 'Hotline',
   OperatingHours: 'Giờ hoạt động', UnitCode: 'Mã kho', Notes: 'Ghi chú', Token: 'Mã xác minh',
+  LengthCm: 'Chiều dài', WidthCm: 'Chiều rộng', HeightCm: 'Chiều cao', Quantity: 'Số lượng', Name: 'Tên món đồ',
 }
 const label = (field: string) => FIELD_LABELS[field] ?? field
 

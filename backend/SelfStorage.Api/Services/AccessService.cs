@@ -1,4 +1,5 @@
 using System.Data;
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using SelfStorage.Api.Data;
 using SelfStorage.Api.Data.Entities;
@@ -14,6 +15,8 @@ namespace SelfStorage.Api.Services;
 /// </summary>
 public class AccessService(SelfStorageDbContext db, RentalPolicyService rentalPolicies, TimeProvider clock)
 {
+    private const string MoveInPurposePrefix = "Gửi đồ vào kho";
+    private static readonly CultureInfo ViCulture = CultureInfo.GetCultureInfo("vi-VN");
     private DateTime Now => clock.GetLocalNow().DateTime;   // DB defaults use SYSDATETIME() (server local time)
 
     public async Task<VisitRegistrationDto> CreateVisitRegistrationAsync(
@@ -21,6 +24,7 @@ public class AccessService(SelfStorageDbContext db, RentalPolicyService rentalPo
     {
         var contract = await db.Contracts
             .Include(c => c.Unit).ThenInclude(u => u.Facility)
+            .Include(c => c.Unit).ThenInclude(u => u.UnitType)
             .Include(c => c.Customer)
             .Include(c => c.AuthorizedPersons)
             .FirstOrDefaultAsync(c => c.ContractId == contractId && c.CustomerId == customerId, ct)
@@ -50,6 +54,8 @@ public class AccessService(SelfStorageDbContext db, RentalPolicyService rentalPo
             && !operatingWindow.ContainsVisit(localEntry, localExit))
             throw AppException.BadRequest(
                 $"Thời gian đăng ký phải nằm trong giờ hoạt động của cơ sở ({operatingWindow.FormatRange()})");
+
+        ValidateMoveInItems(req.Purpose, req.Items, contract.Unit.UnitType);
 
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var overlaps = await db.VisitRegistrations.AnyAsync(v =>
@@ -495,6 +501,161 @@ public class AccessService(SelfStorageDbContext db, RentalPolicyService rentalPo
             .Include(c => c.AuthorizedPersons)
             .FirstOrDefaultAsync(c => c.ContractId == contractId && c.Unit.FacilityId == facilityId, ct)
         ?? throw AppException.NotFound("Không tìm thấy hợp đồng tại cơ sở này");
+
+    /// <summary>
+    /// Validates move-in item dimensions in cm: locks height (floor-plane rotation only),
+    /// rejects rigid per-item / cross-item packing overflows, and enforces total unit volume.
+    /// </summary>
+    private static void ValidateMoveInItems(string purpose, IReadOnlyList<MoveInItemRequest>? items, UnitType unitType)
+    {
+        var isMoveIn = purpose.Trim().StartsWith(MoveInPurposePrefix, StringComparison.OrdinalIgnoreCase);
+        if (!isMoveIn && (items is null || items.Count == 0))
+            return;
+
+        if (items is null || items.Count == 0)
+            throw AppException.BadRequest(
+                "Vui lòng khai báo ít nhất một món đồ và nhập đủ 3 chiều kích thước (Dài × Rộng × Cao tính bằng cm)");
+        if (items.Count > 100)
+            throw AppException.BadRequest("Tối đa 100 món đồ cho mỗi lần đăng ký đưa đồ vào kho");
+
+        var unitLengthCm = unitType.LengthMeters * 100m;
+        var unitWidthCm = unitType.WidthMeters * 100m;
+        var unitHeightCm = unitType.HeightMeters * 100m;
+        var shortFloorCm = Math.Min(unitLengthCm, unitWidthCm);
+        var longFloorCm = Math.Max(unitLengthCm, unitWidthCm);
+        var unitFloorAreaCm2 = unitLengthCm * unitWidthCm;
+        var unitVolumeM3 = unitType.VolumeCubicMeters > 0m
+            ? unitType.VolumeCubicMeters
+            : unitType.LengthMeters * unitType.WidthMeters * unitType.HeightMeters;
+        var unitSizeLabel = string.Format(
+            ViCulture,
+            "{0:0.##}×{1:0.##}×{2:0.##} cm",
+            unitLengthCm,
+            unitWidthCm,
+            unitHeightCm);
+
+        decimal totalVolumeM3 = 0m;
+        long centerBlockers = 0;
+        decimal tallFootprintCm2 = 0m;
+        foreach (var item in items)
+        {
+            var name = (item.Name ?? string.Empty).Trim();
+            if (name.Length == 0)
+                throw AppException.BadRequest("Vui lòng nhập tên cho tất cả món đồ khai báo");
+            if (item.Quantity is < 1 or > 999)
+                throw AppException.BadRequest($"Số lượng của \"{name}\" phải từ 1 đến 999");
+            if (item.LengthCm is < 0.1m or > 2000m
+                || item.WidthCm is < 0.1m or > 2000m
+                || item.HeightCm is < 0.1m or > 2000m)
+                throw AppException.BadRequest(
+                    $"Kích thước \"{name}\" không hợp lệ (mỗi chiều từ 0,1 đến 2000 cm)");
+
+            if (item.HeightCm > unitHeightCm)
+            {
+                throw AppException.BadRequest(string.Format(
+                    ViCulture,
+                    "Món \"{0}\" cao {1:0.##} cm vượt quá chiều cao kho ({2:0.##} cm)",
+                    name,
+                    item.HeightCm,
+                    unitHeightCm));
+            }
+
+            var minItemCm = Math.Min(item.LengthCm, item.WidthCm);
+            var maxItemCm = Math.Max(item.LengthCm, item.WidthCm);
+            if (minItemCm > shortFloorCm || maxItemCm > longFloorCm)
+            {
+                throw AppException.BadRequest(string.Format(
+                    ViCulture,
+                    "Món \"{0}\" (đáy {1:0.##}×{2:0.##} cm) tràn quá chiều dài/rộng mặt sàn kho ({3:0.##}×{4:0.##} cm)",
+                    name,
+                    item.LengthCm,
+                    item.WidthCm,
+                    unitLengthCm,
+                    unitWidthCm));
+            }
+
+            var maxQty = MaxItemQuantity(
+                unitLengthCm, unitWidthCm, unitHeightCm,
+                item.LengthCm, item.WidthCm, item.HeightCm);
+            if (item.Quantity > maxQty)
+            {
+                var itemSize = string.Format(
+                    ViCulture,
+                    "{0:0.##}×{1:0.##}×{2:0.##} cm",
+                    item.LengthCm,
+                    item.WidthCm,
+                    item.HeightCm);
+                throw AppException.BadRequest(
+                    $"Kho ({unitSizeLabel}) chỉ xếp được tối đa {maxQty} món \"{name}\" ({itemSize})");
+            }
+
+            if (minItemCm > unitLengthCm / 2m && minItemCm > unitWidthCm / 2m && item.HeightCm > unitHeightCm / 2m)
+                centerBlockers += item.Quantity;
+            if (item.HeightCm > unitHeightCm / 2m)
+                tallFootprintCm2 += item.LengthCm * item.WidthCm * item.Quantity;
+
+            totalVolumeM3 += (item.LengthCm * item.WidthCm * item.HeightCm / 1_000_000m) * item.Quantity;
+        }
+
+        if (centerBlockers > 1)
+        {
+            throw AppException.BadRequest(
+                $"Các món đồ có kích thước lớn hơn một nửa chiều kho ({unitSizeLabel}) không thể xếp cùng lúc quá 1 món");
+        }
+
+        if (tallFootprintCm2 > unitFloorAreaCm2)
+        {
+            throw AppException.BadRequest(string.Format(
+                ViCulture,
+                "Tổng diện tích đáy các món cao quá nửa kho ({0:0.###} m²) vượt quá diện tích sàn kho ({1:0.###} m²)",
+                tallFootprintCm2 / 10_000m,
+                unitFloorAreaCm2 / 10_000m));
+        }
+
+        if (totalVolumeM3 > unitVolumeM3)
+        {
+            throw AppException.BadRequest(string.Format(
+                ViCulture,
+                "Tổng thể tích đồ khai báo ({0:0.###} m³) vượt quá sức chứa của kho ({1:0.###} m³)",
+                totalVolumeM3,
+                unitVolumeM3));
+        }
+    }
+
+    private static long MaxItemQuantity(
+        decimal unitL, decimal unitW, decimal unitH,
+        decimal itemL, decimal itemW, decimal itemH)
+    {
+        var maxLayers = (long)decimal.Floor(unitH / itemH);
+        var shortFloor = Math.Min(unitL, unitW);
+        var longFloor = Math.Max(unitL, unitW);
+        var minItem = Math.Min(itemL, itemW);
+        var maxItem = Math.Max(itemL, itemW);
+
+        long maxPerLayer;
+        if (maxItem > shortFloor)
+        {
+            maxPerLayer = (long)decimal.Floor(longFloor / maxItem) * (long)decimal.Floor(shortFloor / minItem);
+        }
+        else if (itemL == itemW)
+        {
+            maxPerLayer = (long)decimal.Floor(unitL / itemL) * (long)decimal.Floor(unitW / itemL);
+        }
+        else if (itemL + itemW > longFloor)
+        {
+            var orient1 = (long)decimal.Floor(unitL / itemL) * (long)decimal.Floor(unitW / itemW);
+            var orient2 = (long)decimal.Floor(unitL / itemW) * (long)decimal.Floor(unitW / itemL);
+            maxPerLayer = Math.Max(orient1, orient2);
+        }
+        else
+        {
+            var areaBound = (long)decimal.Floor((unitL * unitW) / (itemL * itemW));
+            var gridBound = (long)decimal.Floor(unitL / minItem) * (long)decimal.Floor(unitW / minItem);
+            maxPerLayer = Math.Min(areaBound, gridBound);
+        }
+
+        return maxLayers * maxPerLayer;
+    }
 
     /// <summary>Returns the CCCD on file for the visitor (customer, or an active authorized person).</summary>
     private static string? ResolveVisitor(Contract contract, int? authorizedPersonId)

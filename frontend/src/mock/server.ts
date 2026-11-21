@@ -1559,6 +1559,59 @@ const routes: [string, RegExp, Handler][] = [
       throw conflict('Bạn đã có lịch ra/vào đang chờ duyệt hoặc được duyệt trong khung giờ này')
     const purpose = String(body.purpose ?? '').trim()
     if (!purpose) throw bad('Vui lòng nhập mục đích vào kho')
+    const rawItems = Array.isArray(body.items) ? body.items as { name?: string; quantity?: number; lengthCm?: number; widthCm?: number; heightCm?: number }[] : []
+    if (purpose.startsWith('Gửi đồ vào kho') || rawItems.length > 0) {
+      if (rawItems.length === 0)
+        throw bad('Vui lòng khai báo ít nhất một món đồ và nhập đủ 3 chiều kích thước (Dài × Rộng × Cao tính bằng cm)')
+      if (rawItems.length > 100)
+        throw bad('Tối đa 100 món đồ cho mỗi lần đăng ký đưa đồ vào kho')
+      const unit = db.units.find((u) => u.unitId === c.unitId)
+      const unitType = unit ? db.unitTypes.find((t) => t.unitTypeId === unit.unitTypeId) : undefined
+      if (unitType) {
+        const unitL = unitType.lengthMeters * 100, unitW = unitType.widthMeters * 100, unitH = unitType.heightMeters * 100
+        const shortFloor = Math.min(unitL, unitW), longFloor = Math.max(unitL, unitW)
+        const unitFloorAreaCm2 = unitL * unitW
+        const uVol = unitType.volumeCubicMeters > 0 ? unitType.volumeCubicMeters : unitType.lengthMeters * unitType.widthMeters * unitType.heightMeters
+        const fmtN = (x: number) => Number(x.toFixed(2)).toLocaleString('vi-VN', { maximumFractionDigits: 2 })
+        const fmtV = (v: number) => Number(v.toFixed(3)).toLocaleString('vi-VN', { maximumFractionDigits: 3 })
+        const uLabel = `${fmtN(unitL)}×${fmtN(unitW)}×${fmtN(unitH)} cm`
+        const fdiv = (a: number, b: number) => Math.floor(a / b + 1e-9)
+        let totalVol = 0, centerBlockers = 0, tallFootprintCm2 = 0
+        for (const it of rawItems) {
+          const name = String(it.name ?? '').trim()
+          const qty = Number(it.quantity), l = Number(it.lengthCm), w = Number(it.widthCm), h = Number(it.heightCm)
+          if (!name) throw bad('Vui lòng nhập tên cho tất cả món đồ khai báo')
+          if (!Number.isInteger(qty) || qty < 1 || qty > 999) throw bad(`Số lượng của "${name}" phải từ 1 đến 999`)
+          if (!(l >= 0.1 && l <= 2000 && w >= 0.1 && w <= 2000 && h >= 0.1 && h <= 2000))
+            throw bad(`Kích thước "${name}" không hợp lệ (mỗi chiều từ 0,1 đến 2000 cm)`)
+          if (h > unitH + 1e-6)
+            throw bad(`Món "${name}" cao ${fmtN(h)} cm vượt quá chiều cao kho (${fmtN(unitH)} cm)`)
+          const minItem = Math.min(l, w), maxItem = Math.max(l, w)
+          if (minItem > shortFloor + 1e-6 || maxItem > longFloor + 1e-6)
+            throw bad(`Món "${name}" (đáy ${fmtN(l)}×${fmtN(w)} cm) tràn quá chiều dài/rộng mặt sàn kho (${fmtN(unitL)}×${fmtN(unitW)} cm)`)
+          const maxLayers = fdiv(unitH, h)
+          const maxPerLayer = maxItem > shortFloor + 1e-6
+            ? fdiv(longFloor, maxItem) * fdiv(shortFloor, minItem)
+            : Math.abs(l - w) < 1e-6
+              ? fdiv(unitL, l) * fdiv(unitW, l)
+              : l + w > longFloor + 1e-6
+                ? Math.max(fdiv(unitL, l) * fdiv(unitW, w), fdiv(unitL, w) * fdiv(unitW, l))
+                : Math.min(fdiv(unitL * unitW, l * w), fdiv(unitL, minItem) * fdiv(unitW, minItem))
+          const maxQty = maxLayers * maxPerLayer
+          if (qty > maxQty)
+            throw bad(`Kho (${uLabel}) chỉ xếp được tối đa ${maxQty} món "${name}" (${fmtN(l)}×${fmtN(w)}×${fmtN(h)} cm)`)
+          if (minItem > unitL / 2 + 1e-6 && minItem > unitW / 2 + 1e-6 && h > unitH / 2 + 1e-6) centerBlockers += qty
+          if (h > unitH / 2 + 1e-6) tallFootprintCm2 += l * w * qty
+          totalVol += (l * w * h / 1e6) * qty
+        }
+        if (centerBlockers > 1)
+          throw bad(`Các món đồ có kích thước lớn hơn một nửa chiều kho (${uLabel}) không thể xếp cùng lúc quá 1 món`)
+        if (tallFootprintCm2 > unitFloorAreaCm2 + 1e-4)
+          throw bad(`Tổng diện tích đáy các món cao quá nửa kho (${fmtV(tallFootprintCm2 / 10_000)} m²) vượt quá diện tích sàn kho (${fmtV(unitFloorAreaCm2 / 10_000)} m²)`)
+        if (totalVol > uVol + 1e-9)
+          throw bad(`Tổng thể tích đồ khai báo (${fmtV(totalVol)} m³) vượt quá sức chứa của kho (${fmtV(uVol)} m³)`)
+      }
+    }
     const v: Vreg = { visitRegistrationId: nextId(), contractId: c.contractId, customerId: me.userId, authorizedPersonId: apId, scheduledEntryAt: entry, scheduledExitAt: exit, purpose, status: 'Pending', requestedAt: localIso(new Date()), reviewedAt: null, reviewNotes: null }
     visitsOf().push(v)
     return visitDto(v)

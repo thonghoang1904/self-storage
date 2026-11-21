@@ -53,12 +53,26 @@ public record DenyEntryRequest(
     [Required] string Reason,
     [StringLength(500)] string? Notes);
 
+public record MoveInItemRequest(
+    [Required(ErrorMessage = "Vui lòng nhập tên món đồ")]
+    [StringLength(60, ErrorMessage = "Tên món đồ tối đa 60 ký tự")]
+    string Name,
+    [Range(1, 999, ErrorMessage = "Số lượng mỗi món phải từ 1 đến 999")]
+    int Quantity,
+    [Range(typeof(decimal), "0.1", "2000", ErrorMessage = "Chiều dài (cm) phải từ 0,1 đến 2000")]
+    decimal LengthCm,
+    [Range(typeof(decimal), "0.1", "2000", ErrorMessage = "Chiều rộng (cm) phải từ 0,1 đến 2000")]
+    decimal WidthCm,
+    [Range(typeof(decimal), "0.1", "2000", ErrorMessage = "Chiều cao (cm) phải từ 0,1 đến 2000")]
+    decimal HeightCm);
+
 public record CreateVisitRegistrationRequest(
     [Required, CitizenId] string CitizenId,
     int? AuthorizedPersonId,
     [Required] DateTimeOffset ScheduledEntryAt,
     [Required] DateTimeOffset ScheduledExitAt,
-    [Required, StringLength(255)] string Purpose);
+    [Required, StringLength(255)] string Purpose,
+    IReadOnlyList<MoveInItemRequest>? Items = null);
 
 // Nullable so that a missing value is a 400 instead of silently binding to false (= reject).
 public record ReviewVisitRegistrationRequest(

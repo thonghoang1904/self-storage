@@ -73,7 +73,7 @@ erDiagram
         nvarchar Address
         nvarchar City
         nvarchar District
-        nvarchar ContactPhone
+        varchar Hotline
         nvarchar OperatingHours
         nvarchar Status "Active, Maintenance, Closed"
     }
@@ -97,7 +97,7 @@ erDiagram
         nvarchar UnitCode "UQ (FacilityID, UnitCode)"
         int FloorNumber
         decimal MonthlyPrice
-        nvarchar Status "Available, Reserved, Occupied, Maintenance, LockedOverdue"
+        nvarchar Status "Available, Reserved, Rented, UnderMaintenance, OverdueLocked"
     }
 
     Reservations {
@@ -129,8 +129,8 @@ erDiagram
         date EndDate
         decimal MonthlyRentFee
         decimal DepositPaid
-        decimal DiscountApplied
-        nvarchar Status "Draft, Active, OverdueLocked, Expired, Terminated, Completed"
+        decimal PrepaidRentCredit
+        nvarchar Status "Active, Renewed, Terminated, Overdue, Liquidated"
     }
 
     Invoices {
@@ -139,14 +139,14 @@ erDiagram
         int ContractID FK "Nullable"
         int ReservationID FK "Nullable"
         int CustomerID FK
-        nvarchar InvoiceType "Deposit, InitialRent, MonthlyRent, Renewal, Penalty, EarlyReturn"
+        nvarchar InvoiceType "DEPOSIT, MONTHLY_RENT, RENEWAL, OVERDUE_FINE, EXTRA_CHARGE"
         decimal SubTotal
         decimal DiscountAmount
         decimal TotalAmount "Computed (SubTotal - DiscountAmount)"
         date DueDate
         date BillingPeriodStart "Nullable"
         date BillingPeriodEnd "Nullable"
-        nvarchar Status "Unpaid, Paid, Overdue, Cancelled, Refunded"
+        nvarchar Status "Unpaid, Paid, Overdue, Cancelled"
     }
 
     InvoiceDetails {
@@ -183,7 +183,7 @@ erDiagram
     AccessRecords {
         bigint AccessRecordID PK
         int ContractID FK
-        int VisitRegistrationID FK "Nullable"
+        bigint VisitRegistrationID FK "Nullable"
         int FacilityID FK
         int UnitID FK
         int AuthorizedPersonID FK "Nullable"
@@ -203,9 +203,9 @@ erDiagram
         int ContractID FK "Nullable"
         int UnitID FK "Nullable"
         int AssignedStaffID FK "Nullable"
-        nvarchar Category "AccessIssue, Maintenance, Billing, EarlyReturn, Other"
+        nvarchar Category "LockIssue, AccessCodeIssue, DamagedUnit, PaymentIssue, StoredItemsIssue, Other"
         nvarchar Priority "Low, Medium, High, Urgent"
-        nvarchar Subject
+        nvarchar Title
         nvarchar Status "Open, InProgress, Resolved, Closed"
     }
 ```

@@ -39,9 +39,49 @@ const toMin = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slic
 const toHHMM = (t: number) => `${pad(Math.floor(t / 60))}:${pad(t % 60)}`
 const hhmm = (iso: string) => iso.slice(11, 16)
 const dmy = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/')
-const num = (s: string) => { const n = Number(s.replace(',', '.')); return Number.isFinite(n) && n > 0 ? n : 0 }
-/** Item volume in m³ from centimetres. */
-const volumeOf = (i: Item) => (num(i.l) * num(i.w) * num(i.h) / 1e6) * Math.max(1, i.quantity)
+const DIM_MIN = 0.1
+const DIM_MAX = 2000
+const num = (s: string) => { const n = Number(s.trim().replace(',', '.')); return Number.isFinite(n) && n > 0 ? n : 0 }
+const fmtCm = (v: number) => Number(v.toFixed(2)).toLocaleString('vi-VN', { maximumFractionDigits: 2 })
+const fmtVol = (v: number) => Number(v.toFixed(3)).toLocaleString('vi-VN', { maximumFractionDigits: 3 })
+const floorDiv = (a: number, b: number) => Math.floor(a / b + 1e-9)
+function maxItemQty(unitL: number, unitW: number, unitH: number, l: number, w: number, h: number): number {
+  const maxLayers = floorDiv(unitH, h)
+  const shortFloor = Math.min(unitL, unitW), longFloor = Math.max(unitL, unitW)
+  const minItem = Math.min(l, w), maxItem = Math.max(l, w)
+  let maxPerLayer: number
+  if (maxItem > shortFloor + 1e-6) {
+    maxPerLayer = floorDiv(longFloor, maxItem) * floorDiv(shortFloor, minItem)
+  } else if (Math.abs(l - w) < 1e-6) {
+    maxPerLayer = floorDiv(unitL, l) * floorDiv(unitW, l)
+  } else if (l + w > longFloor + 1e-6) {
+    maxPerLayer = Math.max(floorDiv(unitL, l) * floorDiv(unitW, w), floorDiv(unitL, w) * floorDiv(unitW, l))
+  } else {
+    maxPerLayer = Math.min(floorDiv(unitL * unitW, l * w), floorDiv(unitL, minItem) * floorDiv(unitW, minItem))
+  }
+  return maxLayers * maxPerLayer
+}
+function checkItemPlacement(it: Item, title: string, unitL: number, unitW: number, unitH: number, unitSizeLabel: string): string | null {
+  if (!(unitL > 0 && unitW > 0 && unitH > 0)) return null
+  const l = num(it.l), w = num(it.w), h = num(it.h)
+  if (l < DIM_MIN || l > DIM_MAX || w < DIM_MIN || w > DIM_MAX || h < DIM_MIN || h > DIM_MAX) return null
+  if (h > unitH + 1e-6)
+    return `Món "${title}" cao ${fmtCm(h)} cm vượt quá chiều cao kho (${fmtCm(unitH)} cm)`
+  const shortFloor = Math.min(unitL, unitW), longFloor = Math.max(unitL, unitW)
+  const minItem = Math.min(l, w), maxItem = Math.max(l, w)
+  if (minItem > shortFloor + 1e-6 || maxItem > longFloor + 1e-6)
+    return `Món "${title}" (đáy ${fmtCm(l)}×${fmtCm(w)} cm) tràn quá chiều dài/rộng mặt sàn kho (${fmtCm(unitL)}×${fmtCm(unitW)} cm)`
+  const qty = Math.max(1, Math.min(999, Math.trunc(it.quantity) || 1))
+  const maxQty = maxItemQty(unitL, unitW, unitH, l, w, h)
+  if (qty > maxQty)
+    return `Kho (${unitSizeLabel}) chỉ xếp được tối đa ${maxQty} món "${title}" (${fmtCm(l)}×${fmtCm(w)}×${fmtCm(h)} cm)`
+  return null
+}
+/** Item volume in m³ from centimetres (0 if any dimension is missing). */
+const volumeOf = (i: Item) => {
+  const l = num(i.l), w = num(i.w), h = num(i.h)
+  return l > 0 && w > 0 && h > 0 ? (l * w * h / 1e6) * Math.max(1, i.quantity) : 0
+}
 
 /** "Tủ lạnh ×1 (60×60×170cm)" */
 function itemText(i: Item) {
@@ -145,26 +185,78 @@ export default function MoveInRegistration() {
   const ended = c.status !== 'Active' && c.status !== 'Renewed'
   const locked = c.unitStatus === 'OverdueLocked' || c.status === 'Overdue'
   const active = contracts.filter((x) => x.status === 'Active' || x.status === 'Renewed')
+  const activeItems = items.filter((i) => i.name.trim() || i.l.trim() || i.w.trim() || i.h.trim())
   const named = items.filter((i) => i.name.trim())
   const pieces = named.reduce((n, i) => n + Math.max(1, i.quantity), 0)
   const volume = named.reduce((n, i) => n + volumeOf(i), 0)
-  // Unit volume from the contract (newer backends), else from the unit type found in the public list.
+  // Unit dimensions and volume from the contract (newer backends), else from the unit type found in the public list.
+  const unitL = (c.lengthMeters || type?.lengthMeters || 0) * 100
+  const unitW = (c.widthMeters || type?.widthMeters || 0) * 100
+  const unitH = (c.heightMeters || type?.heightMeters || 0) * 100
+  const hasUnitDims = unitL > 0 && unitW > 0 && unitH > 0
+  const unitSizeLabel = hasUnitDims ? `${fmtCm(unitL)}×${fmtCm(unitW)}×${fmtCm(unitH)} cm` : ''
   const capacity = c?.volumeCubicMeters || (c?.lengthMeters ? c.lengthMeters * c.widthMeters * c.heightMeters : 0)
     || (type ? type.volumeCubicMeters || type.lengthMeters * type.widthMeters * type.heightMeters : 0)
   const fill = capacity ? Math.round(volume / capacity * 100) : 0
+  const exceedsCapacity = capacity > 0 && volume > capacity + 1e-9
+  const placementErrorOf = (it: Item, idx: number) =>
+    checkItemPlacement(it, it.name.trim() || `Món ${idx + 1}`, unitL, unitW, unitH, unitSizeLabel)
+  const firstPlacementError = activeItems.map((it, idx) => placementErrorOf(it, idx)).find((msg): msg is string => Boolean(msg)) ?? null
+  const crossStats = activeItems.reduce(
+    (acc, it) => {
+      const l = num(it.l), w = num(it.w), h = num(it.h)
+      if (l >= DIM_MIN && w >= DIM_MIN && h >= DIM_MIN) {
+        const qty = Math.max(1, Math.min(999, Math.trunc(it.quantity) || 1))
+        const minItem = Math.min(l, w)
+        if (hasUnitDims && minItem > unitL / 2 + 1e-6 && minItem > unitW / 2 + 1e-6 && h > unitH / 2 + 1e-6)
+          acc.centerBlockers += qty
+        if (hasUnitDims && h > unitH / 2 + 1e-6)
+          acc.tallFootprintCm2 += l * w * qty
+      }
+      return acc
+    },
+    { centerBlockers: 0, tallFootprintCm2: 0 },
+  )
+  const unitFloorAreaCm2 = unitL * unitW
+  const exceedsCenterBlockers = hasUnitDims && crossStats.centerBlockers > 1
+  const exceedsTallFootprint = hasUnitDims && crossStats.tallFootprintCm2 > unitFloorAreaCm2 + 1e-4
+  const crossError = exceedsCenterBlockers
+    ? `Các món đồ có kích thước lớn hơn một nửa chiều kho (${unitSizeLabel}) không thể xếp cùng lúc quá 1 món`
+    : exceedsTallFootprint
+      ? `Tổng diện tích đáy các món cao quá nửa kho (${fmtVol(crossStats.tallFootprintCm2 / 10_000)} m²) vượt quá diện tích sàn kho (${fmtVol(unitFloorAreaCm2 / 10_000)} m²)`
+      : null
+  const hasFitError = Boolean(firstPlacementError || crossError || exceedsCapacity)
   const visitor = who == null ? null : people.find((p) => p.authorizedPersonId === who) ?? null
   const purpose = buildPurpose(items, vehicle, helpers, phone, note)
 
   const setItem = (key: number, patch: Partial<Item>) => { setItems((is) => is.map((i) => (i.key === key ? { ...i, ...patch } : i))); clearErr('items') }
 
+  const validateItems = () => {
+    if (activeItems.length === 0) return 'Vui lòng khai báo ít nhất một món đồ'
+    for (let idx = 0; idx < activeItems.length; idx++) {
+      const it = activeItems[idx]
+      const title = it.name.trim() || `Món ${idx + 1}`
+      if (!it.name.trim()) return `Vui lòng nhập tên cho Món ${idx + 1}`
+      if (!it.l.trim() || !it.w.trim() || !it.h.trim())
+        return `Vui lòng nhập đủ 3 chiều Dài × Rộng × Cao (cm) cho "${title}"`
+      const l = num(it.l), w = num(it.w), h = num(it.h)
+      if (l < DIM_MIN || l > DIM_MAX || w < DIM_MIN || w > DIM_MAX || h < DIM_MIN || h > DIM_MAX)
+        return `Kích thước "${title}" không hợp lệ (mỗi chiều từ 0,1 đến 2000 cm)`
+      const placeErr = checkItemPlacement(it, title, unitL, unitW, unitH, unitSizeLabel)
+      if (placeErr) return placeErr
+    }
+    if (crossError) return crossError
+    if (exceedsCapacity)
+      return `Tổng thể tích đồ khai báo (${fmtVol(volume)} m³) vượt quá sức chứa của kho (${fmtVol(capacity)} m³). Vui lòng giảm số lượng/kích thước hoặc thuê thêm kho.`
+    return undefined
+  }
+
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
     setNotice('')
-    const badItem = items.find((i) => i.name.trim() && [i.l, i.w, i.h].some((d) => d.trim() && (!num(d) || num(d) > 2000)))
     const errs: typeof fieldErr = {
-      items: named.length === 0 ? 'Vui lòng khai báo ít nhất một món đồ'
-        : badItem ? `Kích thước "${badItem.name.trim()}" không hợp lệ (số cm từ 1 đến 2000)` : undefined,
+      items: validateItems(),
       entry: !entrySlots.includes(entry) ? 'Giờ đến không còn hợp lệ, vui lòng chọn lại giờ'
         : exitMin <= toMin(entry) ? 'Giờ chuyển đồ vượt quá giờ đóng cửa của kho, vui lòng chọn giờ sớm hơn' : undefined,
       citizenId: checkCitizenId(citizenId, 'Số CCCD người vào kho') || undefined,
@@ -188,6 +280,13 @@ export default function MoveInRegistration() {
           scheduledEntryAt: `${date}T${entry}:00+07:00`,
           scheduledExitAt: `${date}T${exit}:00+07:00`,
           purpose: purpose.text,
+          items: activeItems.map((i) => ({
+            name: i.name.trim(),
+            quantity: Math.max(1, Math.min(999, i.quantity)),
+            lengthCm: num(i.l),
+            widthCm: num(i.w),
+            heightCm: num(i.h),
+          })),
         },
       })
       setNotice(`Đã gửi đăng ký đưa ${pieces} món đồ vào kho ${r.unitCode} lúc ${hhmm(r.scheduledEntryAt)} ngày ${dmy(r.scheduledEntryAt)}. Nhân viên cơ sở sẽ duyệt trước giờ hẹn.`)
@@ -273,7 +372,7 @@ export default function MoveInRegistration() {
             {ended || locked ? (
               <section className="panel"><Empty icon="lock">{ended ? 'Hợp đồng đã kết thúc nên không thể đưa đồ vào kho.' : 'Kho đang bị khóa do quá hạn. Vui lòng thanh toán hoặc liên hệ cơ sở trước khi chuyển đồ.'}</Empty></section>
             ) : (
-              <form className="stack-lg" onSubmit={submit}>
+              <form className="stack-lg" onSubmit={submit} noValidate>
                 <section className="panel form-section">
                   <div className="section-head"><span className="step-no">01</span><div><h3>Kho nhận đồ</h3><p className="muted">Chọn hợp đồng / kho bạn muốn đưa đồ vào.</p></div></div>
                   <label className="field"><span>Hợp đồng & kho *</span>
@@ -291,8 +390,10 @@ export default function MoveInRegistration() {
                 </section>
 
                 <section className="panel form-section">
-                  <div className="section-head"><span className="step-no">02</span><div><h3>Danh sách đồ mang vào</h3><p className="muted">Khai báo từng món hoặc từng nhóm đồ; kích thước giúp ước tính chỗ trống trong kho.</p></div></div>
-                  {items.map((it, idx) => (
+                  <div className="section-head"><span className="step-no">02</span><div><h3>Danh sách đồ mang vào</h3><p className="muted">Nhập đủ 3 chiều kích thước (Dài × Rộng × Cao tính bằng cm) cho từng món. Chiều cao giữ cố định, chỉ xoay ngang trên mặt sàn kho.{hasUnitDims && ` Giới hạn kho ${c.unitCode}: ${unitSizeLabel} (${fmtVol(capacity)} m³).`}</p></div></div>
+                  {items.map((it, idx) => {
+                    const placeErr = placementErrorOf(it, idx)
+                    return (
                     <div key={it.key} className="item-card">
                       <div className="row between">
                         <b className="item-title"><Icon name="package" size={16} /> Món {idx + 1}{it.name.trim() && <span className="muted"> · {it.name.trim()}</span>}</b>
@@ -305,19 +406,22 @@ export default function MoveInRegistration() {
                         </label>
                       </div>
                       <div className="item-measure">
-                        <label className="field"><span>Số lượng</span><input type="number" min={1} max={999} value={it.quantity} onChange={(e) => setItem(it.key, { quantity: Math.max(1, Math.min(999, Number(e.target.value) || 1)) })} /></label>
-                        <div className="field"><span>Kích thước mỗi món (cm) · Dài × Rộng × Cao</span>
+                        <label className="field"><span>Số lượng *</span><input type="number" min={1} max={999} value={it.quantity} onChange={(e) => setItem(it.key, { quantity: Math.max(1, Math.min(999, Number(e.target.value) || 1)) })} /></label>
+                        <div className="field"><span>Kích thước mỗi món (cm) * · Dài × Rộng × Cao</span>
                           <div className="dims">
-                            <input inputMode="decimal" value={it.l} onChange={(e) => setItem(it.key, { l: e.target.value })} placeholder="Dài" aria-label="Dài (cm)" />
+                            <input inputMode="decimal" value={it.l} onChange={(e) => setItem(it.key, { l: e.target.value })} placeholder="Dài" aria-label="Dài (cm)" aria-required="true" />
                             <span>×</span>
-                            <input inputMode="decimal" value={it.w} onChange={(e) => setItem(it.key, { w: e.target.value })} placeholder="Rộng" aria-label="Rộng (cm)" />
+                            <input inputMode="decimal" value={it.w} onChange={(e) => setItem(it.key, { w: e.target.value })} placeholder="Rộng" aria-label="Rộng (cm)" aria-required="true" />
                             <span>×</span>
-                            <input inputMode="decimal" value={it.h} onChange={(e) => setItem(it.key, { h: e.target.value })} placeholder="Cao" aria-label="Cao (cm)" />
+                            <input inputMode="decimal" value={it.h} onChange={(e) => setItem(it.key, { h: e.target.value })} placeholder="Cao" aria-label="Cao (cm)" aria-required="true" />
                           </div>
                         </div>
                       </div>
+                      {placeErr && (
+                        <p className="alert bad"><Icon name="alert" size={15} />{placeErr}</p>
+                      )}
                     </div>
-                  ))}
+                  )})}
                   <button id="movein-items" type="button" className="btn dashed block" onClick={() => { setItems((is) => [...is, newItem()]); clearErr('items') }}><Icon name="plus" size={16} /> Thêm món đồ</button>
                   <FieldNote text={fieldErr.items} />
                   <label className="field"><span>Ghi chú cho nhân viên</span>
@@ -384,9 +488,15 @@ export default function MoveInRegistration() {
                       <div><dt>Thời gian</dt><dd>{entry} – {exit}, ngày {dmy(date)}</dd></div>
                       <div><dt>Người vào kho</dt><dd>{visitor ? visitor.fullName : user?.fullName}</dd></div>
                       <div><dt>Phương tiện</dt><dd>{vehicle}{helpers > 0 && ` · ${helpers} người phụ`}</dd></div>
-                      <div><dt>Thể tích ước tính</dt><dd>{volume ? `${volume.toFixed(2)} m³` : '—'}{capacity > 0 && volume > 0 && <small className={fill > 100 ? 'danger-text' : 'muted'}> · {fill}% kho ({capacity.toFixed(1)} m³)</small>}</dd></div>
+                      <div><dt>Thể tích ước tính</dt><dd>{volume > 0 ? `${fmtVol(volume)} m³` : '—'}{capacity > 0 && volume > 0 && <small className={exceedsCapacity ? 'danger-text' : 'muted'}> · {fill}% kho ({fmtVol(capacity)} m³)</small>}</dd></div>
                     </dl>
-                    {fill > 100 && <p className="alert bad"><Icon name="alert" size={15} />Đồ khai báo lớn hơn thể tích kho. Kiểm tra lại kích thước hoặc thuê thêm kho.</p>}
+                    {hasFitError && (
+                      <p className="alert bad"><Icon name="alert" size={15} />
+                        {firstPlacementError
+                          ?? crossError
+                          ?? `Tổng thể tích đồ khai báo (${fmtVol(volume)} m³) lớn hơn thể tích kho (${fmtVol(capacity)} m³). Vui lòng giảm số lượng/kích thước hoặc thuê thêm kho.`}
+                      </p>
+                    )}
                     <div className="purpose-preview">
                       <small className="muted">Nội dung gửi nhân viên cổng ({purpose.text.length}/{PURPOSE_MAX} ký tự{purpose.cut ? ', đã rút gọn' : ''}):</small>
                       <p>{named.length ? purpose.text : '—'}</p>
@@ -436,16 +546,17 @@ export default function MoveInRegistration() {
               <div className="unit-photo sm"><ContractUnitArt facilityId={c.facilityId} unitId={c.unitId} unitTypeName={c.unitTypeName} unitTypeId={c.unitTypeId} /></div>
               <div>
                 <h4 className="unit-title">Kho {c.unitCode}</h4>
-                <p className="muted">{c.unitTypeName || type?.typeName ? `${c.unitTypeName || type?.typeName} · ${capacity.toFixed(1)} m³` : c.facilityName}</p>
+                <p className="muted">{c.unitTypeName || type?.typeName ? `${c.unitTypeName || type?.typeName} · ${fmtVol(capacity)} m³` : c.facilityName}</p>
                 <span className={`badge ${ended || locked ? 'bad' : 'ok'}`}>{ended ? 'Đã kết thúc' : locked ? 'Đang khóa' : 'Đang hoạt động'}</span>
               </div>
               <div className="info-row"><span className="muted">Cơ sở</span><b>{c.facilityName}</b></div>
+              {hasUnitDims && <div className="info-row"><span className="muted">Kích thước kho</span><b>{unitSizeLabel}</b></div>}
               <div className="info-row"><span className="muted">Thời hạn</span><b>{fmtDate(c.startDate)} – {fmtDate(c.endDate)}</b></div>
               <div className="info-row"><span className="muted">Giờ mở cửa</span><b>{hoursText ?? '—'}</b></div>
               {capacity > 0 && (
                 <div className="stack-sm">
-                  <div className="info-row"><span className="muted">Đồ khai báo lần này</span><b>{volume.toFixed(2)} / {capacity.toFixed(1)} m³</b></div>
-                  <div className="pay-progress" role="progressbar" aria-valuenow={Math.min(fill, 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Tỷ lệ chiếm kho"><i style={{ width: `${Math.min(fill, 100)}%`, background: fill > 100 ? 'var(--bad)' : fill > 80 ? 'var(--warn)' : undefined }} /></div>
+                  <div className="info-row"><span className="muted">Đồ khai báo lần này</span><b>{fmtVol(volume)} / {fmtVol(capacity)} m³</b></div>
+                  <div className="pay-progress" role="progressbar" aria-valuenow={Math.min(fill, 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Tỷ lệ chiếm kho"><i style={{ width: `${Math.min(fill, 100)}%`, background: hasFitError ? 'var(--bad)' : fill > 80 ? 'var(--warn)' : undefined }} /></div>
                 </div>
               )}
               <div className="notice info-notice">

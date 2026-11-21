@@ -12,7 +12,7 @@ Phần này liệt kê toàn bộ các gói mã nguồn, tập lệnh cơ sở d
 | No. | File / Package | Notes |
 | --- | --- | --- |
 | 1 | **G1_SS_SourceCode_v1.0.zip** | Gói mã nguồn đầy đủ của toàn bộ hệ thống (phiên bản phát hành v1.0), bao gồm:<br>- backend/SelfStorage.Api: RESTful Web API xây dựng trên ASP.NET Core (.NET 10), Entity Framework Core, xác thực JWT, Google OAuth, Swagger và 3 dịch vụ chạy nền (OverdueService, MonthlyRentInvoiceService, EmailOutboxWorker).<br>- frontend/: Ứng dụng giao diện người dùng Single-Page Application (React 19, TypeScript, Vite) phục vụ cả 5 vai trò người dùng, kèm chế độ chạy giả lập độc lập (Demo Mode / Mock Server).<br>- scripts/: Bộ tập lệnh .bat và .ps1 tự động hóa kiểm tra máy, khởi tạo CSDL, chạy đồng thời toàn hệ thống và cấu hình thông tin bí mật (SMTP Gmail, VNPay, MoMo). |
-| 2 | **G1_SS_DB_final.sql** (thư mục `database/`) | Gói cơ sở dữ liệu Microsoft SQL Server hoàn chỉnh gồm cả cấu trúc bảng, ràng buộc toàn vẹn và dữ liệu mẫu:<br>- 01_schema.sql & setup_fresh.sql: Khởi tạo mới toàn bộ cấu trúc bảng cốt lõi và áp dụng tuần tự các bản nâng cấp.<br>- 02_billing_reservation_links.sql đến 18_renewal_max_months.sql & upgrade_existing.sql: 17 file migration mở rộng nghiệp vụ có tính lũy đẳng (idempotent), an toàn khi chạy lặp trên cơ sở dữ liệu đang vận hành.<br>- seed_demo_data.sql (cùng DevSeeder): Bộ dữ liệu mẫu gồm cơ sở kho, loại kho, hợp đồng, hóa đơn và tài khoản kiểm thử cho đầy đủ 5 vai trò. |
+| 2 | **G1_SS_DB_final.sql** (thư mục `database/`) | Gói cơ sở dữ liệu Microsoft SQL Server hoàn chỉnh gồm cả cấu trúc bảng, ràng buộc toàn vẹn và dữ liệu mẫu:<br>- 01_schema.sql & setup_fresh.sql: Khởi tạo mới toàn bộ cấu trúc bảng cốt lõi và áp dụng tuần tự các bản nâng cấp.<br>- 02_billing_reservation_links.sql đến 19_single_active_session.sql & upgrade_existing.sql: 18 file migration mở rộng nghiệp vụ có tính lũy đẳng (idempotent), an toàn khi chạy lặp trên cơ sở dữ liệu đang vận hành.<br>- seed_demo_data.sql (cùng DevSeeder): Bộ dữ liệu mẫu gồm cơ sở kho, loại kho, hợp đồng, hóa đơn và tài khoản kiểm thử cho đầy đủ 5 vai trò. |
 | 3 | **G1_SS_SRS_final.docx** | Tài liệu Đặc tả Yêu cầu Phần mềm (Software Requirements Specification) phiên bản cuối cùng: mô tả bài toán nghiệp vụ, phân quyền Actor, Use Cases, quy tắc kinh doanh và yêu cầu phi chức năng. |
 | 4 | **G1_SS_SDS_final.docx** | Tài liệu Đặc tả Thiết kế Hệ thống (Software Design Specification) phiên bản cuối cùng: kiến trúc tổng thể Client–Server, sơ đồ lớp, lược đồ cơ sở dữ liệu (ERD), Sequence Diagrams và đặc tả giao thức tích hợp cổng thanh toán / SMTP. |
 | 5 | **G1_SS_Final Product Backlog.xlsx** (`docs/total-project-tracking.csv`) | Bảng tổng hợp trạng thái hoàn thiện của toàn bộ 74 chức năng/màn hình trong dự án (71 Done – 95.95%, 3 Doing – 4.05%, 0 To Do), bao gồm:<br>- Tên API / Màn hình, nhóm tính năng, vai trò sử dụng (Actor) và mô tả chi tiết nghiệp vụ sau khi chuẩn hóa.<br>- Độ phức tạp (Simple / Medium / Complex), thành viên phụ trách (In Charge).<br>- Trạng thái cuối cùng và ghi chú đối chiếu trực tiếp tới từng Controller, Hosted Service, Migration SQL và Route giao diện. |
@@ -45,7 +45,7 @@ Phần này hướng dẫn chi tiết quy trình chuẩn bị môi trường, kh
 
 ### 2. Cấu trúc thư mục dự án (Repository Layout)
 
-- `database/`: Chứa schema gốc (`01_schema.sql`), 17 bản nâng cấp lũy đẳng (`02_...sql` đến `18_renewal_max_months.sql`), script tổng tạo mới (`setup_fresh.sql`), script nâng cấp an toàn (`upgrade_existing.sql`) và dữ liệu mẫu (`seed_demo_data.sql`).
+- `database/`: Chứa schema gốc (`01_schema.sql`), 18 bản nâng cấp lũy đẳng (`02_...sql` đến `19_single_active_session.sql`), script tổng tạo mới (`setup_fresh.sql`), script nâng cấp an toàn (`upgrade_existing.sql`) và dữ liệu mẫu (`seed_demo_data.sql`).
 - `backend/SelfStorage.Api/`: Dự án ASP.NET Core Web API (.NET 10), gồm `Controllers/` (17 controllers), `Services/` (nghiệp vụ cổng, hóa đơn, cổng thanh toán, email outbox, dịch vụ chạy nền), `Data/` (EF Core DbContext & Entities) và `Infrastructure/` (đồng hồ múi giờ Việt Nam `BusinessClock`, tự động migrate & nạp dữ liệu mẫu).
 - `frontend/`: Ứng dụng React + TypeScript + Vite; thư mục `src/pages/` chứa toàn bộ màn hình theo 5 vai trò và `src/mock/server.ts` phục vụ chế độ chạy Demo không cần Backend.
 - `scripts/`: Bộ công cụ bấm đúp chạy ngay trên Windows (`check-machine.bat`, `1-create-database.bat`, `RUN-ALL.bat`, `RESET-DATABASE.bat`) và 3 script PowerShell cấu hình SMTP / VNPay / MoMo.
@@ -64,7 +64,7 @@ dotnet user-secrets set "ConnectionStrings:SelfStorageDB" "Server=.\SQLEXPRESS;D
 **Hai phương thức khởi tạo cơ sở dữ liệu:**
 
 
-- **Cách 1 — Tự động hoàn toàn khi chạy Backend (Khuyến nghị cho Development):** Khi khởi động ở chế độ `Development`, thành phần `DevelopmentDatabaseBootstrapper` tự động kiểm tra và tạo cơ sở dữ liệu `SelfStorageDB` nếu chưa tồn tại, chạy `01_schema.sql` (chỉ khi CSDL trống), thực thi tuần tự các migration `02` đến `18` và tự động tạo 5 tài khoản mẫu cùng dữ liệu cơ sở kho mẫu qua `DevSeeder`.
+- **Cách 1 — Tự động hoàn toàn khi chạy Backend (Khuyến nghị cho Development):** Khi khởi động ở chế độ `Development`, thành phần `DevelopmentDatabaseBootstrapper` tự động kiểm tra và tạo cơ sở dữ liệu `SelfStorageDB` nếu chưa tồn tại, chạy `01_schema.sql` (chỉ khi CSDL trống), thực thi tuần tự các migration `02` đến `19` và tự động tạo 5 tài khoản mẫu cùng dữ liệu cơ sở kho mẫu qua `DevSeeder`.
 
 - **Cách 2 — Khởi tạo hoặc nâng cấp chủ động bằng sqlcmd:** Sử dụng khi triển khai môi trường kiểm thử độc lập hoặc muốn nạp bộ dữ liệu mẫu mở rộng:
 
@@ -72,7 +72,7 @@ dotnet user-secrets set "ConnectionStrings:SelfStorageDB" "Server=.\SQLEXPRESS;D
 # 1. Tạo mới hoàn toàn CSDL (LƯU Ý: lệnh này xóa bảng cũ nếu đã tồn tại)
 sqlcmd -S .\SQLEXPRESS -U sa -C -I -f 65001 -b -i database/setup_fresh.sql
 
-# 2. Hoặc chỉ nâng cấp CSDL đã có dữ liệu (chạy an toàn các migration 02 -> 18, không mất dữ liệu)
+# 2. Hoặc chỉ nâng cấp CSDL đã có dữ liệu (chạy an toàn các migration 02 -> 19, không mất dữ liệu)
 sqlcmd -S .\SQLEXPRESS -U sa -C -I -f 65001 -b -d SelfStorageDB -i database/upgrade_existing.sql
 
 # 3. (Tùy chọn) Nạp bộ dữ liệu demo phong phú để kiểm thử báo cáo & biểu đồ
