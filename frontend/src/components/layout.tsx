@@ -88,6 +88,7 @@ export function PortalHeader() {
 
   const isCustomer = user?.role === Roles.Customer
   const isStaff = user && GATE_ROLES.includes(user.role)
+  const todo = useTodo(isCustomer ? 'customer' : null, null, pathname)
 
   return (
     <header className="portal-header">
@@ -98,9 +99,9 @@ export function PortalHeader() {
           <NavLink to="/" end>Trang Chủ</NavLink>
           {isCustomer ? (
             <>
-              <NavLink to="/my-units">Kho Của Tôi</NavLink>
-              <NavLink to="/invoices">Thanh Toán</NavLink>
-              <NavLink to="/support">Hỗ Trợ</NavLink>
+              <NavLink to="/my-units">Kho Của Tôi <NavCount item={todo.units} /></NavLink>
+              <NavLink to="/invoices">Thanh Toán <NavCount item={todo.invoices} /></NavLink>
+              <NavLink to="/support">Hỗ Trợ <NavCount item={todo.support} /></NavLink>
               <NavLink to="/rent">Thuê Kho</NavLink>
               <NavLink to="/visit">Đăng Ký Vào Kho</NavLink>
             </>
@@ -217,44 +218,61 @@ export function useStaffFacility() {
   return ctx
 }
 
-/** What waits for staff at a facility, per sidebar entry (null = could not load, so no badge). */
-type StaffTodo = Partial<Record<'gate' | 'reservations' | 'billing' | 'renewals' | 'returns' | 'support' | 'cancellations', { n: number; hint: string }>>
-function useStaffTodo(facilityId: number | null, pathname: string): StaffTodo {
-  const [todo, setTodo] = useState<StaffTodo>({})
+/** What waits for the signed-in user, per menu entry (missing = could not load, so no badge). */
+type Todo = Record<string, { n: number; hint: string } | undefined>
+type TodoKind = 'staff' | 'admin' | 'customer'
+type TodoSpec = [key: string, hint: string, run: () => Promise<number>]
+const countRows = async <T,>(url: string, keep: (row: T) => boolean) => (await api<T[]>(url)).filter(keep).length
+const byStatus = (...statuses: string[]) => (r: { status: string }) => statuses.includes(r.status)
+function todoSpecs(kind: TodoKind, facilityId: number | null): TodoSpec[] {
+  if (kind === 'staff') {
+    if (!facilityId) return []
+    const fac = `/api/facilities/${facilityId}`
+    return [
+      ['gate', 'lịch vào kho chờ duyệt', () => countRows(`/api/gate/facilities/${facilityId}/visit-registrations?status=Pending`, byStatus('Pending'))],
+      ['reservations', 'đơn đã cọc chờ bàn giao kho', () => countRows(`${fac}/reservations`, byStatus('Confirmed'))],
+      ['billing', 'hóa đơn quá hạn cần nhắc thu', () => countRows(`/api/invoices/facilities/${facilityId}`, byStatus('Overdue'))],
+      ['renewals', 'hợp đồng quá hạn', () => countRows(`/api/contracts/facilities/${facilityId}/overdue`, () => true)],
+      ['returns', 'yêu cầu trả kho sớm chờ duyệt', () => countRows(`/api/contracts/facilities/${facilityId}/early-return-requests`, byStatus('Pending'))],
+      ['support', 'yêu cầu hỗ trợ cần xử lý', () => countRows(`/api/support-requests/facilities/${facilityId}`, byStatus('Open', 'InProgress'))],
+      ['cancellations', 'yêu cầu hủy chờ duyệt', () => countRows(`${fac}/cancellation-requests`, byStatus('Pending'))],
+    ]
+  }
+  if (kind === 'admin') return [
+    ['support', 'yêu cầu hỗ trợ cần xử lý', () => countRows('/api/admin/support-requests?pageSize=100', byStatus('Open', 'InProgress'))],
+    ['contracts', 'hợp đồng quá hạn', () => countRows('/api/admin/contracts?status=Overdue&page=1&pageSize=100', byStatus('Overdue'))],
+    ['facilities', 'loại kho chưa có ảnh', () => countRows<{ imageUrl?: string | null }>('/api/operations/unit-types', (t) => !t.imageUrl)],
+  ]
+  return [
+    ['units', 'đơn đặt kho cần đặt cọc hoặc hẹn nhận kho', () => countRows<{ status: string; checkInAppointmentAt?: string | null }>('/api/reservations/my',
+      (r) => r.status === 'PendingDeposit' || (r.status === 'Confirmed' && !r.checkInAppointmentAt))],
+    ['invoices', 'hóa đơn chưa thanh toán', () => countRows('/api/invoices/my?page=1&pageSize=100', byStatus('Unpaid', 'Overdue'))],
+    ['support', 'yêu cầu hỗ trợ nhân viên đã trả lời', () => countRows('/api/support-requests/my', byStatus('Resolved'))],
+  ]
+}
+/** Counts for the menu badges; refreshed on facility change, on navigation and every minute. */
+function useTodo(kind: TodoKind | null, facilityId: number | null, pathname: string): Todo {
+  const [todo, setTodo] = useState<Todo>({})
   useEffect(() => {
-    if (!facilityId) return
+    if (!kind) return
+    const specs = todoSpecs(kind, facilityId)
+    if (!specs.length) return
     let live = true
-    const count = async <T,>(url: string, pick: (rows: T[]) => number) => pick(await api<T[]>(url))
     const refresh = async () => {
-      const base = `/api/facilities/${facilityId}`
-      const [gate, rsv, bills, overdue, early, support, cancels] = await Promise.allSettled([
-        count<{ status: string }>(`/api/gate/facilities/${facilityId}/visit-registrations?status=Pending`, (r) => r.filter((x) => x.status === 'Pending').length),
-        count<{ status: string }>(`${base}/reservations`, (r) => r.filter((x) => x.status === 'Confirmed').length),
-        count<{ status: string }>(`/api/invoices/facilities/${facilityId}`, (r) => r.filter((x) => x.status === 'Overdue').length),
-        count<unknown>(`/api/contracts/facilities/${facilityId}/overdue`, (r) => r.length),
-        count<{ status: string }>(`/api/contracts/facilities/${facilityId}/early-return-requests`, (r) => r.filter((x) => x.status === 'Pending').length),
-        count<{ status: string }>(`/api/support-requests/facilities/${facilityId}`, (r) => r.filter((x) => x.status === 'Open' || x.status === 'InProgress').length),
-        count<{ status: string }>(`${base}/cancellation-requests`, (r) => r.filter((x) => x.status === 'Pending').length),
-      ])
+      const results = await Promise.allSettled(specs.map(([, , run]) => run()))
       if (!live) return
-      const v = (r: PromiseSettledResult<number>, hint: string) => (r.status === 'fulfilled' ? { n: r.value, hint } : undefined)
-      setTodo({
-        gate: v(gate, 'lịch vào kho chờ duyệt'),
-        reservations: v(rsv, 'đơn đã cọc chờ bàn giao kho'),
-        billing: v(bills, 'hóa đơn quá hạn cần nhắc thu'),
-        renewals: v(overdue, 'hợp đồng quá hạn'),
-        returns: v(early, 'yêu cầu trả kho sớm chờ duyệt'),
-        support: v(support, 'yêu cầu hỗ trợ cần xử lý'),
-        cancellations: v(cancels, 'yêu cầu hủy chờ duyệt'),
-      })
+      setTodo(Object.fromEntries(specs.map(([key, hint], i) => {
+        const r = results[i]
+        return [key, r.status === 'fulfilled' ? { n: r.value, hint } : undefined]
+      })))
     }
     void refresh()
     const timer = window.setInterval(() => { void refresh() }, 60_000)
     return () => { live = false; window.clearInterval(timer) }
-  }, [facilityId, pathname])
+  }, [kind, facilityId, pathname])
   return todo
 }
-/** Red count on a sidebar entry when something waits there. */
+/** Red count on a menu entry when something waits there. */
 function NavCount({ item }: { item?: { n: number; hint: string } }) {
   if (!item || item.n <= 0) return null
   return <span className="nav-count" title={`${item.n} ${item.hint}`} aria-label={`${item.n} ${item.hint}`}>{item.n > 99 ? '99+' : item.n}</span>
@@ -280,7 +298,7 @@ export function StaffLayout() {
       .catch((e) => setError((e as Error).message))
   }, [])
 
-  const todo = useStaffTodo(facilityId, pathname)
+  const todo = useTodo('staff', facilityId, pathname)
   const title = pathname === '/facility' ? 'Tổng Quan Cơ Sở'
     : pathname.startsWith('/facility-units') ? 'Kho Lưu Trữ'
     : pathname.startsWith('/facility-staff') ? 'Nhân Viên Cơ Sở'
@@ -346,15 +364,16 @@ export function StaffLayout() {
 // ------------------------------------------------------------------ management consoles (admin, operations manager): same dark sidebar
 
 /** A sidebar entry: a built screen has a route, the rest of the Figma menu shows greyed out. */
-interface ConsoleNavItem { icon: string; label: string; to?: string; end?: boolean }
+interface ConsoleNavItem { icon: string; label: string; to?: string; end?: boolean; todo?: string }
 
-function ConsoleLayout({ area, nav, titles, customerLink = true }: { area: string; nav: ConsoleNavItem[]; titles: Record<string, string>; customerLink?: boolean }) {
+function ConsoleLayout({ area, nav, titles, customerLink = true, todoKind = null }: { area: string; nav: ConsoleNavItem[]; titles: Record<string, string>; customerLink?: boolean; todoKind?: TodoKind | null }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   useEffect(() => setMenuOpen(false), [pathname])
+  const todo = useTodo(todoKind, null, pathname)
   // Longest matching prefix, so /admin/units is not titled by /admin.
   const title = Object.entries(titles).filter(([path]) => pathname === path || pathname.startsWith(`${path}/`)).sort((a, b) => b[0].length - a[0].length)[0]?.[1] ?? ''
 
@@ -364,7 +383,7 @@ function ConsoleLayout({ area, nav, titles, customerLink = true }: { area: strin
         <div className="sidebar-brand"><Logo area={area} light /></div>
         <nav className="sidebar-nav">
           {nav.map((n) => n.to
-            ? <NavLink key={n.label} to={n.to} end={n.end}><Icon name={n.icon} /> {n.label}</NavLink>
+            ? <NavLink key={n.label} to={n.to} end={n.end}><Icon name={n.icon} /> {n.label}{n.todo && <NavCount item={todo[n.todo]} />}</NavLink>
             : <span key={n.label} className="soon" title="Chưa có màn hình"><Icon name={n.icon} /> {n.label}</span>)}
           {customerLink && <Link to="/"><Icon name="arrowRight" className="flip" /> Trang khách hàng</Link>}
         </nav>
@@ -401,6 +420,7 @@ export function AdminLayout() {
     <ConsoleLayout
       area="Admin"
       customerLink={false}
+      todoKind="admin"
       titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu & Thống Kê', '/admin/reports': 'Báo Cáo', '/admin/support': 'Hỗ Trợ Khách Hàng', '/admin/system': 'Giao Dịch & Nhật Ký',
         '/admin/storage': 'Kho Lưu Trữ Hệ Thống', '/admin/facilities': 'Quản Lý Cơ Sở', '/admin/customers': 'Khách Hàng',
         '/admin': 'Tổng Quan Quản Lý' }}
@@ -409,9 +429,9 @@ export function AdminLayout() {
         { icon: 'building', label: 'Kho Lưu Trữ', to: '/admin/storage' },
         { icon: 'users', label: 'Khách Hàng', to: '/admin/customers' },
         { icon: 'user', label: 'Nhân Viên', to: '/admin/users' },
-        { icon: 'grid', label: 'Cơ Sở', to: '/admin/facilities' },
-        { icon: 'phone', label: 'Hỗ Trợ', to: '/admin/support' },
-        { icon: 'file', label: 'Hợp Đồng', to: '/admin/contracts' },
+        { icon: 'grid', label: 'Cơ Sở', to: '/admin/facilities', todo: 'facilities' },
+        { icon: 'phone', label: 'Hỗ Trợ', to: '/admin/support', todo: 'support' },
+        { icon: 'file', label: 'Hợp Đồng', to: '/admin/contracts', todo: 'contracts' },
         { icon: 'chart', label: 'Doanh Thu', to: '/admin/revenue' },
         { icon: 'file', label: 'Báo Cáo', to: '/admin/reports' },
       ]}
