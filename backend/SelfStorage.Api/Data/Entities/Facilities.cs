@@ -27,6 +27,7 @@ public class UnitType
     public decimal BaseDailyRate { get; set; }
     public decimal BaseMonthlyRate { get; set; }
     public string? Description { get; set; }
+    public string? ImageUrl { get; set; }
 }
 
 public class StorageUnit

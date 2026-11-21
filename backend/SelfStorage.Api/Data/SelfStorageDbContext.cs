@@ -97,6 +97,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
         {
             e.ToTable("UnitTypes");
             e.HasKey(x => x.UnitTypeId);
+            e.Property(x => x.ImageUrl).HasMaxLength(500);
             e.Property(x => x.VolumeCubicMeters)
                 .HasComputedColumnSql("[LengthMeters] * [WidthMeters] * [HeightMeters]", stored: true);
         });

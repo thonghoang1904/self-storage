@@ -65,7 +65,8 @@ public class ContractsController(
             unitType.HeightMeters,
             unitType.VolumeCubicMeters,
             unitType.HasClimateControl,
-            unit.Facility.OperatingHours);
+            unit.Facility.OperatingHours,
+            unitType.ImageUrl);
     }
 
     [HttpPost("{id:int}/renewals")]

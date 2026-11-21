@@ -29,7 +29,8 @@ public class CatalogController(
     public Task<List<UnitTypeDto>> UnitTypes(CancellationToken ct) =>
         db.UnitTypes.OrderBy(t => t.BaseMonthlyRate)
             .Select(t => new UnitTypeDto(t.UnitTypeId, t.TypeName, t.LengthMeters, t.WidthMeters, t.HeightMeters,
-                t.VolumeCubicMeters, t.HasClimateControl, t.BaseDailyRate, t.BaseMonthlyRate, t.Description))
+                t.VolumeCubicMeters, t.HasClimateControl, t.BaseDailyRate, t.BaseMonthlyRate, t.Description,
+                t.ImageUrl))
             .ToListAsync(ct);
 
     /// <summary>Effective rental policy currently applying to one facility (deposit %, grace hours, cancellation fee, lock delay).</summary>
@@ -81,6 +82,7 @@ public class CatalogController(
                 t.UnitTypeId,
                 t.TypeName,
                 t.BaseMonthlyRate,
+                t.ImageUrl,
                 Available = db.StorageUnits.Count(u => u.FacilityId == facilityId
                         && u.UnitTypeId == t.UnitTypeId && u.Status == UnitStatus.Available)
                     - db.Reservations.Count(r => r.FacilityId == facilityId && r.UnitTypeId == t.UnitTypeId
@@ -89,7 +91,8 @@ public class CatalogController(
             });
         return await availability.Select(t => new AvailabilityDto(t.UnitTypeId, t.TypeName,
                 t.BaseMonthlyRate,
-                facilityStatus == "Active" && t.Available > 0 ? t.Available : 0))
+                facilityStatus == "Active" && t.Available > 0 ? t.Available : 0,
+                t.ImageUrl))
             .ToListAsync(ct);
     }
 

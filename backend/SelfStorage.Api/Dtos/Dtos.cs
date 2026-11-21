@@ -132,7 +132,8 @@ public record SavePromotionRequest(
     bool IsActive);
 
 public record UnitTypeDto(int UnitTypeId, string TypeName, decimal LengthMeters, decimal WidthMeters, decimal HeightMeters,
-    decimal VolumeCubicMeters, bool HasClimateControl, decimal BaseDailyRate, decimal BaseMonthlyRate, string? Description);
+    decimal VolumeCubicMeters, bool HasClimateControl, decimal BaseDailyRate, decimal BaseMonthlyRate, string? Description,
+    string? ImageUrl = null);
 public record SaveUnitTypeRequest(
     [Required(ErrorMessage = "Vui lòng nhập tên loại kho")]
     [StringLength(100, MinimumLength = 2, ErrorMessage = "Tên loại kho dài từ 2 đến 100 ký tự")]
@@ -174,7 +175,8 @@ public record FacilityStaffDto(int UserId, string Username, string FullName, str
     DateOnly AssignedDate);
 public record AssignFacilityStaffRequest([Required] int StaffUserId);
 
-public record AvailabilityDto(int UnitTypeId, string TypeName, decimal BaseMonthlyRate, int AvailableUnits);
+public record AvailabilityDto(int UnitTypeId, string TypeName, decimal BaseMonthlyRate, int AvailableUnits,
+    string? ImageUrl = null);
 
 // ---- Reservations ----
 
@@ -259,7 +261,8 @@ public record ContractDetailDto(
     decimal HeightMeters = 0m,
     decimal VolumeCubicMeters = 0m,
     bool HasClimateControl = false,
-    string OperatingHours = "");
+    string OperatingHours = "",
+    string? UnitTypeImageUrl = null);
 
 /// <summary>One contract as staff see it in the facility contract list.</summary>
 public record StaffContractDto(int ContractId, string ContractNumber, string CustomerName, string CustomerPhone,

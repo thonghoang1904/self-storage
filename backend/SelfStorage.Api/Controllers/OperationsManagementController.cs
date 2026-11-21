@@ -5,6 +5,7 @@ using SelfStorage.Api.Data;
 using SelfStorage.Api.Data.Entities;
 using SelfStorage.Api.Dtos;
 using SelfStorage.Api.Infrastructure;
+using SelfStorage.Api.Services;
 
 namespace SelfStorage.Api.Controllers;
 
@@ -14,6 +15,7 @@ namespace SelfStorage.Api.Controllers;
 [Authorize(Roles = AppRoles.OpsManager + "," + AppRoles.Admin)]
 public sealed class OperationsManagementController(
     SelfStorageDbContext db,
+    CloudinaryImageService cloudinary,
     TimeProvider clock) : ControllerBase
 {
     private static readonly string[] FacilityStatuses = ["Active", "Maintenance", "Closed"];
@@ -96,7 +98,7 @@ public sealed class OperationsManagementController(
         db.UnitTypes.OrderBy(t => t.BaseMonthlyRate)
             .Select(t => new UnitTypeDto(t.UnitTypeId, t.TypeName, t.LengthMeters, t.WidthMeters,
                 t.HeightMeters, t.VolumeCubicMeters, t.HasClimateControl, t.BaseDailyRate,
-                t.BaseMonthlyRate, t.Description))
+                t.BaseMonthlyRate, t.Description, t.ImageUrl))
             .ToListAsync(ct);
 
     [HttpPost("unit-types")]
@@ -217,6 +219,43 @@ public sealed class OperationsManagementController(
             $"Updated prices for unit type {unitTypeId}: daily {req.BaseDailyRate:N2}, monthly {req.BaseMonthlyRate:N2}");
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
+        return ToUnitTypeDto(unitType);
+    }
+
+    [HttpPost("unit-types/{unitTypeId:int}/image")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(6 * 1024 * 1024)]
+    public async Task<UnitTypeDto> UploadUnitTypeImage(
+        int unitTypeId, IFormFile file, CancellationToken ct)
+    {
+        if (!await db.UnitTypes.AsNoTracking().AnyAsync(t => t.UnitTypeId == unitTypeId, ct))
+            throw AppException.NotFound("Không tìm thấy loại kho");
+
+        // Upload outside the serializable transaction so external HTTP I/O never holds DB locks.
+        var imageUrl = await cloudinary.UploadImageAsync(file, "unit-types", $"unit-type-{unitTypeId}", ct);
+
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            System.Data.IsolationLevel.Serializable, ct);
+        var unitType = await db.UnitTypes.FindAsync([unitTypeId], ct)
+            ?? throw AppException.NotFound("Không tìm thấy loại kho");
+        unitType.ImageUrl = imageUrl;
+        AddLog("UnitTypeImageUpdated", $"Updated image for unit type {unitTypeId} ({unitType.TypeName})");
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return ToUnitTypeDto(unitType);
+    }
+
+    [HttpDelete("unit-types/{unitTypeId:int}/image")]
+    public async Task<UnitTypeDto> RemoveUnitTypeImage(int unitTypeId, CancellationToken ct)
+    {
+        var unitType = await db.UnitTypes.FindAsync([unitTypeId], ct)
+            ?? throw AppException.NotFound("Không tìm thấy loại kho");
+        if (unitType.ImageUrl is not null)
+        {
+            unitType.ImageUrl = null;
+            AddLog("UnitTypeImageRemoved", $"Removed image for unit type {unitTypeId} ({unitType.TypeName})");
+            await db.SaveChangesAsync(ct);
+        }
         return ToUnitTypeDto(unitType);
     }
 
@@ -463,7 +502,8 @@ public sealed class OperationsManagementController(
 
     private static UnitTypeDto ToUnitTypeDto(UnitType t) =>
         new(t.UnitTypeId, t.TypeName, t.LengthMeters, t.WidthMeters, t.HeightMeters,
-            t.VolumeCubicMeters, t.HasClimateControl, t.BaseDailyRate, t.BaseMonthlyRate, t.Description);
+            t.VolumeCubicMeters, t.HasClimateControl, t.BaseDailyRate, t.BaseMonthlyRate,
+            t.Description, t.ImageUrl);
 
     private static FacilityDto ToFacilityDto(Facility facility) =>
         new(facility.FacilityId, facility.FacilityName, facility.Address, facility.City,
