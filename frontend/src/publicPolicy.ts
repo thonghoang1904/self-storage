@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { api, fmtMoney } from './api'
-import { ExtraChargeFees, type FeeConfiguration, type Promotion } from './types'
+import type { FeeConfiguration, Promotion } from './types'
 
 /**
  * Public catalog data (CatalogController, no login needed): the policy that applies to one facility, the fee table
- * and the live promotions. Each hook falls back to the seeded defaults when the backend does not answer, so the
- * pages still render with an older backend.
+ * and the live promotions. The fee table is never copied into the frontend: when it cannot be read the pages say
+ * "theo bảng phí hiện hành" instead of showing a price that may be out of date.
  */
 export interface EffectiveRentalPolicy {
   depositPercent: number
@@ -32,16 +32,13 @@ export function useRentalPolicy(facilityId: number | null | undefined) {
   return policy
 }
 
-const FALLBACK_FEES: FeeConfiguration[] = ExtraChargeFees.map((f) => ({
-  feeTypeId: f.feeTypeId, feeCode: f.feeCode, feeName: f.feeName, defaultAmount: f.defaultAmount,
-  calculationMethod: f.perDay ? 'DailyRate' : 'Fixed', description: null,
-}))
 let feesRequest: Promise<FeeConfiguration[]> | null = null
 export function useFees() {
-  const [fees, setFees] = useState<FeeConfiguration[]>(FALLBACK_FEES)
+  const [fees, setFees] = useState<FeeConfiguration[]>([])
   useEffect(() => {
     let live = true
-    feesRequest ??= api<FeeConfiguration[]>('/api/fees').then((f) => (f.length ? f : FALLBACK_FEES)).catch(() => FALLBACK_FEES)
+    // A failed read is not cached, so the next page tries again.
+    feesRequest ??= api<FeeConfiguration[]>('/api/fees').catch(() => { feesRequest = null; return [] as FeeConfiguration[] })
     void feesRequest.then((f) => { if (live) setFees(f) })
     return () => { live = false }
   }, [])
@@ -71,6 +68,24 @@ export function lateFeePerDay(fees: FeeConfiguration[], monthlyRent: number) {
   if (!f) return null
   return f.calculationMethod === 'Percentage' ? Math.round(monthlyRent * f.defaultAmount / 3000) : f.defaultAmount
 }
+
+/** Fees the system charges by itself (OverdueService, early return): staff never bill them by hand. */
+export const SYSTEM_FEE_CODES = ['LATE_FEE_DAILY', 'EARLY_RETURN_FEE']
+export const chargeableFees = (fees: FeeConfiguration[]) => fees.filter((f) => !SYSTEM_FEE_CODES.includes(f.feeCode))
+
+/** Unit price of an extra charge as FacilityManagementController bills it: Fixed / DailyRate as is, Percentage of the monthly rent. */
+export const extraChargePrice = (f: FeeConfiguration, monthlyRent: number) =>
+  f.calculationMethod === 'Percentage' ? Math.round(monthlyRent * f.defaultAmount / 100) : f.defaultAmount
+
+/** When OverdueService locks a unit that was not returned: MaxOverdueDaysBeforeLock days after 20:00 on the end date. */
+export const lockDelayText = (p: EffectiveRentalPolicy) =>
+  p.maxOverdueDaysBeforeLock <= 0 ? 'ngay khi quá 20:00 ngày hết hạn' : `sau ${p.maxOverdueDaysBeforeLock * 24} giờ kể từ 20:00 ngày hết hạn`
+
+/** Static texts write {HOLD_HOURS}, {DEPOSIT} and {LOCK_DELAY} where the facility's own policy numbers go. */
+export const fillPolicy = (text: string, p: EffectiveRentalPolicy) => text
+  .replace('{HOLD_HOURS}', `${p.depositPaymentHours} giờ`)
+  .replace('{DEPOSIT}', `${p.depositPercent.toLocaleString('vi-VN')}% tiền thuê tháng`)
+  .replace('{LOCK_DELAY}', lockDelayText(p))
 
 /** Deposit the backend will invoice for a monthly rent (ReservationsController: monthly × depositPercent / 100). */
 export const depositFor = (monthly: number, policy: EffectiveRentalPolicy) => Math.round(monthly * policy.depositPercent / 100)

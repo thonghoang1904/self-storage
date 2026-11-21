@@ -234,18 +234,6 @@ export interface ExtraChargeInvoice {
   contractId: number
 }
 
-/**
- * Fee types a facility can bill as an extra charge. Staff cannot read the fee table (operations manager only),
- * so these are the rows 01_schema.sql inserts, in insert order (FeeTypeID 1..5).
- */
-export const ExtraChargeFees = [
-  { feeTypeId: 1, feeCode: 'LATE_FEE_DAILY', feeName: 'Phí phạt quá hạn mỗi ngày', defaultAmount: 100000, perDay: true },
-  { feeTypeId: 2, feeCode: 'LOST_KEY_FEE', feeName: 'Phí cấp lại chìa khóa cơ', defaultAmount: 150000, perDay: false },
-  { feeTypeId: 3, feeCode: 'LOST_CARD_FEE', feeName: 'Phí cấp lại thẻ từ truy cập', defaultAmount: 100000, perDay: false },
-  { feeTypeId: 4, feeCode: 'CLEANING_FEE', feeName: 'Phí vệ sinh sau trả kho', defaultAmount: 200000, perDay: false },
-  { feeTypeId: 5, feeCode: 'LOCK_REPLACE_FEE', feeName: 'Phí thay mới ổ khóa thông minh', defaultAmount: 500000, perDay: false },
-]
-
 export interface Invoice {
   invoiceId: number
   invoiceNumber: string

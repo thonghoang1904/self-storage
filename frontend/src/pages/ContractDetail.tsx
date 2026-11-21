@@ -7,7 +7,7 @@ import { Badge, Icon, StatusBadge, UnitArt, splitTypeName } from '../components/
 import { photoVariant } from '../components/unitPhoto'
 import type { AccessRecord, ContractDetail as Detail, EarlyReturnQuote, EarlyReturnRequest, Facility, Invoice, Person, Renewal } from '../types'
 import { textError } from '../validation'
-import { lateFeeText, useFees } from '../publicPolicy'
+import { lateFeeText, lockDelayText, useFees, useRentalPolicy } from '../publicPolicy'
 import { Modal } from '../components/Modal'
 import { AuthorizedPeople, History } from './MyUnits'
 
@@ -79,6 +79,7 @@ export default function ContractDetail() {
   const [showEarly, setShowEarly] = useState(wantEarly)
   const [accessTab, setAccessTab] = useState<'people' | 'history' | null>(null)
   const fees = useFees()
+  const policy = useRentalPolicy(c?.facilityId)
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
@@ -154,7 +155,7 @@ export default function ContractDetail() {
         {locked && (
           <section className="panel alert-panel">
             <h3 className="panel-title"><Icon name="lock" size={18} /> Kho đang bị khóa do quá hạn</h3>
-            <p className="muted">Kho bị khóa sau 24 giờ kể từ 20:00 ngày hết hạn. Phí lưu kho quá hạn tính {lateFeeText(fees, c.monthlyRentFee)} và được cấn trừ vào tiền cọc. Vui lòng đến cơ sở để trả kho.</p>
+            <p className="muted">Kho bị khóa {lockDelayText(policy)}. Phí lưu kho quá hạn tính {lateFeeText(fees, c.monthlyRentFee)} và được cấn trừ vào tiền cọc. Vui lòng đến cơ sở để trả kho.</p>
             <dl className="summary-lines">
               <div><dt>Phí quá hạn đã tính</dt><dd>{fmtMoney(c.accumulatedLateFee)}</dd></div>
               <div><dt>Cọc còn lại sau cấn trừ</dt><dd>{fmtMoney(c.depositBalance)}</dd></div>

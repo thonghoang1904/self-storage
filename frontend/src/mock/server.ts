@@ -276,6 +276,23 @@ const promotionsOf = () => (db.promotions ??= [
   { promotionId: 3, promoCode: 'SUMMER26', title: 'Hè 2026 cho sinh viên', discountPercent: 20, maxDiscountAmount: 300000, minRentalMonths: 1, startDate: '2026-06-01', endDate: '2026-08-31', isActive: false },
 ])
 const opsOnly = (token: string | null) => requireRole(currentUser(token), [Roles.OpsManager, Roles.Admin])
+/** Same checks as SaveUnitTypeRequest + OperationsManagementController.ValidateUnitType. */
+function checkUnitType(body: Body, exceptId: number | null): Omit<UnitType, 'unitTypeId'> {
+  const typeName = String(body.typeName ?? '').trim()
+  const [l, w, h] = [body.lengthMeters, body.widthMeters, body.heightMeters].map(Number)
+  const daily = Number(body.baseDailyRate ?? 0), monthly = Number(body.baseMonthlyRate)
+  if (typeName.length < 2 || typeName.length > 100) throw bad('Tên loại kho dài từ 2 đến 100 ký tự')
+  if (![l, w, h].every((d) => d >= 0.1 && d <= 20)) throw bad('Kích thước kho từ 0,1 đến 20 m')
+  if (![l, w, h].every((d) => Math.round(d * 100) / 100 === d)) throw bad('Kích thước (m) chỉ hỗ trợ tối đa 2 chữ số thập phân')
+  if (!(daily >= 0) || !(monthly >= 0.01)) throw bad('Giá thuê không hợp lệ')
+  if (daily > monthly) throw bad('Giá theo ngày không được lớn hơn giá theo tháng')
+  if (db.unitTypes.some((t) => t.typeName === typeName && t.unitTypeId !== exceptId)) throw conflict('Tên loại kho đã tồn tại')
+  return {
+    typeName, lengthMeters: l, widthMeters: w, heightMeters: h, volumeCubicMeters: Math.round(l * w * h * 100) / 100,
+    hasClimateControl: !!body.hasClimateControl, baseDailyRate: daily, baseMonthlyRate: monthly,
+    description: String(body.description ?? '').trim() || null,
+  }
+}
 /** Approved registration whose window contains now, for this visitor (AccessService.GrantEntryAsync). */
 const approvedNow = (contractId: number, apId?: number | null) => {
   const now = Date.now()
@@ -1852,6 +1869,35 @@ const routes: [string, RegExp, Handler][] = [
   }],
   // ---- operations manager: unit-type pricing, rental policies, fee table, promotions
   ['GET', /^\/api\/operations\/unit-types$/, (_m, { token }) => { opsOnly(token); return [...db.unitTypes].sort((a, b) => a.baseMonthlyRate - b.baseMonthlyRate) }],
+  ['POST', /^\/api\/operations\/unit-types$/, (_m, { token, body }) => {
+    opsOnly(token)
+    const t: UnitType = { unitTypeId: Math.max(0, ...db.unitTypes.map((x) => x.unitTypeId)) + 1, ...checkUnitType(body, null) }
+    db.unitTypes.push(t)
+    return t
+  }],
+  ['PUT', /^\/api\/operations\/unit-types\/(\d+)$/, (m, { token, body }) => {
+    opsOnly(token)
+    const t = db.unitTypes.find((x) => x.unitTypeId === Number(m[1]))
+    if (!t) throw notFound('Không tìm thấy loại kho')
+    const next = checkUnitType(body, t.unitTypeId)
+    const specsChanged = next.lengthMeters !== t.lengthMeters || next.widthMeters !== t.widthMeters
+      || next.heightMeters !== t.heightMeters || next.hasClimateControl !== t.hasClimateControl
+    const live = db.contracts.some((c) => db.units.find((u) => u.unitId === c.unitId)?.unitTypeId === t.unitTypeId && (c.status === 'Active' || c.status === 'Overdue'))
+      || db.reservations.some((r) => r.unitTypeId === t.unitTypeId && (r.status === 'Confirmed' || r.status === 'PendingDeposit'))
+    if (specsChanged && live) throw conflict('Loại kho đang có hợp đồng hoặc đơn đặt chỗ hiệu lực; chỉ được đổi tên, mô tả và giá niêm yết')
+    Object.assign(t, next)
+    db.units.filter((u) => u.unitTypeId === t.unitTypeId).forEach((u) => { u.monthlyPrice = t.baseMonthlyRate })
+    return t
+  }],
+  ['DELETE', /^\/api\/operations\/unit-types\/(\d+)$/, (m, { token }) => {
+    opsOnly(token)
+    const id = Number(m[1])
+    if (!db.unitTypes.some((x) => x.unitTypeId === id)) throw notFound('Không tìm thấy loại kho')
+    if (db.units.some((u) => u.unitTypeId === id)) throw conflict('Loại kho đang có ô kho thuộc loại này nên không thể xóa')
+    if (db.reservations.some((r) => r.unitTypeId === id)) throw conflict('Loại kho đã phát sinh đơn đặt chỗ nên không thể xóa')
+    db.unitTypes = db.unitTypes.filter((x) => x.unitTypeId !== id)
+    return undefined
+  }],
   ['PUT', /^\/api\/operations\/unit-types\/(\d+)\/pricing$/, (m, { token, body }) => {
     opsOnly(token)
     const t = db.unitTypes.find((x) => x.unitTypeId === Number(m[1]))
@@ -1872,6 +1918,7 @@ const routes: [string, RegExp, Handler][] = [
     return { depositPercent: p?.depositPercent ?? 100, cancellationGraceHours: p?.cancellationGraceHours ?? 24, cancellationFeePercent: p?.cancellationFeePercent ?? 10,
       renewalNoticeDays: p?.renewalNoticeDays ?? 7, maxOverdueDaysBeforeLock: p?.maxOverdueDaysBeforeLock ?? 1, depositPaymentHours: 24 }
   }],
+  ['GET', /^\/api\/fees$/, () => [...feesOf()].sort((a, b) => a.feeCode.localeCompare(b.feeCode))],
   ['GET', /^\/api\/fees$/, () => [...feesOf()].sort((a, b) => a.feeCode.localeCompare(b.feeCode))],
   ['GET', /^\/api\/promotions$/, () => promotionsOf().filter((p) => p.isActive && p.startDate <= today() && p.endDate >= today())
     .sort((a, b) => b.discountPercent - a.discountPercent || a.minRentalMonths - b.minRentalMonths)],

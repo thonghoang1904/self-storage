@@ -4,7 +4,7 @@ import { api, fmtDate, fmtMoney, fmtTime } from '../api'
 import { Icon, splitTypeName, StatusBadge } from '../components/ui'
 import { ContractUnitArt } from '../components/unitPhoto'
 import { type ContractDetail, type Facility, type FeeConfiguration, type Renewal, type StorageUnit } from '../types'
-import { lateFeePerDay, lateFeeText, useFees } from '../publicPolicy'
+import { lateFeePerDay, lateFeeText, lockDelayText, useFees, useRentalPolicy, type EffectiveRentalPolicy } from '../publicPolicy'
 import { TERMS_VERSION, termsHref } from './Terms'
 
 /**
@@ -16,7 +16,7 @@ import { TERMS_VERSION, termsHref } from './Terms'
 
 type Section = { id: string; icon: string; title: string; body: string[] }
 
-function sections(c: ContractDetail, hours: string | undefined, fees: FeeConfiguration[]): Section[] {
+function sections(c: ContractDetail, hours: string | undefined, fees: FeeConfiguration[], policy: EffectiveRentalPolicy): Section[] {
   return [
     {
       id: 'pay', icon: 'wallet', title: 'Thanh toán & tiền cọc',
@@ -36,7 +36,7 @@ function sections(c: ContractDetail, hours: string | undefined, fees: FeeConfigu
       id: 'return', icon: 'key', title: 'Trả kho, quá hạn & hoàn cọc',
       body: [
         `Trả kho trước 20:00 ngày ${fmtDate(c.endDate)}. Nhân viên kiểm tra kho cùng khách, đối soát phí và hoàn phần cọc còn lại.`,
-        `Quá 24 giờ kể từ 20:00 ngày hết hạn, kho bị khóa và tính phí lưu kho quá hạn ${lateFeeText(fees, c.monthlyRentFee)} theo bảng phí hiện hành, cấn trừ vào tiền cọc; phần vượt cọc lập thành hóa đơn.`,
+        `Chưa trả kho hoặc gia hạn thì kho bị khóa ${lockDelayText(policy)} và tính phí lưu kho quá hạn ${lateFeeText(fees, c.monthlyRentFee)} theo bảng phí hiện hành, cấn trừ vào tiền cọc; phần vượt cọc lập thành hóa đơn.`,
       ],
     },
     {
@@ -133,13 +133,14 @@ export default function ContractPolicy() {
   const { c, renewals, facility, error } = useContract(id)
   // Fee table as the backend has it now (GET /api/fees), seeded defaults if it cannot be read.
   const fees = useFees()
+  const policy = useRentalPolicy(c?.facilityId)
   if (!c) return <Loading error={error} />
   const lateDaily = lateFeePerDay(fees, c.monthlyRentFee)
 
   // Opened from another step (renewal, early return): after reading, go straight back to it.
   const back = BACK[from] ?? BACK.contract
   const backTo = back.path(c.contractId)
-  const list = sections(c, c.operatingHours || facility?.operatingHours, fees)
+  const list = sections(c, c.operatingHours || facility?.operatingHours, fees, policy)
   const pending = renewals.find((r) => r.status === 'Pending')
   const go = (sid: string) => document.getElementById(`policy-${sid}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 

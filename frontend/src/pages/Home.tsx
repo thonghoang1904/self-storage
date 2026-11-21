@@ -13,7 +13,7 @@ const FEATURES = [
 ]
 
 const STEPS = [
-  { n: 1, title: 'Chọn kho & giữ chỗ', text: 'Chọn cơ sở, kích thước và số tháng thuê. Đơn được giữ 24 giờ để bạn đặt cọc.' },
+  { n: 1, title: 'Chọn kho & giữ chỗ', text: 'Chọn cơ sở, kích thước và số tháng thuê. Đơn được giữ chỗ để bạn đặt cọc theo chính sách của cơ sở.' },
   { n: 2, title: 'Đặt cọc & nhận kho', text: 'Nhân viên xác nhận cọc, bàn giao kho cụ thể và tạo hợp đồng cho bạn.' },
   { n: 3, title: 'Ra vào bằng CCCD', text: 'Đến cổng, xuất trình CCCD. Nhân viên đối chiếu và mở cửa cho bạn.' },
 ]
@@ -167,7 +167,7 @@ export default function Home() {
         <div className="cta">
           <div>
             <h2>Sẵn Sàng Giữ Chỗ Kho Của Bạn?</h2>
-            <p>Đăng ký tài khoản bằng CCCD, chọn kho và giữ chỗ trong vài phút. Đơn được giữ 24 giờ để bạn đặt cọc.</p>
+            <p>Đăng ký tài khoản bằng CCCD, chọn kho và giữ chỗ trong vài phút, rồi đặt cọc trong thời hạn giữ chỗ của cơ sở.</p>
           </div>
           <div className="row wrap">
             <Link to={user ? rentLink : '/register'} className="btn primary lg">{user ? 'Đặt Kho Ngay' : 'Đăng Ký Miễn Phí'}</Link>
