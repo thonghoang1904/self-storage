@@ -8,6 +8,7 @@ import { EMPTY_UNIT_FORM, LOCKED_UNIT_STATUSES, saveUnit, UnitForm, unitFormOf, 
 import type { AdminContract, Facility, StorageUnit, UnitType } from '../types'
 import { Select } from '../components/Select'
 import { UnitTypeForm } from '../components/UnitTypeManager'
+import { InventoryPanel } from '../components/InventoryPanel'
 import { resetUnitTypeImages } from '../components/unitPhoto'
 
 /**
@@ -350,7 +351,7 @@ function UnitTile({ tile: t, actions }: { tile: Tile; actions: Actions }) {
 function ContractDialog({ contract: c, onClose }: { contract: AdminContract; onClose: () => void }) {
   const left = daysUntil(c.endDate)
   return (
-    <Modal title={`Hợp đồng ${c.contractNumber}`} onClose={onClose}>
+    <Modal title={`Hợp đồng ${c.contractNumber}`} onClose={onClose} wide>
       <div className="row between wrap"><StatusBadge status={c.status} /><small className={left <= 30 ? 'danger-text' : 'muted'}>{left >= 0 ? `Còn ${left} ngày` : `Quá hạn ${-left} ngày`}</small></div>
       <div className="info-box">
         <div className="info-row"><span className="muted">Khách hàng</span><b>{c.customerName}</b></div>
@@ -365,6 +366,10 @@ function ContractDialog({ contract: c, onClose }: { contract: AdminContract; onC
         <div className="info-row"><span className="muted">Tiền cọc</span><b>{fmtMoney(c.depositPaid)}</b></div>
       </div>
       {c.termsConditions && <p className="muted">{c.termsConditions}</p>}
+      <div className="stack">
+        <h3 className="panel-title">Đồ vật đang có trong kho {c.unitCode}</h3>
+        <InventoryPanel mode="admin" contractId={c.contractId} />
+      </div>
     </Modal>
   )
 }
