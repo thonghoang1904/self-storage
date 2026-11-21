@@ -92,7 +92,7 @@ export function UnitTypeManager({ query = '', onChanged }: { query?: string; onC
                 <div className="unit-type-thumb"><UnitTypePhoto src={t.imageUrl} typeName={t.typeName} typeId={t.unitTypeId} alt={name} /></div>
                 <div className="stack-sm grow">
                   <div className="row between wrap">
-                    <span className="row"><span className="code-chip">LK-{String(t.unitTypeId).padStart(2, '0')}</span>{t.hasClimateControl && <Badge tone="info">Điều hòa</Badge>}{!t.imageUrl && <Badge tone="muted">Chưa có ảnh</Badge>}</span>
+                    <span className="row"><span className="code-chip">LK-{String(t.unitTypeId).padStart(2, '0')}</span>{t.hasClimateControl && <Badge tone="info">Điều hòa</Badge>}{!t.imageUrl && <Badge tone="warn">Chưa có ảnh</Badge>}</span>
                     <b className="policy-amount">{fmtMoney(t.baseMonthlyRate)}<small>/tháng</small></b>
                   </div>
                   <b className="policy-title">{name} <small className="muted">{size}</small></b>
