@@ -69,7 +69,7 @@ public sealed class FacilityOperationsController(
             .ThenBy(r => r.CreatedAt)
             .Select(r => new SupportRequestDto(r.RequestId, r.RequestCode, r.ContractId ?? 0,
                 r.Unit != null ? r.Unit.UnitCode : "", r.Category, r.Priority, r.Title, r.Description,
-                r.Status, r.CreatedAt, r.AssignedStaff != null ? r.AssignedStaff.FullName : null))
+                r.Status, r.CreatedAt, r.AssignedStaff != null ? r.AssignedStaff.FullName : null, r.ImageUrl))
             .ToListAsync(ct);
 
         return new FacilityWorkQueueDto(targetDate, reservations, returns, supportRequests);

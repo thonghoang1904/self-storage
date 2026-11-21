@@ -431,6 +431,7 @@ export interface SupportRequest {
   status: string
   createdAt: string
   assignedStaffName: string | null
+  imageUrl?: string | null
   /** Admin list only (GET /api/admin/support-requests). */
   facilityName?: string
   customerName?: string

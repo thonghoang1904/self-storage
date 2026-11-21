@@ -150,7 +150,7 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
                   <span className="row between wrap"><small className="code">{r.requestCode}</small><span className="row"><span className={`badge ${p.tone}`}>{p.label}</span><StatusBadge status={r.status} /></span></span>
                   <b>{r.title}</b>
                   <small className="muted clamp-2">{r.description}</small>
-                  <small className="muted">{admin && r.facilityName ? `${r.facilityName} · ` : ''}Kho {r.unitCode}{admin && r.customerName ? ` · ${r.customerName}` : ''} · {SupportCategories[r.category] ?? r.category} · {fmtTime(r.createdAt)}{r.assignedStaffName ? ` · ${r.assignedStaffName}` : ''}</small>
+                  <small className="muted">{admin && r.facilityName ? `${r.facilityName} · ` : ''}Kho {r.unitCode}{admin && r.customerName ? ` · ${r.customerName}` : ''} · {SupportCategories[r.category] ?? r.category} · {fmtTime(r.createdAt)}{r.assignedStaffName ? ` · ${r.assignedStaffName}` : ''}{r.imageUrl ? ' · Có ảnh' : ''}</small>
                 </button>
               )
             })}
@@ -233,6 +233,14 @@ function TicketDetail({ ticket: t, onChanged, base, admin }: { ticket: SupportRe
       <div>
         <h3 className="issue-title">{t.title}</h3>
         <p className="muted">{t.description}</p>
+        {t.imageUrl && (
+          <div className="stack-sm">
+            <a href={t.imageUrl} target="_blank" rel="noreferrer" className="support-photo-link">
+              <img src={t.imageUrl} alt="Ảnh sự cố khách hàng đính kèm" className="support-photo" loading="lazy" />
+            </a>
+            <small className="muted">Bấm vào ảnh để xem kích thước đầy đủ</small>
+          </div>
+        )}
       </div>
       <div className="info-box">
         <div className="info-row"><span className="muted">Mã yêu cầu</span><b>{t.requestCode}</b></div>

@@ -20,7 +20,7 @@ interface Unit { unitId: number; facilityId: number; unitTypeId: number; unitCod
 interface Rsv { reservationId: number; reservationCode: string; customerId: number; facilityId: number; unitTypeId: number; assignedUnitId: number | null; expectedStartDate: string; checkInAppointmentAt?: string | null; durationMonths: number; depositAmount: number; estimatedTotalFee: number; status: string; depositDeadline: string; createdAt: string; promoCode?: string | null; promotionDiscountAmount?: number; depositWasPaid?: boolean }
 interface Ctr { contractId: number; contractNumber: string; customerId: number; unitId: number; startDate: string; endDate: string; monthlyRentFee: number; depositPaid: number; status: string; signedDate?: string; termsConditions?: string | null; earlyReturnFee?: number }
 interface Rnw { renewalId: number; contractId: number; oldEndDate: string; newEndDate: string; extensionMonths: number; renewalFee: number; status: string; requestedAt: string }
-interface Sup { requestId: number; requestCode: string; customerId: number; facilityId: number; contractId: number; unitId: number; assignedStaffId: number | null; category: string; priority: string; title: string; description: string; status: string; createdAt: string; resolvedAt: string | null; checklist?: Chk[] }
+interface Sup { requestId: number; requestCode: string; customerId: number; facilityId: number; contractId: number; unitId: number; assignedStaffId: number | null; category: string; priority: string; title: string; description: string; imageUrl?: string | null; status: string; createdAt: string; resolvedAt: string | null; checklist?: Chk[] }
 interface Chk { checklistItemId: number; sortOrder: number; description: string; isCompleted: boolean; completedAt: string | null; completedByStaffId: number | null; notes: string | null }
 interface SupUpd { updateId: number; requestId: number; updatedByUserId: number; actionMessage: string; previousStatus: string | null; newStatus: string | null; createdAt: string }
 interface Ovd { overdueId: number; contractId: number; daysOverdue: number; accumulatedLateFee: number; lockAppliedAt: string; resolvedAt: string | null }
@@ -415,6 +415,7 @@ const supportDto = (r: Sup): SupportRequest => ({
   requestId: r.requestId, requestCode: r.requestCode, contractId: r.contractId, unitCode: unitById(r.unitId).unitCode,
   category: r.category, priority: r.priority, title: r.title, description: r.description, status: r.status,
   createdAt: r.createdAt, assignedStaffName: r.assignedStaffId ? userById(r.assignedStaffId).fullName : null,
+  imageUrl: r.imageUrl ?? null,
 })
 /** Same checklist templates as SupportController. */
 const CHECKLIST_TEMPLATES: Record<string, string[]> = {
@@ -1329,6 +1330,26 @@ const routes: [string, RegExp, Handler][] = [
     checklistOf(r)
     db.supports.push(r)
     db.supportUpdates.push({ updateId: nextId(), requestId: r.requestId, updatedByUserId: me.userId, actionMessage: 'Khách hàng đã gửi yêu cầu hỗ trợ', previousStatus: null, newStatus: 'Open', createdAt: r.createdAt })
+    return supportDto(r)
+  }],
+  ['POST', /^\/api\/support-requests\/(\d+)\/image$/, (m, { token, body }) => {
+    const me = currentUser(token)
+    requireRole(me, [Roles.Customer])
+    const r = db.supports.find((x) => x.requestId === Number(m[1]) && x.customerId === me.userId)
+    if (!r) throw notFound('Không tìm thấy yêu cầu hỗ trợ')
+    if (r.status !== 'Open' && r.status !== 'InProgress') throw conflict('Chỉ có thể đính kèm ảnh khi yêu cầu hỗ trợ đang mở hoặc đang xử lý')
+    const raw = body as unknown
+    const file = raw instanceof FormData ? raw.get('file') : null
+    if (!(file instanceof File) || file.size === 0) throw bad('Vui lòng chọn tệp hình ảnh')
+    if (file.size > 5 * 1024 * 1024) throw bad('Ảnh tải lên không được vượt quá 5 MB')
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw bad('Chỉ hỗ trợ ảnh định dạng JPG, PNG hoặc WebP')
+    const hadImage = !!r.imageUrl
+    r.imageUrl = URL.createObjectURL(file)
+    db.supportUpdates.push({
+      updateId: nextId(), requestId: r.requestId, updatedByUserId: me.userId,
+      actionMessage: hadImage ? 'Khách hàng đã cập nhật hình ảnh minh họa sự cố' : 'Khách hàng đã đính kèm hình ảnh minh họa sự cố',
+      previousStatus: r.status, newStatus: r.status, createdAt: localIso(new Date()),
+    })
     return supportDto(r)
   }],
   ['GET', /^\/api\/support-requests\/my$/, (_m, { token }) => {

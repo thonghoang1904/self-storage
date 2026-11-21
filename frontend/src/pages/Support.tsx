@@ -1,13 +1,25 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { textError } from '../validation'
 import { api, fmtTime } from '../api'
-import { FormField, leavingToSubmit } from '../components/form'
+import { FieldNote, FormField, leavingToSubmit } from '../components/form'
 import { Badge, Empty, Eyebrow, Icon, StatusBadge } from '../components/ui'
 import { SUPPORT_PRIORITY_CHOICES, SupportCategories, SupportPriorities, type Contract, type SupportChecklistItem, type SupportRequest, type SupportUpdate } from '../types'
 import { Select } from '../components/Select'
 
 const EMPTY_FORM = { contractId: 0, category: 'LockIssue', priority: 'Medium', title: '', description: '' }
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+function validateImageFile(file: File): string | null {
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type))
+    return 'Chỉ hỗ trợ ảnh định dạng JPG, PNG hoặc WebP'
+  if (file.size === 0)
+    return 'Tệp hình ảnh bị rỗng'
+  if (file.size > MAX_IMAGE_BYTES)
+    return 'Ảnh tải lên không được vượt quá 5 MB'
+  return null
+}
 
 /** Customer: send a support request for one of their units and follow how staff handle it. */
 export default function Support() {
@@ -19,6 +31,10 @@ export default function Support() {
   const [form, setForm] = useState(askReturn
     ? { ...EMPTY_FORM, category: 'Other', priority: 'Medium', title: 'Yêu cầu trả kho', description: 'Tôi muốn trả kho và nhận lại tiền cọc. Ngày giờ dự kiến đến trả kho: ' }
     : EMPTY_FORM)
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState('')
+  const [imageError, setImageError] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [openId, setOpenId] = useState<number | null>(null)
   // Requests already handled (resolved or closed) are hidden until the customer asks to see them.
   const [showOld, setShowOld] = useState(false)
@@ -28,6 +44,33 @@ export default function Support() {
   const [shown, setShown] = useState({ title: false, description: false })
   const titleErr = shown.title ? textError(form.title, 'Tiêu đề', 5, 200) : null
   const descErr = shown.description ? textError(form.description, 'Mô tả', 10, 4000) : null
+
+  useEffect(() => () => {
+    if (imagePreview) URL.revokeObjectURL(imagePreview)
+  }, [imagePreview])
+
+  const clearImage = () => {
+    setImageFile(null)
+    setImagePreview('')
+    setImageError('')
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const pickImage = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) { clearImage(); return }
+    const err = validateImageFile(file)
+    if (err) {
+      setImageFile(null)
+      setImagePreview('')
+      setImageError(err)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
+    setImageError('')
+    setImageFile(file)
+    setImagePreview(URL.createObjectURL(file))
+  }
 
   const load = useCallback(async () => {
     try {
@@ -52,6 +95,7 @@ export default function Support() {
     setShown({ title: true, description: true })
     if (!form.contractId) { setError('Vui lòng chọn hợp đồng / kho cần hỗ trợ'); return }
     if (textError(form.title, 'Tiêu đề', 5, 200) || textError(form.description, 'Mô tả', 10, 4000)) return
+    if (imageError) return
     // Anti-spam checks against the customer's own requests, re-read now so a second tab or a quick resend is caught too.
     setBusy(true)
     const history = await api<SupportRequest[]>('/api/support-requests/my').catch(() => rows ?? [])
@@ -70,8 +114,22 @@ export default function Support() {
     setBusy(true)
     try {
       const r = await api<SupportRequest>('/api/support-requests', { body: { ...form, title: form.title.trim(), description: form.description.trim() } })
-      setNotice(`Đã gửi yêu cầu ${r.requestCode}. Nhân viên cơ sở sẽ tiếp nhận và cập nhật tại đây.`)
+      let uploadWarning = ''
+      if (imageFile) {
+        try {
+          const fd = new FormData()
+          fd.append('file', imageFile)
+          await api<SupportRequest>(`/api/support-requests/${r.requestId}/image`, { body: fd })
+        } catch (imgErr) {
+          uploadWarning = `Yêu cầu ${r.requestCode} đã được tạo nhưng tải ảnh thất bại (${(imgErr as Error).message}). Bạn có thể thử đính kèm lại ngay trong chi tiết yêu cầu.`
+        }
+      }
+      setNotice(uploadWarning
+        ? `Đã gửi yêu cầu ${r.requestCode}.`
+        : `Đã gửi yêu cầu ${r.requestCode}. Nhân viên cơ sở sẽ tiếp nhận và cập nhật tại đây.`)
+      if (uploadWarning) setError(uploadWarning)
       setForm({ ...EMPTY_FORM, contractId: form.contractId })
+      clearImage()
       setShown({ title: false, description: false })
       setOpenId(r.requestId)
       await load()
@@ -131,6 +189,19 @@ export default function Support() {
                       onBlur={(e) => leavingToSubmit(e) || setShown({ ...shown, description: true })} aria-invalid={!!descErr || undefined}
                       placeholder="Mô tả sự cố, thời điểm phát hiện, bạn cần nhân viên hỗ trợ gì…" />
                   </FormField>
+                  <div className="field">
+                    <span>Ảnh minh họa sự cố</span>
+                    <div className="support-upload">
+                      <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={pickImage} aria-label="Chọn ảnh minh họa sự cố" />
+                      {imagePreview && (
+                        <div className="support-preview">
+                          <img src={imagePreview} alt="Xem trước ảnh sự cố" className="support-photo" />
+                          <button type="button" className="btn ghost sm danger-text" onClick={clearImage}><Icon name="trash" size={14} /> Xóa ảnh</button>
+                        </div>
+                      )}
+                    </div>
+                    {imageError ? <FieldNote text={imageError} /> : <small className="field-hint">JPG, PNG hoặc WebP · tối đa 5 MB (tùy chọn)</small>}
+                  </div>
                   <button className="btn primary block" type="submit" disabled={busy}>{busy ? 'Đang gửi…' : 'Gửi Yêu Cầu'}</button>
                 </>
               )}
@@ -176,7 +247,29 @@ function RequestCard({ request: r, open, onToggle, onReplied, children }: { requ
   const [reply, setReply] = useState('')
   const [sending, setSending] = useState(false)
   const [replyError, setReplyError] = useState('')
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [photoError, setPhotoError] = useState('')
+  const cardFileRef = useRef<HTMLInputElement>(null)
   const loadUpdates = () => api<SupportUpdate[]>(`/api/support-requests/${r.requestId}/updates`).then(setUpdates).catch(() => setUpdates([]))
+  const uploadCardPhoto = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (cardFileRef.current) cardFileRef.current.value = ''
+    if (!file) return
+    const err = validateImageFile(file)
+    if (err) { setPhotoError(err); return }
+    setUploadingPhoto(true); setPhotoError('')
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      await api<SupportRequest>(`/api/support-requests/${r.requestId}/image`, { body: fd })
+      await loadUpdates()
+      await onReplied?.()
+    } catch (uploadErr) {
+      setPhotoError((uploadErr as Error).message)
+    } finally {
+      setUploadingPhoto(false)
+    }
+  }
   const sendReply = async (e: FormEvent) => {
     e.preventDefault()
     const message = reply.trim()
@@ -208,13 +301,33 @@ function RequestCard({ request: r, open, onToggle, onReplied, children }: { requ
             <Badge tone={prio.tone}>{prio.label}</Badge>
           </div>
           <small className="muted">{r.requestCode} · Kho {r.unitCode} · {SupportCategories[r.category] ?? r.category} · {fmtTime(r.createdAt)}
-            {r.assignedStaffName && <> · Nhân viên: {r.assignedStaffName}</>}</small>
+            {r.assignedStaffName && <> · Nhân viên: {r.assignedStaffName}</>}{r.imageUrl && <> · Có ảnh</>}</small>
         </div>
         <Icon name="arrowRight" size={16} className={`cyan chevron ${open ? 'down' : ''}`} />
       </button>
       {open && (
         <div className="stack">
           <p className="support-desc">{r.description}</p>
+          {r.imageUrl && (
+            <div className="stack-sm">
+              <small className="muted"><b>Hình ảnh minh họa sự cố</b> · bấm vào ảnh để xem kích thước đầy đủ</small>
+              <a href={r.imageUrl} target="_blank" rel="noreferrer" className="support-photo-link">
+                <img src={r.imageUrl} alt="Ảnh sự cố đính kèm" className="support-photo" loading="lazy" />
+              </a>
+            </div>
+          )}
+          {onReplied && (r.status === 'Open' || r.status === 'InProgress') && (
+            <div className="stack-sm">
+              <div className="row wrap">
+                <input ref={cardFileRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={uploadCardPhoto} />
+                <button type="button" className="btn outline sm" disabled={uploadingPhoto} onClick={() => cardFileRef.current?.click()}>
+                  <Icon name="plus" size={14} /> {uploadingPhoto ? 'Đang tải ảnh…' : r.imageUrl ? 'Đổi ảnh sự cố' : 'Đính kèm ảnh sự cố'}
+                </button>
+                <small className="muted">JPG, PNG, WebP · tối đa 5 MB</small>
+              </div>
+              {photoError && <small className="field-error">{photoError}</small>}
+            </div>
+          )}
           {items.length > 0 && (
             <div className="stack-sm">
               <small className="muted"><b>Các bước xử lý</b> · {items.filter((i) => i.isCompleted).length}/{items.length} đã xong</small>

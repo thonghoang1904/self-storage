@@ -357,10 +357,11 @@ public record CreateSupportRequest(
     [StringLength(20)] string Priority = "Medium");
 public record SupportRequestDto(int RequestId, string RequestCode, int ContractId, string UnitCode,
     string Category, string Priority, string Title, string Description, string Status, DateTime CreatedAt,
-    string? AssignedStaffName);
+    string? AssignedStaffName, string? ImageUrl = null);
 public record AdminSupportRequestDto(int RequestId, string RequestCode, int ContractId, string UnitCode,
     string Category, string Priority, string Title, string Description, string Status, DateTime CreatedAt,
-    string? AssignedStaffName, int FacilityId, string FacilityName, int CustomerId, string CustomerName);
+    string? AssignedStaffName, int FacilityId, string FacilityName, int CustomerId, string CustomerName,
+    string? ImageUrl = null);
 public record SupportUpdateDto(int UpdateId, string UpdatedBy, string ActionMessage,
     string? PreviousStatus, string? NewStatus, DateTime CreatedAt);
 public record AddSupportMessageRequest([Required, StringLength(1000)] string Message);

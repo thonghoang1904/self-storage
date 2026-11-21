@@ -58,16 +58,17 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
     }
   }
 
+  const formDataBody = opts.body instanceof FormData ? opts.body : undefined
   const headers: Record<string, string> = { ...opts.headers }
   if (token) headers.Authorization = `Bearer ${token}`
-  if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
+  if (opts.body !== undefined && !formDataBody) headers['Content-Type'] = 'application/json'
 
   let res: Response
   try {
     res = await fetch(`${API_URL}${path}`, {
       method,
       headers,
-      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      body: opts.body === undefined ? undefined : formDataBody ?? JSON.stringify(opts.body),
     })
   } catch {
     // Network error or blocked by CORS: the browser never got an answer.
@@ -205,7 +206,7 @@ function toVietnamese(msg: string): string {
   return msg
 }
 
-export const fmtMoney =(n: number) => n.toLocaleString('vi-VN') + 'đ'
+export const fmtMoney = (n: number) => n.toLocaleString('vi-VN') + 'đ'
 // "2026-10-13" (DateOnly) must be read as a local date, not UTC midnight.
 export const fmtDate = (s: string) =>
   new Date(/^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T00:00:00` : s).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })

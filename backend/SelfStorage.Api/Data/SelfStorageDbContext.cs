@@ -317,6 +317,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
         {
             e.ToTable("SupportRequests");
             e.HasKey(x => x.RequestId);
+            e.Property(x => x.ImageUrl).HasMaxLength(500);
             e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
             e.Property(x => x.Status).HasDefaultValue("Open");
             e.HasOne(x => x.Contract).WithMany().HasForeignKey(x => x.ContractId);

@@ -671,6 +671,11 @@ textarea::placeholder { color: var(--muted-2); }
 .chevron { transition: transform 0.2s; flex-shrink: 0; }
 .chevron.down { transform: rotate(90deg); }
 .support-desc { margin: 0; padding: 12px 14px; border-radius: var(--radius); background: var(--bg-tint); font-size: 14px; white-space: pre-wrap; }
+.support-upload { display: flex; flex-direction: column; gap: 10px; }
+.support-upload input[type="file"] { font-size: 13px; max-width: 100%; }
+.support-preview { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.support-photo-link { display: inline-block; max-width: 100%; }
+.support-photo { display: block; max-width: 100%; max-height: 240px; border-radius: var(--radius); border: 1px solid var(--line); object-fit: cover; background: var(--bg-tint); }
 .segmented.fill { display: grid; grid-template-columns: repeat(4, 1fr); }
 .segmented.fill button { padding: 7px 4px; white-space: nowrap; font-size: 12.5px; }
 .mini-checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }

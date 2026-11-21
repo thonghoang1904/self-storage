@@ -13,7 +13,11 @@ namespace SelfStorage.Api.Controllers;
 [ApiController]
 [Route("api/support-requests")]
 [Authorize]
-public class SupportController(SelfStorageDbContext db, AccessService access, TimeProvider clock) : ControllerBase
+public class SupportController(
+    SelfStorageDbContext db,
+    AccessService access,
+    CloudinaryImageService cloudinary,
+    TimeProvider clock) : ControllerBase
 {
     private static readonly IReadOnlyDictionary<string, string[]> ChecklistTemplates =
         new Dictionary<string, string[]>
@@ -113,6 +117,50 @@ public class SupportController(SelfStorageDbContext db, AccessService access, Ti
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return await Project(db.SupportRequests.Where(r => r.RequestId == request.RequestId)).SingleAsync(ct);
+    }
+
+    [HttpPost("{requestId:int}/image")]
+    [Authorize(Roles = AppRoles.Customer)]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(6 * 1024 * 1024)]
+    public async Task<SupportRequestDto> UploadImage(int requestId, IFormFile file, CancellationToken ct)
+    {
+        var customerId = User.GetUserId();
+        var existing = await db.SupportRequests.AsNoTracking()
+            .Where(r => r.RequestId == requestId && r.CustomerId == customerId)
+            .Select(r => new { r.RequestId, r.Status })
+            .FirstOrDefaultAsync(ct)
+            ?? throw AppException.NotFound("Không tìm thấy yêu cầu hỗ trợ");
+
+        if (existing.Status is not ("Open" or "InProgress"))
+            throw AppException.Conflict("Chỉ có thể đính kèm ảnh khi yêu cầu hỗ trợ đang mở hoặc đang xử lý");
+
+        // Upload before opening a serializable transaction so an external HTTP call never holds DB locks.
+        var imageUrl = await cloudinary.UploadImageAsync(file, "support-requests", $"support-{requestId}", ct);
+
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var request = await db.SupportRequests
+            .FirstOrDefaultAsync(r => r.RequestId == requestId && r.CustomerId == customerId, ct)
+            ?? throw AppException.NotFound("Không tìm thấy yêu cầu hỗ trợ");
+        if (request.Status is not ("Open" or "InProgress"))
+            throw AppException.Conflict("Chỉ có thể đính kèm ảnh khi yêu cầu hỗ trợ đang mở hoặc đang xử lý");
+
+        var hadImage = !string.IsNullOrWhiteSpace(request.ImageUrl);
+        request.ImageUrl = imageUrl;
+        db.SupportUpdates.Add(new SupportUpdate
+        {
+            RequestId = requestId,
+            UpdatedByUserId = customerId,
+            ActionMessage = hadImage
+                ? "Khách hàng đã cập nhật hình ảnh minh họa sự cố"
+                : "Khách hàng đã đính kèm hình ảnh minh họa sự cố",
+            PreviousStatus = request.Status,
+            NewStatus = request.Status,
+            CreatedAt = clock.GetLocalNow().DateTime,
+        });
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return await Project(db.SupportRequests.Where(r => r.RequestId == requestId)).SingleAsync(ct);
     }
 
     [HttpGet("my")]
@@ -314,7 +362,7 @@ public class SupportController(SelfStorageDbContext db, AccessService access, Ti
     private static IQueryable<SupportRequestDto> Project(IQueryable<SupportRequest> query) =>
         query.Select(r => new SupportRequestDto(r.RequestId, r.RequestCode, r.ContractId ?? 0,
             r.Unit != null ? r.Unit.UnitCode : "", r.Category, r.Priority, r.Title, r.Description, r.Status,
-            r.CreatedAt, r.AssignedStaff != null ? r.AssignedStaff.FullName : null));
+            r.CreatedAt, r.AssignedStaff != null ? r.AssignedStaff.FullName : null, r.ImageUrl));
 
     private IQueryable<SupportChecklistItemDto> ProjectChecklist(IQueryable<SupportChecklistItem> query) =>
         query.Select(i => new SupportChecklistItemDto(i.ChecklistItemId, i.SortOrder, i.Description,

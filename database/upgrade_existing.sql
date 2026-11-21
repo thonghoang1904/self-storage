@@ -18,3 +18,4 @@
 :r database\18_renewal_max_months.sql
 :r database\19_single_active_session.sql
 :r database\20_stored_items.sql
+:r database\21_support_request_images.sql

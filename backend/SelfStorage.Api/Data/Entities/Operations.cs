@@ -136,6 +136,7 @@ public class SupportRequest
     public string Priority { get; set; } = "Medium";
     public string Title { get; set; } = null!;
     public string Description { get; set; } = null!;
+    public string? ImageUrl { get; set; }
     public string Status { get; set; } = "Open";
     public DateTime CreatedAt { get; set; }
     public DateTime? ResolvedAt { get; set; }

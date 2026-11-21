@@ -212,7 +212,8 @@ public sealed class AdminSupportRequestsController(SelfStorageDbContext db, Time
             db.Facilities.Where(f => f.FacilityId == r.FacilityId)
                 .Select(f => f.FacilityName).First(),
             r.CustomerId,
-            r.Customer.FullName));
+            r.Customer.FullName,
+            r.ImageUrl));
 
     private async Task EnsureRequestExistsAsync(int requestId, CancellationToken ct)
     {
