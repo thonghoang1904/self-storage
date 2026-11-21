@@ -118,11 +118,15 @@ export default function AdminStorage() {
     setError('')
     setNotice('')
   }
-  const add = () => {
-    const newest = [...activeFacilities].sort((a, b) => b.facilityId - a.facilityId)[0]
-    const fid = activeFacilities.some((f) => f.facilityId === Number(facilityId)) ? Number(facilityId) : newest?.facilityId
-    if (fid) openForm({ facilityId: fid, value: { ...EMPTY_UNIT_FORM, unitTypeId: types[0]?.unitTypeId ?? 0 } })
+  /** Adds a unit at `fid`, or at the filtered facility; with neither, the dialog asks for the facility first. */
+  const add = (fid?: number) => {
+    const chosen = fid ?? (activeFacilities.some((f) => f.facilityId === Number(facilityId)) ? Number(facilityId) : 0)
+    openForm({ facilityId: chosen, value: { ...EMPTY_UNIT_FORM, unitTypeId: types[0]?.unitTypeId ?? 0 } })
   }
+  const filteredFacility = activeFacilities.find((f) => f.facilityId === Number(facilityId))
+  const emptyFacilities = !term && !status && current === pages
+    ? activeFacilities.filter((f) => !tiles.some((t) => t.unit.facilityId === f.facilityId)).map((f) => f.facilityId) : []
+  const groupIds = [...new Set([...pageTiles.map((t) => t.unit.facilityId), ...emptyFacilities])]
   const save = async (e: FormEvent) => {
     e.preventDefault()
     if (!form) return
@@ -162,23 +166,41 @@ export default function AdminStorage() {
           <h1>Quản Lý Kho Lưu Trữ</h1>
           <p className="muted">Mọi kho của các cơ sở: khách đang thuê, hạn hợp đồng; thêm, sửa, bảo trì hoặc xóa kho.</p>
         </div>
-        <button className="btn primary" disabled={!types.length || !activeFacilities.length || busy} onClick={add}
+        <button className="btn primary" disabled={!types.length || !activeFacilities.length || busy} onClick={() => add()}
           title={activeFacilities.length ? undefined : 'Chỉ thêm kho được tại cơ sở đang hoạt động'}>
-          <Icon name="plus" size={16} /> Thêm kho
+          <Icon name="plus" size={16} /> {filteredFacility ? `Thêm kho tại ${filteredFacility.facilityName}` : 'Thêm kho'}
         </button>
       </div>
 
       {form && (
-        <Modal title={form.value.unitId ? `Sửa kho ${form.value.unitCode}` : 'Thêm kho mới'} onClose={closeForm} wide>
-          {form.value.unitId ? (
-            <p className="muted">Cơ sở: <b>{formFacility?.facilityName}</b></p>
+        <Modal title={form.value.unitId ? `Sửa kho ${form.value.unitCode}` : form.facilityId ? `Thêm kho tại ${formFacility?.facilityName ?? ''}` : 'Thêm kho · Chọn cơ sở'} onClose={closeForm} wide>
+          {!form.value.unitId && !form.facilityId ? (
+            <div className="stack">
+              <p className="muted">Bước 1/2: chọn cơ sở sẽ có kho mới.</p>
+              <div className="facility-pick">
+                {activeFacilities.map((f) => {
+                  const n = (units ?? []).filter((u) => u.facilityId === f.facilityId).length
+                  return (
+                    <button key={f.facilityId} type="button" className="facility-pick-item" onClick={() => setForm({ ...form, facilityId: f.facilityId })}>
+                      <Icon name="building" size={18} />
+                      <span className="grow">
+                        <b>{f.facilityName}</b>
+                        <small className="muted block">{f.address}, {f.district}</small>
+                      </span>
+                      <span className={`badge ${n ? 'info' : 'warn'}`}>{n ? `${n} kho` : 'Chưa có kho'}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           ) : (
-            <label className="field inline"><span>Thêm vào cơ sở</span>
-              <Select value={form.facilityId} onChange={(e) => setForm({ ...form, facilityId: Number(e.target.value) })} aria-label="Cơ sở của kho mới">
-                {activeFacilities.map((f) => <option key={f.facilityId} value={f.facilityId}>{f.facilityName}</option>)}
-              </Select>
-            </label>
-          )}
+          <>
+          <div className="row between wrap">
+            <p className="muted">Cơ sở: <b>{formFacility?.facilityName}</b>{!form.value.unitId && ' · Bước 2/2: nhập thông tin kho'}</p>
+            {!form.value.unitId && activeFacilities.length > 1 && (
+              <button type="button" className="link-btn" onClick={() => setForm({ ...form, facilityId: 0 })}>Đổi cơ sở</button>
+            )}
+          </div>
           {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
           {typeNotice && <p className="alert ok"><Icon name="check" size={16} />{typeNotice}</p>}
           {addingType ? (
@@ -206,6 +228,8 @@ export default function AdminStorage() {
                 </p>
               )}
             </>
+          )}
+          </>
           )}
         </Modal>
       )}
@@ -246,18 +270,25 @@ export default function AdminStorage() {
           </div>
         ) : (
           <div className="stack-xl">
-            {[...new Set(pageTiles.map((t) => t.unit.facilityId))].map((fid) => {
+            {groupIds.map((fid) => {
               const group = pageTiles.filter((t) => t.unit.facilityId === fid)
               const total = tiles.filter((t) => t.unit.facilityId === fid).length
+              const f = facilities.find((x) => x.facilityId === fid)
+              const canAdd = f?.status === 'Active' && types.length > 0
               return (
                 <section key={fid} className="stack">
                   <div className="row between wrap facility-group-head">
-                    <h3 className="panel-title"><Icon name="building" size={18} /> {group[0].unit.facilityName}</h3>
-                    <button type="button" className="link-btn" onClick={() => { setFacilityId(String(fid)); setPage(1) }}>{total} kho · chỉ xem cơ sở này</button>
+                    <h3 className="panel-title"><Icon name="building" size={18} /> {f?.facilityName ?? group[0]?.unit.facilityName}</h3>
+                    <div className="row wrap">
+                      {total > 0 && <button type="button" className="link-btn" onClick={() => { setFacilityId(String(fid)); setPage(1) }}>{total} kho · chỉ xem cơ sở này</button>}
+                      {canAdd && <button type="button" className="btn outline sm" disabled={busy} onClick={() => add(fid)}><Icon name="plus" size={14} /> Thêm kho</button>}
+                    </div>
                   </div>
-                  <div className="unit-tiles">
-                    {group.map((t) => <UnitTile key={t.unit.unitId} tile={t} actions={actions} />)}
-                  </div>
+                  {group.length > 0 ? (
+                    <div className="unit-tiles">
+                      {group.map((t) => <UnitTile key={t.unit.unitId} tile={t} actions={actions} />)}
+                    </div>
+                  ) : <p className="muted">Cơ sở này chưa có kho nào. Bấm "Thêm kho" để tạo kho đầu tiên.</p>}
                 </section>
               )
             })}

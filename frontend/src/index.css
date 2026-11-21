@@ -1560,3 +1560,6 @@ tr.row-selected td { background: var(--cyan-25); }
 
 .facility-group-head { padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 .facility-group-head .panel-title { display: inline-flex; align-items: center; gap: 8px; }
+.facility-pick { display: grid; gap: 10px; }
+.facility-pick-item { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); cursor: pointer; color: inherit; font: inherit; }
+.facility-pick-item:hover, .facility-pick-item:focus-visible { border-color: var(--cyan); background: var(--cyan-25); }
