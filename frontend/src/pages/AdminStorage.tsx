@@ -119,14 +119,23 @@ export default function AdminStorage() {
     setNotice('')
   }
   const add = () => {
-    const fid = activeFacilities.some((f) => f.facilityId === Number(facilityId)) ? Number(facilityId) : activeFacilities[0]?.facilityId
+    const newest = [...activeFacilities].sort((a, b) => b.facilityId - a.facilityId)[0]
+    const fid = activeFacilities.some((f) => f.facilityId === Number(facilityId)) ? Number(facilityId) : newest?.facilityId
     if (fid) openForm({ facilityId: fid, value: { ...EMPTY_UNIT_FORM, unitTypeId: types[0]?.unitTypeId ?? 0 } })
   }
   const save = async (e: FormEvent) => {
     e.preventDefault()
     if (!form) return
     const same = (units ?? []).filter((u) => u.facilityId === form.facilityId)
-    if (await run(() => saveUnit(form.facilityId, form.value, same, types))) closeForm()
+    const where = facilities.find((f) => f.facilityId === form.facilityId)?.facilityName
+    const adding = !form.value.unitId
+    if (await run(async () => {
+      const msg = await saveUnit(form.facilityId, form.value, same, types)
+      return where ? msg.replace(/\.$/, ` tại ${where}.`) : msg
+    })) {
+      if (adding) { setFacilityId(String(form.facilityId)); setPage(1) }
+      closeForm()
+    }
   }
   const setUnitStatus = (u: Unit, next: 'Available' | 'UnderMaintenance') => run(
     () => api(`${unitPath(u)}/status`, { method: 'PUT', body: { status: next } }),
@@ -231,9 +240,29 @@ export default function AdminStorage() {
       {!loading && shown.length === 0 && <section className="panel"><Empty icon="package">{inFacility.length ? 'Không có kho nào khớp bộ lọc.' : 'Chưa có kho nào.'}</Empty></section>}
 
       {view === 'grid' ? (
-        <div className="unit-tiles">
-          {pageTiles.map((t) => <UnitTile key={t.unit.unitId} tile={t} actions={actions} />)}
-        </div>
+        facilityId ? (
+          <div className="unit-tiles">
+            {pageTiles.map((t) => <UnitTile key={t.unit.unitId} tile={t} actions={actions} />)}
+          </div>
+        ) : (
+          <div className="stack-xl">
+            {[...new Set(pageTiles.map((t) => t.unit.facilityId))].map((fid) => {
+              const group = pageTiles.filter((t) => t.unit.facilityId === fid)
+              const total = tiles.filter((t) => t.unit.facilityId === fid).length
+              return (
+                <section key={fid} className="stack">
+                  <div className="row between wrap facility-group-head">
+                    <h3 className="panel-title"><Icon name="building" size={18} /> {group[0].unit.facilityName}</h3>
+                    <button type="button" className="link-btn" onClick={() => { setFacilityId(String(fid)); setPage(1) }}>{total} kho · chỉ xem cơ sở này</button>
+                  </div>
+                  <div className="unit-tiles">
+                    {group.map((t) => <UnitTile key={t.unit.unitId} tile={t} actions={actions} />)}
+                  </div>
+                </section>
+              )
+            })}
+          </div>
+        )
       ) : pageTiles.length > 0 && (
         <section className="panel">
           <div className="table-scroll">

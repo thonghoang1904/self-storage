@@ -1557,3 +1557,6 @@ tr.row-selected td { background: var(--cyan-25); }
 .gate-blocked-icon { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: #fde8e8; color: #c62828; flex: none; }
 .gate-issues { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .gate-issues li { display: flex; gap: 8px; align-items: center; padding: 10px 14px; border-radius: 10px; background: #fde8e8; color: #b42318; font-weight: 600; }
+
+.facility-group-head { padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.facility-group-head .panel-title { display: inline-flex; align-items: center; gap: 8px; }
