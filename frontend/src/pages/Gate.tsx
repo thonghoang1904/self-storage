@@ -498,10 +498,7 @@ function VisitCard({ facilityId, visit: v, query, regs, onRecorded }: {
         <section className="panel stack gate-blocked">
           <div className="row">
             <span className="gate-blocked-icon"><Icon name="alert" size={22} /></span>
-            <div>
-              <h3 className="panel-title">Không thể cho vào kho</h3>
-              <p className="muted">Không cần xác minh CCCD. Giải thích lý do cho khách và ghi nhận lượt từ chối.</p>
-            </div>
+            <h3 className="panel-title">Không thể cho vào kho</h3>
           </div>
           <ul className="gate-issues">
             {v.issues.map((i) => <li key={i.code}><Icon name="x" size={14} /> {i.message}</li>)}
