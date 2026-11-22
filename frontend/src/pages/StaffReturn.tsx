@@ -5,7 +5,7 @@ import { api, billingLink, fmtDate, fmtMoney, fmtTime } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { FormField } from '../components/form'
 import { Icon, StatusBadge } from '../components/ui'
-import type { EarlyReturnQuote, EarlyReturnRequest, Invoice, OverdueSummary, ReturnUnitResult, StaffContract } from '../types'
+import type { DepositRefund, DepositRefundEmailResult, DepositRefundSummary, EarlyReturnQuote, EarlyReturnRequest, Invoice, OverdueSummary, ReturnUnitResult, StaffContract } from '../types'
 import { Select } from '../components/Select'
 
 /**
@@ -394,14 +394,29 @@ function RefundCard({ contract: c, returned, refundDue }: { contract: StaffContr
   const [code, setCode] = useState('')
   const [notes, setNotes] = useState('')
   const [confirmed, setConfirmed] = useState(false)
+  const [summary, setSummary] = useState<DepositRefundSummary | null>(null)
   const [remaining, setRemaining] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
+  const [emailBusy, setEmailBusy] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState('')
-  useEffect(() => { const v = remaining ?? refundDue; setAmount(v === null ? '' : String(v)) }, [refundDue, remaining])
+
+  const loadSummary = useCallback(async () => {
+    if (!returned) { setSummary(null); return }
+    try {
+      const s = await api<DepositRefundSummary>(`/api/contracts/${c.contractId}/deposit-refunds`)
+      setSummary(s)
+      setRemaining(s.remainingRefund)
+    } catch {
+      setSummary(null)
+    }
+  }, [c.contractId, returned])
+  useEffect(() => { void loadSummary() }, [loadSummary])
 
   // null: returned earlier, the API checks the amount against what is still refundable and says how much that is.
-  const left = remaining ?? refundDue
+  const left = summary?.remainingRefund ?? remaining ?? refundDue
+  useEffect(() => { setAmount(left === null ? '' : String(left)) }, [left])
+
   const max = left ?? c.depositPaid
   const refund = async (e: FormEvent) => {
     e.preventDefault()
@@ -420,17 +435,35 @@ function RefundCard({ contract: c, returned, refundDue }: { contract: StaffContr
     if (invalid) { setError(invalid); return }
     setBusy(true)
     try {
-      const res = await api<{ refundedAmount: number; remainingRefund: number; refundedAt: string }>(`/api/contracts/${c.contractId}/deposit-refunds`, {
+      const res = await api<DepositRefund>(`/api/contracts/${c.contractId}/deposit-refunds`, {
         body: { paymentMethod: method, amount: Number(amount), transactionCode: code.trim() || null, notes: notes.trim() || null },
       })
       setRemaining(res.remainingRefund)
-      setDone(`Đã hoàn ${fmtMoney(res.refundedAmount)} lúc ${fmtTime(res.refundedAt)}. Còn lại ${fmtMoney(res.remainingRefund)}.`)
+      setDone(`Đã hoàn ${fmtMoney(res.refundedAmount)} lúc ${fmtTime(res.refundedAt)}. Còn lại ${fmtMoney(res.remainingRefund)}.`
+        + (res.receiptEmailQueued ? ` Đã tự động xuất hóa đơn hoàn cọc qua email ${res.receiptEmail ?? 'khách hàng'}.` : ''))
       setConfirmed(false)
       setCode('')
+      await loadSummary()
     } catch (err) {
       setError((err as Error).message)
     } finally {
       setBusy(false)
+    }
+  }
+
+  const sendRefundEmail = async () => {
+    setError('')
+    setEmailBusy(true)
+    try {
+      const res = await api<DepositRefundEmailResult>(`/api/contracts/${c.contractId}/deposit-refunds/send-email`, {
+        method: 'POST',
+        body: {},
+      })
+      setDone(`Đã xuất hóa đơn hoàn cọc ${res.receiptNumber} gửi qua email ${res.recipientEmail}.`)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setEmailBusy(false)
     }
   }
 
@@ -440,8 +473,9 @@ function RefundCard({ contract: c, returned, refundDue }: { contract: StaffContr
         <h3 className="panel-title">Hoàn cọc</h3>
         <span className={`badge ${!returned ? 'muted' : left === null ? 'info' : left > 0 ? 'warn' : 'ok'}`}>{!returned ? 'Chờ trả kho' : left === null ? 'Đã trả kho' : left > 0 ? 'Chưa hoàn' : 'Đã hoàn đủ'}</span>
       </div>
-      <Info label="Tiền cọc">{fmtMoney(c.depositPaid)}</Info>
-      <Info label="Có thể hoàn">{left === null ? 'Hệ thống kiểm tra khi ghi nhận' : fmtMoney(left)}</Info>
+      <Info label="Tiền cọc">{fmtMoney(summary?.depositPaid ?? c.depositPaid)}</Info>
+      {summary && <Info label="Đã hoàn">{fmtMoney(summary.alreadyRefunded)}</Info>}
+      <Info label={summary ? 'Còn phải hoàn' : 'Có thể hoàn'}>{left === null ? 'Hệ thống kiểm tra khi ghi nhận' : fmtMoney(left)}</Info>
       {left === null && returned && <p className="hint"><Icon name="wallet" size={15} /> Đã trừ phí, hóa đơn còn nợ và các lần hoàn trước; nhập số tiền, hệ thống báo số còn được hoàn nếu vượt.</p>}
       <Info label="Hình thức">{method === 'Cash' ? 'Tiền mặt tại quầy' : 'Chuyển khoản'}</Info>
       {returned && (left === null || left > 0) && (
@@ -467,6 +501,22 @@ function RefundCard({ contract: c, returned, refundDue }: { contract: StaffContr
             {left !== null && <button className="btn outline" type="button" onClick={() => setAmount(String(left))}>Hoàn toàn bộ</button>}
           </div>
         </>
+      )}
+      {returned && summary && summary.refunds.length > 0 && (
+        <div className="stack-sm">
+          <div className="row between wrap">
+            <b>Lịch sử hoàn cọc</b>
+            <button className="btn outline sm" type="button" disabled={emailBusy} onClick={() => void sendRefundEmail()}>
+              <Icon name="mail" size={14} /> {emailBusy ? 'Đang gửi…' : 'Xuất hóa đơn hoàn cọc qua mail'}
+            </button>
+          </div>
+          {summary.refunds.map((r) => (
+            <div key={r.paymentId} className="info-row">
+              <span><b>{fmtMoney(r.amountPaid)}</b> · {r.paymentMethod === 'Cash' ? 'Tiền mặt' : 'Chuyển khoản'}{r.transactionCode ? ` · ${r.transactionCode}` : ''}</span>
+              <small className="muted">{fmtTime(r.paymentDate)}{r.receivedByStaff ? ` · ${r.receivedByStaff}` : ''}</small>
+            </div>
+          ))}
+        </div>
       )}
       {!returned && <p className="hint"><Icon name="wallet" size={15} /> Hoàn cọc sau khi đã hoàn tất trả kho.</p>}
       {done && <p className="alert ok"><Icon name="check" size={16} />{done}</p>}

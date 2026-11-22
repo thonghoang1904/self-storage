@@ -157,19 +157,29 @@ export function UnitTypeForm({ type, onCancel, onSaved }: { type?: UnitType; onC
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    const dailyRaw = f.baseDailyRate.trim()
+    const monthlyRaw = f.baseMonthlyRate.trim()
+    const daily = dailyRaw ? Number(dailyRaw) : NaN
+    const monthly = monthlyRaw ? Number(monthlyRaw) : NaN
+    const checkRate = (raw: string, parsed: number, label: string) =>
+      !raw ? `Vui lòng nhập ${label.toLowerCase()}`
+        : !Number.isFinite(parsed) || !Number.isInteger(parsed) ? `${label} phải là số tiền nguyên (đồng)`
+        : checkMoney(parsed, label, 1000)
+
     const body = {
       typeName: f.typeName.trim(),
       lengthMeters: Number(f.lengthMeters), widthMeters: Number(f.widthMeters), heightMeters: Number(f.heightMeters),
       hasClimateControl: f.hasClimateControl,
-      baseDailyRate: Number(f.baseDailyRate || 0), baseMonthlyRate: Number(f.baseMonthlyRate),
+      baseDailyRate: daily, baseMonthlyRate: monthly,
       description: f.description.trim() || null,
     }
     const problem = firstError(
       checkText(f.typeName, 'Tên loại kho', 100, false, 2),
       dim(f.lengthMeters, 'Chiều dài'), dim(f.widthMeters, 'Chiều rộng'), dim(f.heightMeters, 'Chiều cao'),
-      checkMoney(f.baseMonthlyRate, 'Giá theo tháng', 1000),
-      checkMoney(f.baseDailyRate || '0', 'Giá theo ngày', 0),
-      body.baseDailyRate > body.baseMonthlyRate ? 'Giá theo ngày không được lớn hơn giá theo tháng' : '',
+      checkRate(monthlyRaw, monthly, 'Giá theo tháng'),
+      checkRate(dailyRaw, daily, 'Giá theo ngày'),
+      Number.isFinite(daily) && Number.isFinite(monthly) && daily > monthly
+        ? 'Giá theo ngày không được lớn hơn giá theo tháng' : '',
       checkText(f.description, 'Mô tả', 500, true),
     )
     if (problem) { setError(problem); return }
@@ -215,7 +225,7 @@ export function UnitTypeForm({ type, onCancel, onSaved }: { type?: UnitType; onC
 
   const shownImage = preview ?? (dropImage ? null : type?.imageUrl ?? null)
   return (
-    <form className="policy-form" onSubmit={(e) => { void submit(e) }}>
+    <form className="policy-form" onSubmit={(e) => { void submit(e) }} noValidate>
       <h4>{type ? 'Sửa loại kho' : 'Thêm loại kho'}</h4>
       <div className="form-grid">
         <label className="field"><span>Tên loại kho *</span><input value={f.typeName} maxLength={100} placeholder="VD: Kho Siêu Lớn XL (4.0m x 5.0m)" onChange={(e) => set('typeName', e.target.value)} required /></label>
@@ -224,8 +234,8 @@ export function UnitTypeForm({ type, onCancel, onSaved }: { type?: UnitType; onC
         <label className="field"><span>Chiều rộng (m) *</span><input type="number" min={0.1} max={20} step="0.01" value={f.widthMeters} onChange={(e) => set('widthMeters', e.target.value)} required /></label>
         <label className="field"><span>Chiều cao (m) *</span><input type="number" min={0.1} max={20} step="0.01" value={f.heightMeters} onChange={(e) => set('heightMeters', e.target.value)} required /></label>
         <span />
-        <label className="field"><span>Giá theo tháng (đ) *</span><input type="number" min={1000} value={f.baseMonthlyRate} onChange={(e) => set('baseMonthlyRate', e.target.value)} required /></label>
-        <label className="field"><span>Giá theo ngày (đ)</span><input type="number" min={0} value={f.baseDailyRate} onChange={(e) => set('baseDailyRate', e.target.value)} /></label>
+        <label className="field"><span>Giá theo tháng (đ) *</span><input type="number" min={1000} step={1} value={f.baseMonthlyRate} onChange={(e) => set('baseMonthlyRate', e.target.value)} required /></label>
+        <label className="field"><span>Giá theo ngày (đ) *</span><input type="number" min={1000} step={1} value={f.baseDailyRate} onChange={(e) => set('baseDailyRate', e.target.value)} required /></label>
       </div>
       <label className="check-line"><input type="checkbox" checked={f.hasClimateControl} onChange={(e) => set('hasClimateControl', e.target.checked)} /><span>Có điều hòa kiểm soát nhiệt độ, độ ẩm</span></label>
       <div className="field">

@@ -41,6 +41,7 @@ public class StorageUnit
     public decimal MonthlyPrice { get; set; }
     public string? SmartLockCode { get; set; }
     public string Status { get; set; } = UnitStatus.Available;
+    public string? ImageUrl { get; set; }
     public DateTime CreatedAt { get; set; }
 
     public Facility Facility { get; set; } = null!;

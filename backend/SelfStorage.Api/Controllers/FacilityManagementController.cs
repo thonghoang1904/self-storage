@@ -18,6 +18,7 @@ public sealed class FacilityManagementController(
     AccessService access,
     BillingService billing,
     EmailOutboxService emailOutbox,
+    CloudinaryImageService cloudinary,
     TimeProvider clock) : ControllerBase
 {
     /// <summary>The facility's manager, or a system administrator for any facility.</summary>
@@ -31,7 +32,7 @@ public sealed class FacilityManagementController(
         return await db.StorageUnits.Where(u => u.FacilityId == facilityId)
             .OrderBy(u => u.FloorNumber).ThenBy(u => u.UnitCode)
             .Select(u => new StorageUnitDto(u.UnitId, u.UnitCode, u.FloorNumber, u.ZoneArea,
-                u.UnitType.BaseMonthlyRate, u.Status, u.UnitTypeId, u.UnitType.TypeName))
+                u.UnitType.BaseMonthlyRate, u.Status, u.UnitTypeId, u.UnitType.TypeName, u.ImageUrl))
             .ToListAsync(ct);
     }
 
@@ -167,6 +168,63 @@ public sealed class FacilityManagementController(
         });
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
+        return await ProjectUnit(unitId, ct);
+    }
+
+    [HttpPost("units/{unitId:int}/image")]
+    [HttpPut("units/{unitId:int}/image")]
+    [Authorize(Roles = UnitManagerRoles)]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(6 * 1024 * 1024)]
+    public async Task<StorageUnitDto> UploadUnitImage(
+        int facilityId, int unitId, IFormFile file, CancellationToken ct)
+    {
+        await EnsureManagerOwnsFacilityAsync(facilityId, ct);
+        if (!await db.StorageUnits.AsNoTracking().AnyAsync(u => u.UnitId == unitId && u.FacilityId == facilityId, ct))
+            throw AppException.NotFound("Không tìm thấy kho tại cơ sở");
+
+        // Upload outside the serializable transaction so external HTTP I/O never holds DB locks.
+        var imageUrl = await cloudinary.UploadImageAsync(file, "storage-units", $"unit-{unitId}", ct);
+
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var unit = await db.StorageUnits.FirstOrDefaultAsync(
+            u => u.UnitId == unitId && u.FacilityId == facilityId, ct)
+            ?? throw AppException.NotFound("Không tìm thấy kho tại cơ sở");
+        unit.ImageUrl = imageUrl;
+        db.ActivityLogs.Add(new ActivityLog
+        {
+            UserId = User.GetUserId(),
+            Action = "StorageUnitImageUpdated",
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+            Details = $"Updated image for unit {unit.UnitCode} ({unitId}) at facility {facilityId}",
+            CreatedAt = clock.GetLocalNow().DateTime,
+        });
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return await ProjectUnit(unitId, ct);
+    }
+
+    [HttpDelete("units/{unitId:int}/image")]
+    [Authorize(Roles = UnitManagerRoles)]
+    public async Task<StorageUnitDto> RemoveUnitImage(int facilityId, int unitId, CancellationToken ct)
+    {
+        await EnsureManagerOwnsFacilityAsync(facilityId, ct);
+        var unit = await db.StorageUnits.FirstOrDefaultAsync(
+            u => u.UnitId == unitId && u.FacilityId == facilityId, ct)
+            ?? throw AppException.NotFound("Không tìm thấy kho tại cơ sở");
+        if (unit.ImageUrl is not null)
+        {
+            unit.ImageUrl = null;
+            db.ActivityLogs.Add(new ActivityLog
+            {
+                UserId = User.GetUserId(),
+                Action = "StorageUnitImageRemoved",
+                IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+                Details = $"Removed image for unit {unit.UnitCode} ({unitId}) at facility {facilityId}",
+                CreatedAt = clock.GetLocalNow().DateTime,
+            });
+            await db.SaveChangesAsync(ct);
+        }
         return await ProjectUnit(unitId, ct);
     }
 
@@ -381,7 +439,7 @@ public sealed class FacilityManagementController(
     private Task<StorageUnitDto> ProjectUnit(int unitId, CancellationToken ct) =>
         db.StorageUnits.Where(u => u.UnitId == unitId)
             .Select(u => new StorageUnitDto(u.UnitId, u.UnitCode, u.FloorNumber, u.ZoneArea,
-                u.UnitType.BaseMonthlyRate, u.Status, u.UnitTypeId, u.UnitType.TypeName))
+                u.UnitType.BaseMonthlyRate, u.Status, u.UnitTypeId, u.UnitType.TypeName, u.ImageUrl))
             .SingleAsync(ct);
 
     private static string? Normalize(string? value) =>

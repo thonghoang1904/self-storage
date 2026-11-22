@@ -5,6 +5,7 @@ using SelfStorage.Api.Data;
 using SelfStorage.Api.Data.Entities;
 using SelfStorage.Api.Dtos;
 using SelfStorage.Api.Infrastructure;
+using SelfStorage.Api.Services;
 
 namespace SelfStorage.Api.Controllers;
 
@@ -27,8 +28,9 @@ public sealed class AdminEmailOutboxController(SelfStorageDbContext db, TimeProv
             throw AppException.BadRequest("Trạng thái email không hợp lệ");
 
         var query = db.EmailOutboxMessages
-            .Where(m => m.EventKey.StartsWith("invoice-issued:")
-                || m.EventKey.StartsWith("payment-received:"));
+            .Where(m => m.EventKey.StartsWith(EmailOutboxService.InvoiceIssuedPrefix)
+                || m.EventKey.StartsWith(EmailOutboxService.PaymentReceivedPrefix)
+                || m.EventKey.StartsWith(EmailOutboxService.DepositRefundedPrefix));
         if (!string.IsNullOrWhiteSpace(status))
             query = query.Where(m => m.Status == status);
         return await query.OrderByDescending(m => m.CreatedAt)
@@ -45,8 +47,9 @@ public sealed class AdminEmailOutboxController(SelfStorageDbContext db, TimeProv
     {
         var message = await db.EmailOutboxMessages.FirstOrDefaultAsync(
             m => m.EmailOutboxMessageId == messageId
-                && (m.EventKey.StartsWith("invoice-issued:")
-                    || m.EventKey.StartsWith("payment-received:")), ct)
+                && (m.EventKey.StartsWith(EmailOutboxService.InvoiceIssuedPrefix)
+                    || m.EventKey.StartsWith(EmailOutboxService.PaymentReceivedPrefix)
+                    || m.EventKey.StartsWith(EmailOutboxService.DepositRefundedPrefix)), ct)
             ?? throw AppException.NotFound("Không tìm thấy email trong hàng đợi");
         if (message.Status != "Failed")
             throw AppException.Conflict("Chỉ có thể gửi lại email ở trạng thái Failed");

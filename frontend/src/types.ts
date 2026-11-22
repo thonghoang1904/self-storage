@@ -186,6 +186,52 @@ export interface CancellationRefund {
   paymentMethod: string
   transactionCode: string | null
   refundedAt: string
+  paymentId?: number
+  receiptEmail?: string | null
+  receiptEmailQueued?: boolean
+}
+
+export interface DepositRefund {
+  contractId: number
+  refundedAmount: number
+  remainingRefund: number
+  paymentMethod: string
+  transactionCode: string | null
+  refundedAt: string
+  paymentId?: number
+  receiptEmail?: string | null
+  receiptEmailQueued?: boolean
+}
+
+export interface DepositRefundSummary {
+  contractId: number
+  depositPaid: number
+  feesDeducted: number
+  settledFromDeposit: number
+  stillOwed: number
+  refundableAmount: number
+  alreadyRefunded: number
+  remainingRefund: number
+  refunds: {
+    paymentId: number
+    paymentMethod: string
+    transactionCode: string | null
+    amountPaid: number
+    paymentDate: string
+    status: string
+    paymentNotes: string | null
+    receivedByStaff: string | null
+  }[]
+}
+
+export interface DepositRefundEmailResult {
+  emailOutboxMessageId: number
+  paymentId: number
+  receiptNumber: string
+  recipientEmail: string
+  subject: string
+  status: string
+  queuedAt: string
 }
 
 export const CancellationStatuses: Record<string, { label: string; tone: 'ok' | 'warn' | 'bad' | 'info' | 'muted' }> = {
@@ -726,7 +772,7 @@ export interface AdminContract {
 /** Invoice and receipt emails queued with the business transaction and sent by a background worker. */
 export interface EmailOutboxMessage {
   emailOutboxMessageId: number
-  /** invoice-issued:<id> or payment-received:<id> */
+  /** invoice-issued:<id>, payment-received:<id>, or deposit-refunded:<id> */
   eventKey: string
   recipientEmail: string
   subject: string

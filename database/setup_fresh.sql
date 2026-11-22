@@ -21,3 +21,4 @@
 :r database\20_stored_items.sql
 :r database\21_support_request_images.sql
 :r database\22_unit_type_images.sql
+:r database\23_storage_unit_images.sql

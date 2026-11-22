@@ -31,6 +31,7 @@ public sealed class DevelopmentDatabaseBootstrapper(
         "20_stored_items.sql",
         "21_support_request_images.sql",
         "22_unit_type_images.sql",
+        "23_storage_unit_images.sql",
     ];
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)

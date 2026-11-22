@@ -3,7 +3,7 @@ import { amountError, transactionCodeError } from '../validation'
 import { api, fmtMoney, fmtTime } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon } from '../components/ui'
-import { CancellationStatuses, type CancellationRefund, type CancellationRequest, type Invoice } from '../types'
+import { CancellationStatuses, type CancellationRefund, type CancellationRequest, type DepositRefundEmailResult, type Invoice } from '../types'
 import { Select } from '../components/Select'
 
 /**
@@ -77,7 +77,8 @@ export default function StaffCancellations() {
             onResolved={(r) => void done(r.status === 'Approved'
               ? `Đã duyệt hủy ${r.reservationCode}.${r.approvedRefundAmount ? ` Cần hoàn cọc ${fmtMoney(r.approvedRefundAmount)}.` : ' Không có cọc cần hoàn.'}`
               : `Đã từ chối yêu cầu hủy ${r.reservationCode}.`)}
-            onRefunded={(f) => { void done(`Đã ghi nhận hoàn ${fmtMoney(f.refundedAmount)}${f.remainingRefund > 0 ? `, còn ${fmtMoney(f.remainingRefund)} chưa hoàn` : ', đã hoàn đủ'}.`) }}
+            onRefunded={(f) => { void done(`Đã ghi nhận hoàn ${fmtMoney(f.refundedAmount)}${f.remainingRefund > 0 ? `, còn ${fmtMoney(f.remainingRefund)} chưa hoàn` : ', đã hoàn đủ'}.${f.receiptEmailQueued ? ` Đã tự động xuất hóa đơn hoàn cọc qua email ${f.receiptEmail ?? 'khách hàng'}.` : ''}`) }}
+            onEmailed={(msg) => { setError(''); setNotice(msg) }}
             onError={setError} />
         ))}
         {items.length === 0 && <div className="panel"><Empty icon="clipboard">{tab === 'Pending' ? 'Không có yêu cầu hủy nào chờ duyệt.' : 'Không có yêu cầu nào.'}</Empty></div>}
@@ -86,19 +87,38 @@ export default function StaffCancellations() {
   )
 }
 
-function CancellationCard({ request: c, facilityId, remaining, onResolved, onRefunded, onError }: {
+function CancellationCard({ request: c, facilityId, remaining, onResolved, onRefunded, onEmailed, onError }: {
   request: CancellationRequest
   facilityId: number
   remaining?: number
   onResolved: (r: CancellationRequest) => void
   onRefunded: (f: CancellationRefund) => void
+  onEmailed: (msg: string) => void
   onError: (m: string) => void
 }) {
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
+  const [emailBusy, setEmailBusy] = useState(false)
   const [refundOpen, setRefundOpen] = useState(false)
   const st = CancellationStatuses[c.status] ?? { label: c.status, tone: 'muted' as const }
   const owed = remaining ?? c.approvedRefundAmount ?? 0
+  const hasRefunded = (c.approvedRefundAmount ?? 0) - owed > 0
+
+  const sendEmail = async () => {
+    onError('')
+    setEmailBusy(true)
+    try {
+      const res = await api<DepositRefundEmailResult>(`/api/reservations/${c.reservationId}/cancellation-refunds/send-email`, {
+        method: 'POST',
+        body: {},
+      })
+      onEmailed(`Đã xuất hóa đơn hoàn cọc ${res.receiptNumber} (${c.reservationCode}) gửi qua email ${res.recipientEmail}.`)
+    } catch (e) {
+      onError((e as Error).message)
+    } finally {
+      setEmailBusy(false)
+    }
+  }
 
   const resolve = async (approve: boolean) => {
     // A rejection must tell the customer why.
@@ -147,9 +167,22 @@ function CancellationCard({ request: c, facilityId, remaining, onResolved, onRef
       )}
 
       {c.status === 'Approved' && (c.approvedRefundAmount ?? 0) > 0 && (
-        owed <= 0 ? <p className="ok-text"><Icon name="check" size={14} /> Đã hoàn đủ tiền cọc.</p>
-        : refundOpen ? <RefundForm reservationId={c.reservationId} max={owed} onDone={(f) => { setRefundOpen(false); if (f) onRefunded(f) }} onError={onError} />
-        : <div className="row"><button className="btn outline sm" onClick={() => setRefundOpen(true)}><Icon name="wallet" size={14} /> Ghi nhận hoàn cọc</button></div>
+        <div className="stack-sm">
+          <div className="row wrap">
+            {owed <= 0 && <p className="ok-text"><Icon name="check" size={14} /> Đã hoàn đủ tiền cọc.</p>}
+            {owed > 0 && !refundOpen && (
+              <button className="btn outline sm" onClick={() => setRefundOpen(true)}><Icon name="wallet" size={14} /> Ghi nhận hoàn cọc</button>
+            )}
+            {hasRefunded && (
+              <button className="btn outline sm" disabled={emailBusy} onClick={() => void sendEmail()}>
+                <Icon name="mail" size={14} /> {emailBusy ? 'Đang gửi…' : 'Xuất hóa đơn hoàn cọc qua mail'}
+              </button>
+            )}
+          </div>
+          {owed > 0 && refundOpen && (
+            <RefundForm reservationId={c.reservationId} max={owed} onDone={(f) => { setRefundOpen(false); if (f) onRefunded(f) }} onError={onError} />
+          )}
+        </div>
       )}
     </section>
   )

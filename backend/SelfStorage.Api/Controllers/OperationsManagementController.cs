@@ -89,7 +89,7 @@ public sealed class OperationsManagementController(
         return await db.StorageUnits.Where(u => u.FacilityId == facilityId)
             .OrderBy(u => u.FloorNumber).ThenBy(u => u.UnitCode)
             .Select(u => new StorageUnitDto(u.UnitId, u.UnitCode, u.FloorNumber, u.ZoneArea,
-                u.UnitType.BaseMonthlyRate, u.Status, u.UnitTypeId, u.UnitType.TypeName))
+                u.UnitType.BaseMonthlyRate, u.Status, u.UnitTypeId, u.UnitType.TypeName, u.ImageUrl))
             .ToListAsync(ct);
     }
 
@@ -116,8 +116,8 @@ public sealed class OperationsManagementController(
             WidthMeters = req.WidthMeters,
             HeightMeters = req.HeightMeters,
             HasClimateControl = req.HasClimateControl,
-            BaseDailyRate = req.BaseDailyRate,
-            BaseMonthlyRate = req.BaseMonthlyRate,
+            BaseDailyRate = req.BaseDailyRate!.Value,
+            BaseMonthlyRate = req.BaseMonthlyRate!.Value,
             Description = Normalize(req.Description),
         };
         db.UnitTypes.Add(unitType);
@@ -155,20 +155,22 @@ public sealed class OperationsManagementController(
                     "Loại kho đang có hợp đồng hoặc đơn đặt chỗ hiệu lực; chỉ được đổi tên, mô tả và giá niêm yết");
         }
 
-        var monthlyRateChanged = unitType.BaseMonthlyRate != req.BaseMonthlyRate;
+        var dailyRate = req.BaseDailyRate!.Value;
+        var monthlyRate = req.BaseMonthlyRate!.Value;
+        var monthlyRateChanged = unitType.BaseMonthlyRate != monthlyRate;
         unitType.TypeName = name;
         unitType.LengthMeters = req.LengthMeters;
         unitType.WidthMeters = req.WidthMeters;
         unitType.HeightMeters = req.HeightMeters;
         unitType.HasClimateControl = req.HasClimateControl;
-        unitType.BaseDailyRate = req.BaseDailyRate;
-        unitType.BaseMonthlyRate = req.BaseMonthlyRate;
+        unitType.BaseDailyRate = dailyRate;
+        unitType.BaseMonthlyRate = monthlyRate;
         unitType.Description = Normalize(req.Description);
 
         if (monthlyRateChanged)
         {
             await db.StorageUnits.Where(u => u.UnitTypeId == unitTypeId)
-                .ExecuteUpdateAsync(update => update.SetProperty(u => u.MonthlyPrice, req.BaseMonthlyRate), ct);
+                .ExecuteUpdateAsync(update => update.SetProperty(u => u.MonthlyPrice, monthlyRate), ct);
         }
 
         AddLog("UnitTypeUpdated", $"Updated unit type {unitTypeId} ({name})");
@@ -207,16 +209,17 @@ public sealed class OperationsManagementController(
     public async Task<UnitTypeDto> UpdateUnitTypePricing(
         int unitTypeId, UpdateUnitTypePricingRequest req, CancellationToken ct)
     {
+        var (dailyRate, monthlyRate) = ValidateUnitTypeRates(req.BaseDailyRate, req.BaseMonthlyRate);
         await using var transaction = await db.Database.BeginTransactionAsync(
             System.Data.IsolationLevel.Serializable, ct);
         var unitType = await db.UnitTypes.FindAsync([unitTypeId], ct)
             ?? throw AppException.NotFound("Không tìm thấy loại kho");
-        unitType.BaseDailyRate = req.BaseDailyRate;
-        unitType.BaseMonthlyRate = req.BaseMonthlyRate;
+        unitType.BaseDailyRate = dailyRate;
+        unitType.BaseMonthlyRate = monthlyRate;
         await db.StorageUnits.Where(u => u.UnitTypeId == unitTypeId)
-            .ExecuteUpdateAsync(update => update.SetProperty(u => u.MonthlyPrice, req.BaseMonthlyRate), ct);
+            .ExecuteUpdateAsync(update => update.SetProperty(u => u.MonthlyPrice, monthlyRate), ct);
         AddLog("UnitTypePricingUpdated",
-            $"Updated prices for unit type {unitTypeId}: daily {req.BaseDailyRate:N2}, monthly {req.BaseMonthlyRate:N2}");
+            $"Updated prices for unit type {unitTypeId}: daily {dailyRate:N2}, monthly {monthlyRate:N2}");
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return ToUnitTypeDto(unitType);
@@ -496,8 +499,19 @@ public sealed class OperationsManagementController(
             || decimal.Round(req.WidthMeters, 2) != req.WidthMeters
             || decimal.Round(req.HeightMeters, 2) != req.HeightMeters)
             throw AppException.BadRequest("Kích thước (m) chỉ hỗ trợ tối đa 2 chữ số thập phân");
-        if (req.BaseDailyRate > req.BaseMonthlyRate)
+        ValidateUnitTypeRates(req.BaseDailyRate, req.BaseMonthlyRate);
+    }
+
+    private static (decimal DailyRate, decimal MonthlyRate) ValidateUnitTypeRates(
+        decimal? baseDailyRate, decimal? baseMonthlyRate)
+    {
+        if (baseDailyRate is null || baseDailyRate <= 0)
+            throw AppException.BadRequest("Vui lòng nhập giá theo ngày lớn hơn 0");
+        if (baseMonthlyRate is null || baseMonthlyRate <= 0)
+            throw AppException.BadRequest("Vui lòng nhập giá theo tháng lớn hơn 0");
+        if (baseDailyRate > baseMonthlyRate)
             throw AppException.BadRequest("Giá theo ngày không được lớn hơn giá theo tháng");
+        return (baseDailyRate.Value, baseMonthlyRate.Value);
     }
 
     private static UnitTypeDto ToUnitTypeDto(UnitType t) =>

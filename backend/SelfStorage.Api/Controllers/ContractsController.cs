@@ -26,7 +26,8 @@ public class ContractsController(
 {
     public static readonly Expression<Func<Contract, ContractDto>> ToDto = c => new ContractDto(
         c.ContractId, c.ContractNumber, c.Unit.FacilityId, c.Unit.Facility.FacilityName, c.Unit.UnitCode,
-        c.StartDate, c.EndDate, c.MonthlyRentFee, c.Status);
+        c.StartDate, c.EndDate, c.MonthlyRentFee, c.Status,
+        c.Unit.ImageUrl, c.Unit.UnitType.ImageUrl);
 
     [HttpGet("my")]
     [Authorize(Roles = AppRoles.Customer)]
@@ -66,7 +67,8 @@ public class ContractsController(
             unitType.VolumeCubicMeters,
             unitType.HasClimateControl,
             unit.Facility.OperatingHours,
-            unitType.ImageUrl);
+            unitType.ImageUrl,
+            unit.ImageUrl);
     }
 
     [HttpPost("{id:int}/renewals")]
@@ -653,8 +655,59 @@ public class ContractsController(
             CreatedAt = now,
         });
         await db.SaveChangesAsync(ct);
+        var email = await emailOutbox.QueueDepositRefundReceiptAsync(
+            payment.PaymentId, contract.ContractId, null, manualResend: false, ct);
+        await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
-        return new DepositRefundDto(id, req.Amount, summary.Remaining - req.Amount, req.PaymentMethod, transactionCode, now);
+        return new DepositRefundDto(id, req.Amount, summary.Remaining - req.Amount, req.PaymentMethod,
+            transactionCode, now, payment.PaymentId, email.RecipientEmail, true);
+    }
+
+    [HttpPost("{id:int}/deposit-refunds/send-email")]
+    [Authorize(Roles = AppRoles.GateRoles + "," + AppRoles.Admin)]
+    public async Task<DepositRefundEmailDto> SendDepositRefundEmail(
+        int id,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SendDepositRefundEmailRequest? req,
+        CancellationToken ct)
+    {
+        var contract = await db.Contracts.FirstOrDefaultAsync(c => c.ContractId == id, ct)
+            ?? throw AppException.NotFound("Không tìm thấy hợp đồng");
+        var staffId = User.GetUserId();
+        if (!User.IsInRole(AppRoles.Admin))
+            await access.EnsureAssignedAsync(staffId,
+                await db.StorageUnits.Where(u => u.UnitId == contract.UnitId).Select(u => u.FacilityId).SingleAsync(ct), ct);
+        if (contract.Status != ContractStatus.Terminated)
+            throw AppException.Conflict("Chỉ xuất hóa đơn hoàn cọc sau khi hợp đồng đã kết thúc và trả kho");
+
+        var summary = await ComputeDepositRefundSummaryAsync(contract, ct);
+        var refundedPayments = summary.DepositInvoice is null
+            ? []
+            : summary.DepositInvoice.Payments
+                .Where(p => p.Status == "Refunded")
+                .OrderByDescending(p => p.PaymentDate)
+                .ThenByDescending(p => p.PaymentId)
+                .ToList();
+
+        var targetPayment = req?.PaymentId is int pid
+            ? refundedPayments.FirstOrDefault(p => p.PaymentId == pid)
+                ?? throw AppException.NotFound("Không tìm thấy giao dịch hoàn cọc")
+            : refundedPayments.FirstOrDefault()
+                ?? throw AppException.Conflict("Hợp đồng chưa có giao dịch hoàn cọc nào để xuất hóa đơn qua email");
+
+        var email = await emailOutbox.QueueDepositRefundReceiptAsync(
+            targetPayment.PaymentId, contract.ContractId, null, manualResend: true, ct);
+        var receiptNumber = EmailOutboxService.FormatDepositRefundReceiptNumber(targetPayment.PaymentId);
+        db.ActivityLogs.Add(new ActivityLog
+        {
+            UserId = staffId,
+            Action = "DepositRefundInvoiceEmailed",
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+            Details = $"Contract {contract.ContractNumber}; emailed deposit refund receipt {receiptNumber} to {email.RecipientEmail}",
+            CreatedAt = clock.GetLocalNow().DateTime,
+        });
+        await db.SaveChangesAsync(ct);
+        return new DepositRefundEmailDto(email.EmailOutboxMessageId, targetPayment.PaymentId, receiptNumber,
+            email.RecipientEmail, email.Subject, email.Status, email.CreatedAt);
     }
 
     /// <summary>Contracts of one facility for staff (renewals, return, overdue). Optional status filter.</summary>

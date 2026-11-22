@@ -17,7 +17,7 @@ const TABS = [
   { v: 'Sent', label: 'Đã gửi' },
 ]
 const PAGE_SIZE = 50
-const kindOf = (key: string) => key.startsWith('payment-received:') ? 'Biên nhận thanh toán' : key.startsWith('invoice-issued:') ? 'Thông báo hóa đơn' : key
+const kindOf = (key: string) => key.startsWith('deposit-refunded:') ? 'Hóa đơn hoàn cọc' : key.startsWith('payment-received:') ? 'Biên nhận thanh toán' : key.startsWith('invoice-issued:') ? 'Thông báo hóa đơn' : key
 
 export default function AdminEmails() {
   const [status, setStatus] = useState('')
@@ -62,7 +62,7 @@ export default function AdminEmails() {
       <div className="page-title-row row between wrap">
         <div>
           <h1>Email Hệ Thống</h1>
-          <p className="muted">Thư báo hóa đơn và biên nhận thanh toán gửi cho khách. Hệ thống tự gửi lại tối đa 8 lần; chỉ cần xử lý thư đã lỗi hết các lần.</p>
+          <p className="muted">Thư báo hóa đơn, biên nhận thanh toán và hóa đơn hoàn cọc gửi cho khách. Hệ thống tự gửi lại tối đa 8 lần; chỉ cần xử lý thư đã lỗi hết các lần.</p>
         </div>
         <button className="btn outline" onClick={() => void load()} disabled={loading}><Icon name="refresh" size={15} /> Làm mới</button>
       </div>

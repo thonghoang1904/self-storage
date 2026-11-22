@@ -114,7 +114,7 @@ public class CatalogController(
         return await q.OrderBy(u => u.FloorNumber).ThenBy(u => u.UnitCode)
             .Select(u => new StorageUnitDto(u.UnitId, u.UnitCode, u.FloorNumber, u.ZoneArea,
                 u.UnitType.BaseMonthlyRate,
-                u.Status, u.UnitTypeId, u.UnitType.TypeName))
+                u.Status, u.UnitTypeId, u.UnitType.TypeName, u.ImageUrl))
             .ToListAsync(ct);
     }
 }

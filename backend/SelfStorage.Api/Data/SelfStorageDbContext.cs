@@ -106,6 +106,7 @@ public class SelfStorageDbContext(DbContextOptions<SelfStorageDbContext> options
         {
             e.ToTable("StorageUnits");
             e.HasKey(x => x.UnitId);
+            e.Property(x => x.ImageUrl).HasMaxLength(500);
             e.Property(x => x.CreatedAt).HasDefaultValueSql("SYSDATETIME()");
             e.HasOne(x => x.Facility).WithMany(f => f.Units).HasForeignKey(x => x.FacilityId);
             e.HasOne(x => x.UnitType).WithMany().HasForeignKey(x => x.UnitTypeId);

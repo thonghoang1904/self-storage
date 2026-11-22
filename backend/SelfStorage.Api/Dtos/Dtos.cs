@@ -145,18 +145,24 @@ public record SaveUnitTypeRequest(
     [Range(typeof(decimal), "0.1", "20", ErrorMessage = "Chiều cao (m) phải từ 0,1 đến 20")]
     decimal HeightMeters,
     bool HasClimateControl,
-    [Range(typeof(decimal), "0", "9999999999999999", ErrorMessage = "Giá theo ngày phải từ 0 trở lên")]
-    decimal BaseDailyRate,
+    [Required(ErrorMessage = "Vui lòng nhập giá theo ngày")]
+    [Range(typeof(decimal), "0.01", "9999999999999999", ErrorMessage = "Giá theo ngày phải lớn hơn 0")]
+    decimal? BaseDailyRate,
+    [Required(ErrorMessage = "Vui lòng nhập giá theo tháng")]
     [Range(typeof(decimal), "0.01", "9999999999999999", ErrorMessage = "Giá theo tháng phải lớn hơn 0")]
-    decimal BaseMonthlyRate,
+    decimal? BaseMonthlyRate,
     [StringLength(500, ErrorMessage = "Mô tả tối đa 500 ký tự")]
     string? Description = null);
 public record UpdateUnitTypePricingRequest(
-    [Range(typeof(decimal), "0", "9999999999999999")] decimal BaseDailyRate,
-    [Range(typeof(decimal), "0.01", "9999999999999999")] decimal BaseMonthlyRate);
+    [Required(ErrorMessage = "Vui lòng nhập giá theo ngày")]
+    [Range(typeof(decimal), "0.01", "9999999999999999", ErrorMessage = "Giá theo ngày phải lớn hơn 0")]
+    decimal? BaseDailyRate,
+    [Required(ErrorMessage = "Vui lòng nhập giá theo tháng")]
+    [Range(typeof(decimal), "0.01", "9999999999999999", ErrorMessage = "Giá theo tháng phải lớn hơn 0")]
+    decimal? BaseMonthlyRate);
 
 public record StorageUnitDto(int UnitId, string UnitCode, int FloorNumber, string? ZoneArea, decimal MonthlyPrice,
-    string Status, int UnitTypeId, string UnitTypeName);
+    string Status, int UnitTypeId, string UnitTypeName, string? ImageUrl = null);
 
 public record CreateStorageUnitRequest(
     [Required] int UnitTypeId,
@@ -207,7 +213,8 @@ public record RecordCancellationRefundRequest(
     // Stored in Payments.PaymentNotes, NVARCHAR(255).
     [StringLength(255)] string? Notes);
 public record CancellationRefundDto(int ReservationId, decimal RefundedAmount, decimal RemainingRefund,
-    string PaymentMethod, string? TransactionCode, DateTime RefundedAt);
+    string PaymentMethod, string? TransactionCode, DateTime RefundedAt,
+    int PaymentId = 0, string? ReceiptEmail = null, bool ReceiptEmailQueued = false);
 
 public record CheckInRequest([Required] int UnitId,
     [Required, StringLength(1000)] string UnitConditionNotes = "Tình trạng kho bình thường khi bàn giao");
@@ -215,7 +222,8 @@ public record CheckInRequest([Required] int UnitId,
 // ---- Contracts ----
 
 public record ContractDto(int ContractId, string ContractNumber, int FacilityId, string FacilityName, string UnitCode,
-    DateOnly StartDate, DateOnly EndDate, decimal MonthlyRentFee, string Status);
+    DateOnly StartDate, DateOnly EndDate, decimal MonthlyRentFee, string Status,
+    string? UnitImageUrl = null, string? UnitTypeImageUrl = null);
 
 public record AddAuthorizedPersonRequest(
     [Required(ErrorMessage = "Vui lòng nhập họ tên")]
@@ -262,7 +270,8 @@ public record ContractDetailDto(
     decimal VolumeCubicMeters = 0m,
     bool HasClimateControl = false,
     string OperatingHours = "",
-    string? UnitTypeImageUrl = null);
+    string? UnitTypeImageUrl = null,
+    string? UnitImageUrl = null);
 
 /// <summary>One contract as staff see it in the facility contract list.</summary>
 public record StaffContractDto(int ContractId, string ContractNumber, string CustomerName, string CustomerPhone,
@@ -394,10 +403,14 @@ public record CreateExtraChargeRequest([Required] int FeeTypeId, [Range(1, 365)]
 public record ExtraChargeInvoiceDto(int InvoiceId, string InvoiceNumber, string InvoiceType,
     decimal TotalAmount, DateOnly DueDate, string Status, int ContractId);
 public record DepositRefundDto(int ContractId, decimal RefundedAmount, decimal RemainingRefund,
-    string PaymentMethod, string? TransactionCode, DateTime RefundedAt);
+    string PaymentMethod, string? TransactionCode, DateTime RefundedAt,
+    int PaymentId = 0, string? ReceiptEmail = null, bool ReceiptEmailQueued = false);
 public record DepositRefundSummaryDto(int ContractId, decimal DepositPaid, decimal FeesDeducted,
     decimal SettledFromDeposit, decimal StillOwed, decimal RefundableAmount, decimal AlreadyRefunded,
     decimal RemainingRefund, IReadOnlyList<PaymentDto> Refunds);
+public record SendDepositRefundEmailRequest(int? PaymentId = null);
+public record DepositRefundEmailDto(long EmailOutboxMessageId, int PaymentId, string ReceiptNumber,
+    string RecipientEmail, string Subject, string Status, DateTime QueuedAt);
 public record UpdateSupportRequest([Required] string Status, [Required, StringLength(4000)] string ActionMessage);
 public record UpdateSupportChecklistItemRequest([Required] bool? IsCompleted, [StringLength(1000)] string? Notes);
 public record SupportChecklistItemDto(int ChecklistItemId, int SortOrder, string Description, bool IsCompleted,

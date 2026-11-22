@@ -305,7 +305,7 @@ public class ReservationsController(
         var staffId = User.GetUserId();
         var notes = string.IsNullOrWhiteSpace(req.Notes) ? null : req.Notes.Trim();
         if (notes is { Length: > 255 }) notes = notes[..255];
-        db.Payments.Add(new Payment
+        var payment = new Payment
         {
             InvoiceId = depositInvoice.InvoiceId,
             ReceivedByStaffId = staffId,
@@ -315,7 +315,8 @@ public class ReservationsController(
             PaymentDate = now,
             Status = "Refunded",
             PaymentNotes = notes,
-        });
+        };
+        db.Payments.Add(payment);
         db.ActivityLogs.Add(new ActivityLog
         {
             UserId = staffId,
@@ -326,9 +327,57 @@ public class ReservationsController(
             CreatedAt = now,
         });
         await db.SaveChangesAsync(ct);
+        var email = await emailOutbox.QueueDepositRefundReceiptAsync(
+            payment.PaymentId, null, reservation.ReservationId, manualResend: false, ct);
+        await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return new CancellationRefundDto(id, req.Amount, remaining - req.Amount, req.PaymentMethod,
-            transactionCode, now);
+            transactionCode, now, payment.PaymentId, email.RecipientEmail, true);
+    }
+
+    [HttpPost("reservations/{id:int}/cancellation-refunds/send-email")]
+    [Authorize(Roles = AppRoles.GateRoles + "," + AppRoles.Admin)]
+    public async Task<DepositRefundEmailDto> SendCancellationRefundEmail(
+        int id,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SendDepositRefundEmailRequest? req,
+        CancellationToken ct)
+    {
+        var reservation = await db.Reservations.FirstOrDefaultAsync(r => r.ReservationId == id, ct)
+            ?? throw AppException.NotFound("Không tìm thấy đơn đặt kho");
+        var staffId = User.GetUserId();
+        if (!User.IsInRole(AppRoles.Admin))
+            await access.EnsureAssignedAsync(staffId, reservation.FacilityId, ct);
+
+        var depositInvoice = await db.Invoices.Include(i => i.Payments)
+            .FirstOrDefaultAsync(i => i.ReservationId == id && i.InvoiceType == "DEPOSIT", ct)
+            ?? throw AppException.Conflict("Không tìm thấy hóa đơn cọc");
+
+        var refundedPayments = depositInvoice.Payments
+            .Where(p => p.Status == "Refunded")
+            .OrderByDescending(p => p.PaymentDate)
+            .ThenByDescending(p => p.PaymentId)
+            .ToList();
+
+        var targetPayment = req?.PaymentId is int pid
+            ? refundedPayments.FirstOrDefault(p => p.PaymentId == pid)
+                ?? throw AppException.NotFound("Không tìm thấy giao dịch hoàn cọc")
+            : refundedPayments.FirstOrDefault()
+                ?? throw AppException.Conflict("Đơn đặt kho chưa có giao dịch hoàn cọc nào để xuất hóa đơn qua email");
+
+        var email = await emailOutbox.QueueDepositRefundReceiptAsync(
+            targetPayment.PaymentId, null, reservation.ReservationId, manualResend: true, ct);
+        var receiptNumber = EmailOutboxService.FormatDepositRefundReceiptNumber(targetPayment.PaymentId);
+        db.ActivityLogs.Add(new ActivityLog
+        {
+            UserId = staffId,
+            Action = "CancellationRefundInvoiceEmailed",
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+            Details = $"Reservation {reservation.ReservationCode}; emailed deposit refund receipt {receiptNumber} to {email.RecipientEmail}",
+            CreatedAt = clock.GetLocalNow().DateTime,
+        });
+        await db.SaveChangesAsync(ct);
+        return new DepositRefundEmailDto(email.EmailOutboxMessageId, targetPayment.PaymentId, receiptNumber,
+            email.RecipientEmail, email.Subject, email.Status, email.CreatedAt);
     }
 
     /// <summary>Staff: reservations at a facility (e.g. today's check-ins).</summary>

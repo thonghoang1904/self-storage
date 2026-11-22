@@ -190,6 +190,7 @@ const FIELD_LABELS: Record<string, string> = {
   FacilityName: 'Tên cơ sở', Address: 'Địa chỉ', City: 'Thành phố', District: 'Quận/Huyện', Hotline: 'Hotline',
   OperatingHours: 'Giờ hoạt động', UnitCode: 'Mã kho', Notes: 'Ghi chú', Token: 'Mã xác minh',
   LengthCm: 'Chiều dài', WidthCm: 'Chiều rộng', HeightCm: 'Chiều cao', Quantity: 'Số lượng', Name: 'Tên món đồ',
+  BaseDailyRate: 'Giá theo ngày', BaseMonthlyRate: 'Giá theo tháng',
 }
 const label = (field: string) => FIELD_LABELS[field] ?? field
 

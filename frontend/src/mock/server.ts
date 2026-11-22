@@ -5,7 +5,7 @@
  * Data lives in localStorage of this browser only; "Đặt lại dữ liệu demo" wipes it.
  */
 import type {
-  AccessIssue, ActivityLog, EarlyReturnQuote, EarlyReturnRequest, AdminUser, AdminContract, EmailOutboxMessage, OperationsReportRow, CancellationRequest, CancellationRefund, ExtraChargeInvoice, FacilityStaff, FacilityWorkQueue, FacilityTaskContract, FacilityReport, OperationsReport, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
+  AccessIssue, ActivityLog, EarlyReturnQuote, EarlyReturnRequest, AdminUser, AdminContract, EmailOutboxMessage, OperationsReportRow, CancellationRequest, CancellationRefund, DepositRefund, DepositRefundEmailResult, DepositRefundSummary, ExtraChargeInvoice, FacilityStaff, FacilityWorkQueue, FacilityTaskContract, FacilityReport, OperationsReport, AccessRecord, Availability, Contract, ContractDetail, Facility, Invoice, LoginResponse,
   OverdueSummary, Person, Renewal, StoredItem, SupportChecklistItem, SupportRequest, SupportUpdate, Reservation, ReturnUnitResult, StaffContract, StorageUnit, UnitType, UserDto, VisitCandidate, VisitRegistration, RentalPolicy, FeeConfiguration, Promotion, SecuritySettings, LoginSession, AccountProfile, AccountActivity, ContractInventory,
 } from '../types'
 import { Roles } from '../types'
@@ -52,7 +52,7 @@ interface Db {
   overdues: Ovd[]
   supports: Sup[]
   supportUpdates: SupUpd[]
-  refunds?: { contractId: number; amount: number; at: string }[]
+  refunds?: { contractId: number; amount: number; at: string; paymentId?: number; method?: string; code?: string | null; notes?: string | null; staffId?: number }[]
   earlyRequests?: EarlyReturnRequest[]
   logs?: (ActivityLog & { userId: number })[]
   /** ReservationCancellationRequests; refunds of an approved one are kept with it. */
@@ -64,7 +64,7 @@ interface Db {
   security?: Record<number, SecuritySettings>
   sessions?: Record<number, LoginSession[]>
 }
-interface Cnl { cancellationRequestId: number; reservationId: number; customerId: number; reason: string; status: string; requestedAt: string; resolvedAt: string | null; resolvedByStaffId: number | null; resolutionNotes: string | null; approvedRefundAmount: number | null; refunds: { amount: number; method: string; code: string | null; at: string; staffId: number }[] }
+interface Cnl { cancellationRequestId: number; reservationId: number; customerId: number; reason: string; status: string; requestedAt: string; resolvedAt: string | null; resolvedByStaffId: number | null; resolutionNotes: string | null; approvedRefundAmount: number | null; refunds: { paymentId?: number; amount: number; method: string; code: string | null; at: string; staffId: number }[] }
 interface Xtra { id: number; contractId: number; feeCode: string; feeName: string; unitPrice: number; quantity: number; notes: string | null; dueDate: string; createdAt: string; paid?: Paid }
 
 // ------------------------------------------------------------------ time helpers (server local time, like SYSDATETIME)
@@ -349,11 +349,13 @@ const opsOnly = (token: string | null) => requireRole(currentUser(token), [Roles
 function checkUnitType(body: Body, exceptId: number | null): Omit<UnitType, 'unitTypeId'> {
   const typeName = String(body.typeName ?? '').trim()
   const [l, w, h] = [body.lengthMeters, body.widthMeters, body.heightMeters].map(Number)
-  const daily = Number(body.baseDailyRate ?? 0), monthly = Number(body.baseMonthlyRate)
+  const rawDaily = body.baseDailyRate, rawMonthly = body.baseMonthlyRate
+  const daily = rawDaily === null || rawDaily === undefined || rawDaily === '' ? NaN : Number(rawDaily)
+  const monthly = rawMonthly === null || rawMonthly === undefined || rawMonthly === '' ? NaN : Number(rawMonthly)
   if (typeName.length < 2 || typeName.length > 100) throw bad('Tên loại kho dài từ 2 đến 100 ký tự')
   if (![l, w, h].every((d) => d >= 0.1 && d <= 20)) throw bad('Kích thước kho từ 0,1 đến 20 m')
   if (![l, w, h].every((d) => Math.round(d * 100) / 100 === d)) throw bad('Kích thước (m) chỉ hỗ trợ tối đa 2 chữ số thập phân')
-  if (!(daily >= 0) || !(monthly >= 0.01)) throw bad('Giá thuê không hợp lệ')
+  if (!(daily >= 0.01) || !(monthly >= 0.01)) throw bad('Vui lòng nhập đầy đủ giá theo ngày và giá theo tháng lớn hơn 0')
   if (daily > monthly) throw bad('Giá theo ngày không được lớn hơn giá theo tháng')
   if (db.unitTypes.some((t) => t.typeName === typeName && t.unitTypeId !== exceptId)) throw conflict('Tên loại kho đã tồn tại')
   return {
@@ -848,6 +850,33 @@ const emailsOf = () => (db.emails ??= (() => {
     { emailOutboxMessageId: 4, eventKey: 'invoice-issued:10004', recipientEmail: 'customer1@example.com', subject: 'Hóa đơn tiền cọc INV-DEP-4', status: 'Pending', attemptCount: 2, createdAt: t(0, 7), nextAttemptAt: t(0, 23), sentAt: null, lastError: 'Mailbox temporarily unavailable' },
   ]
 })())
+function queueDepositRefundEmailMock(paymentId: number, recipientEmail: string, label: string, manual: boolean): DepositRefundEmailResult {
+  const receiptNumber = `HC-${String(paymentId).padStart(6, '0')}`
+  const eventKey = manual ? `deposit-refunded:${paymentId}:manual:${nextId()}` : `deposit-refunded:${paymentId}`
+  const now = localIso(new Date())
+  const msg: EmailOutboxMessage & { emailOutboxMessageId: number } = {
+    emailOutboxMessageId: nextId(),
+    eventKey,
+    recipientEmail,
+    subject: `Hóa đơn hoàn cọc ${receiptNumber} (${label})`,
+    status: 'Sent',
+    attemptCount: 1,
+    createdAt: now,
+    nextAttemptAt: now,
+    sentAt: now,
+    lastError: null,
+  }
+  emailsOf().push(msg)
+  return {
+    emailOutboxMessageId: msg.emailOutboxMessageId,
+    paymentId,
+    receiptNumber,
+    recipientEmail,
+    subject: msg.subject,
+    status: msg.status,
+    queuedAt: msg.createdAt,
+  }
+}
 /** Facility × unit type rows (OperationsReportsController.GetReportRowsAsync). */
 function reportRows(query: URLSearchParams): OperationsReportRow[] {
   const { from, to } = dateRange(query)
@@ -1310,12 +1339,46 @@ const routes: [string, RegExp, Handler][] = [
     const res: ReturnUnitResult = { contractId: c.contractId, status: c.status, unitStatus: unit.status, depositPaid: c.depositPaid, lateFeesDeducted: deducted, depositRefundDue: c.depositPaid - deducted, lateFeesStillOwed: stillOwed, returnedAt: now, ...(early ? { earlyReturnFee: earlyFee } : {}) }
     return res
   }],
-  ['POST', /^\/api\/contracts\/(\d+)\/deposit-refunds$/, (m, { token, body }) => {
+  ['GET', /^\/api\/contracts\/(\d+)\/deposit-refunds$/, (m, { token }) => {
     const me = currentUser(token)
-    requireRole(me, STAFF)
+    requireRole(me, [...STAFF, Roles.Admin])
     const c = db.contracts.find((x) => x.contractId === Number(m[1]))
     if (!c) throw notFound('Không tìm thấy hợp đồng')
-    ensureAssigned(me.userId, unitById(c.unitId).facilityId)
+    if (me.role !== Roles.Admin) ensureAssigned(me.userId, unitById(c.unitId).facilityId)
+    if (c.status !== 'Terminated') throw conflict('Chỉ được hoàn cọc sau khi hợp đồng đã kết thúc và trả kho')
+    const o = db.overdues.filter((x) => x.contractId === c.contractId).sort((a, b) => b.overdueId - a.overdueId)[0]
+    const feesDeducted = Math.min(c.depositPaid, (o?.accumulatedLateFee ?? 0) + (c.earlyReturnFee ?? 0))
+    const refundable = Math.max(0, c.depositPaid - feesDeducted)
+    const rows = (db.refunds ?? []).filter((x) => x.contractId === c.contractId)
+    const already = rows.reduce((s, x) => s + x.amount, 0)
+    const summary: DepositRefundSummary = {
+      contractId: c.contractId,
+      depositPaid: c.depositPaid,
+      feesDeducted,
+      settledFromDeposit: 0,
+      stillOwed: 0,
+      refundableAmount: refundable,
+      alreadyRefunded: already,
+      remainingRefund: Math.max(0, refundable - already),
+      refunds: rows.map((x, i) => ({
+        paymentId: x.paymentId ?? (80000 + c.contractId * 10 + i),
+        paymentMethod: x.method ?? 'Cash',
+        transactionCode: x.code ?? null,
+        amountPaid: x.amount,
+        paymentDate: x.at,
+        status: 'Refunded',
+        paymentNotes: x.notes ?? null,
+        receivedByStaff: x.staffId ? userById(x.staffId).fullName : null,
+      })).sort((a, b) => b.paymentDate.localeCompare(a.paymentDate)),
+    }
+    return summary
+  }],
+  ['POST', /^\/api\/contracts\/(\d+)\/deposit-refunds$/, (m, { token, body }) => {
+    const me = currentUser(token)
+    requireRole(me, [...STAFF, Roles.Admin])
+    const c = db.contracts.find((x) => x.contractId === Number(m[1]))
+    if (!c) throw notFound('Không tìm thấy hợp đồng')
+    if (me.role !== Roles.Admin) ensureAssigned(me.userId, unitById(c.unitId).facilityId)
     const method = String(body.paymentMethod)
     const code = String(body.transactionCode ?? '').trim()
     if (method !== 'Cash' && method !== 'BankTransfer') throw bad('Phương thức hoàn cọc chỉ hỗ trợ tiền mặt hoặc chuyển khoản')
@@ -1328,8 +1391,28 @@ const routes: [string, RegExp, Handler][] = [
     const amount = Number(body.amount)
     if (!(amount > 0) || amount > remaining) throw bad(`Số tiền hoàn cọc còn có thể hoàn là ${Math.max(0, remaining).toLocaleString('vi-VN')}đ`)
     const at = localIso(new Date())
-    db.refunds.push({ contractId: c.contractId, amount, at })
-    return { contractId: c.contractId, refundedAmount: amount, remainingRefund: remaining - amount, paymentMethod: method, transactionCode: code || null, refundedAt: at }
+    const paymentId = nextId()
+    const notes = String(body.notes ?? '').trim() || null
+    db.refunds.push({ contractId: c.contractId, amount, at, paymentId, method, code: code || null, notes, staffId: me.userId })
+    const mail = queueDepositRefundEmailMock(paymentId, userById(c.customerId).email, c.contractNumber, false)
+    const res: DepositRefund = { contractId: c.contractId, refundedAmount: amount, remainingRefund: remaining - amount, paymentMethod: method, transactionCode: code || null, refundedAt: at, paymentId, receiptEmail: mail.recipientEmail, receiptEmailQueued: true }
+    return res
+  }],
+  ['POST', /^\/api\/contracts\/(\d+)\/deposit-refunds\/send-email$/, (m, { token, body }) => {
+    const me = currentUser(token)
+    requireRole(me, [...STAFF, Roles.Admin])
+    const c = db.contracts.find((x) => x.contractId === Number(m[1]))
+    if (!c) throw notFound('Không tìm thấy hợp đồng')
+    if (me.role !== Roles.Admin) ensureAssigned(me.userId, unitById(c.unitId).facilityId)
+    if (c.status !== 'Terminated') throw conflict('Chỉ xuất hóa đơn hoàn cọc sau khi hợp đồng đã kết thúc và trả kho')
+    const rows = (db.refunds ?? []).filter((x) => x.contractId === c.contractId)
+      .map((x, i) => ({ ...x, pid: x.paymentId ?? (80000 + c.contractId * 10 + i) }))
+      .sort((a, b) => b.at.localeCompare(a.at) || b.pid - a.pid)
+    const wantedPid = body.paymentId != null ? Number(body.paymentId) : null
+    const target = wantedPid != null ? rows.find((r) => r.pid === wantedPid) : rows[0]
+    if (wantedPid != null && !target) throw notFound('Không tìm thấy giao dịch hoàn cọc')
+    if (!target) throw conflict('Hợp đồng chưa có giao dịch hoàn cọc nào để xuất hóa đơn qua email')
+    return queueDepositRefundEmailMock(target.pid, userById(c.customerId).email, c.contractNumber, true)
   }],
   ['GET', /^\/api\/contracts\/facilities\/(\d+)\/overdue$/, (m, { token }) => {
     const me = currentUser(token)
@@ -1434,6 +1517,20 @@ const routes: [string, RegExp, Handler][] = [
     const ref = `DEMO${found.invoice.invoiceId}${Date.now() % 100000}`
     return { provider: 'MoMo', paymentId: nextId(), transactionReference: ref, amount: found.invoice.totalAmount,
       paymentUrl: '', qrCodeUrl: `SafeKeep demo MoMo ${found.invoice.invoiceNumber} ${found.invoice.totalAmount} VND ${ref}`, deeplink: null, deeplinkWebInApp: null }
+  }],
+  ['POST', /^\/api\/invoices\/(\d+)\/deposit-refund-email$/, (m, { token, body }) => {
+    const me = currentUser(token)
+    requireRole(me, [Roles.Customer])
+    const found = allInvoices().find((x) => x.invoice.invoiceId === Number(m[1]) && x.customerId === me.userId)
+    if (!found) throw notFound('Không tìm thấy hóa đơn')
+    if (found.invoice.invoiceType !== 'DEPOSIT') throw conflict('Chỉ áp dụng xuất hóa đơn hoàn cọc cho hóa đơn đặt cọc')
+    const refunded = found.invoice.payments.filter((p) => p.status === 'Refunded')
+      .sort((a, b) => b.paymentDate.localeCompare(a.paymentDate) || b.paymentId - a.paymentId)
+    const wantedPid = body.paymentId != null ? Number(body.paymentId) : null
+    const target = wantedPid != null ? refunded.find((p) => p.paymentId === wantedPid) : refunded[0]
+    if (wantedPid != null && !target) throw notFound('Không tìm thấy giao dịch hoàn cọc')
+    if (!target) throw conflict('Hóa đơn cọc này chưa có giao dịch hoàn cọc nào')
+    return queueDepositRefundEmailMock(target.paymentId, me.email, found.invoice.invoiceNumber, true)
   }],
 
   // ---- support requests (same rules as SupportController)
@@ -2173,8 +2270,11 @@ const routes: [string, RegExp, Handler][] = [
     opsOnly(token)
     const t = db.unitTypes.find((x) => x.unitTypeId === Number(m[1]))
     if (!t) throw notFound('Không tìm thấy loại kho')
-    const daily = Number(body.baseDailyRate), monthly = Number(body.baseMonthlyRate)
-    if (!(daily >= 0) || !(monthly >= 0.01)) throw bad('Giá thuê không hợp lệ')
+    const dailyRaw = body.baseDailyRate, monthlyRaw = body.baseMonthlyRate
+    const daily = dailyRaw === null || dailyRaw === undefined || dailyRaw === '' ? NaN : Number(dailyRaw)
+    const monthly = monthlyRaw === null || monthlyRaw === undefined || monthlyRaw === '' ? NaN : Number(monthlyRaw)
+    if (!(daily >= 0.01) || !(monthly >= 0.01)) throw bad('Vui lòng nhập đầy đủ giá theo ngày và giá theo tháng lớn hơn 0')
+    if (daily > monthly) throw bad('Giá theo ngày không được lớn hơn giá theo tháng')
     t.baseDailyRate = daily
     t.baseMonthlyRate = monthly
     db.units.filter((u) => u.unitTypeId === t.unitTypeId).forEach((u) => { u.monthlyPrice = monthly })
@@ -2286,9 +2386,27 @@ const routes: [string, RegExp, Handler][] = [
     const amount = Number(body.amount)
     if (!(amount > 0) || amount > remaining) throw bad(`Số tiền hoàn còn được duyệt là ${Math.max(0, remaining).toLocaleString('vi-VN')}đ`)
     const at = localIso(new Date())
-    c.refunds.push({ amount, method, code, at, staffId: me.userId })
-    const res: CancellationRefund = { reservationId: r.reservationId, refundedAmount: amount, remainingRefund: remaining - amount, paymentMethod: method, transactionCode: code, refundedAt: at }
+    const paymentId = nextId()
+    c.refunds.push({ paymentId, amount, method, code, at, staffId: me.userId })
+    const mail = queueDepositRefundEmailMock(paymentId, userById(r.customerId).email, r.reservationCode, false)
+    const res: CancellationRefund = { reservationId: r.reservationId, refundedAmount: amount, remainingRefund: remaining - amount, paymentMethod: method, transactionCode: code, refundedAt: at, paymentId, receiptEmail: mail.recipientEmail, receiptEmailQueued: true }
     return res
+  }],
+  ['POST', /^\/api\/reservations\/(\d+)\/cancellation-refunds\/send-email$/, (m, { token, body }) => {
+    const me = currentUser(token)
+    requireRole(me, [...STAFF, Roles.Admin])
+    const r = db.reservations.find((x) => x.reservationId === Number(m[1]))
+    if (!r) throw notFound('Không tìm thấy đơn đặt kho')
+    if (me.role !== Roles.Admin) ensureAssigned(me.userId, r.facilityId)
+    const c = cancellationsOf().filter((x) => x.reservationId === r.reservationId && x.status === 'Approved').sort((a, b) => String(b.resolvedAt).localeCompare(String(a.resolvedAt)))[0]
+    if (!c) throw conflict('Yêu cầu hủy chưa được duyệt')
+    const rows = c.refunds.map((x, i) => ({ ...x, pid: x.paymentId ?? (50000 + r.reservationId * 10 + i) }))
+      .sort((a, b) => b.at.localeCompare(a.at) || b.pid - a.pid)
+    const wantedPid = body.paymentId != null ? Number(body.paymentId) : null
+    const target = wantedPid != null ? rows.find((x) => x.pid === wantedPid) : rows[0]
+    if (wantedPid != null && !target) throw notFound('Không tìm thấy giao dịch hoàn cọc')
+    if (!target) throw conflict('Đơn đặt kho chưa có giao dịch hoàn cọc nào để xuất hóa đơn qua email')
+    return queueDepositRefundEmailMock(target.pid, userById(r.customerId).email, r.reservationCode, true)
   }],
 
   // ---- facility operations (FacilityOperationsController)

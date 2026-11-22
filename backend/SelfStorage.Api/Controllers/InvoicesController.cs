@@ -16,6 +16,7 @@ public class InvoicesController(
     SelfStorageDbContext db,
     BillingService billing,
     PaymentGatewayService paymentGateways,
+    EmailOutboxService emailOutbox,
     TimeProvider clock,
     IWebHostEnvironment environment) : ControllerBase
 {
@@ -79,6 +80,11 @@ public class InvoicesController(
             $"<tr><td>{H(d.Description)}</td><td class=\"n\">{d.Quantity}</td><td class=\"n\">{Money(d.UnitPrice)}</td><td class=\"n\">{Money(d.LineTotal)}</td></tr>"));
         var paid = string.Concat(invoice.Payments.Where(p => p.Status == "Success").OrderBy(p => p.PaymentDate).Select(p =>
             $"<tr><td>{p.PaymentDate:dd/MM/yyyy HH:mm}</td><td>{H(p.PaymentMethod)}</td><td>{H(p.TransactionCode)}</td><td class=\"n\">{Money(p.AmountPaid)}</td></tr>"));
+        var refundedRows = string.Concat(invoice.Payments.Where(p => p.Status == "Refunded").OrderBy(p => p.PaymentDate).Select(p =>
+            $"<tr><td>HC-{p.PaymentId:D6}</td><td>{p.PaymentDate:dd/MM/yyyy HH:mm}</td><td>{H(p.PaymentMethod)}</td><td>{H(p.TransactionCode)}</td><td class=\"n\">{Money(p.AmountPaid)}</td></tr>"));
+        var refundSection = string.IsNullOrEmpty(refundedRows)
+            ? ""
+            : $"<h3>Hoàn cọc đã ghi nhận</h3><table><tr><th>Mã hóa đơn hoàn</th><th>Thời gian</th><th>Phương thức</th><th>Mã giao dịch</th><th class=\"n\">Số tiền</th></tr>{refundedRows}</table>";
         var html = $$"""
             <!DOCTYPE html>
             <html lang="vi"><head><meta charset="utf-8"><title>Hóa đơn {{H(invoice.InvoiceNumber)}}</title>
@@ -92,9 +98,60 @@ public class InvoicesController(
             <tr><th colspan="3" class="n">Tổng cộng</th><th class="n">{{Money(invoice.TotalAmount)}}</th></tr></table>
             <h3>Thanh toán đã ghi nhận</h3>
             <table><tr><th>Thời gian</th><th>Phương thức</th><th>Mã giao dịch</th><th class="n">Số tiền</th></tr>{{paid}}</table>
+            {{refundSection}}
             </body></html>
             """;
         return Content(html, "text/html; charset=utf-8");
+    }
+
+    [HttpPost("{id:int}/deposit-refund-email")]
+    [Authorize(Roles = AppRoles.Customer)]
+    public async Task<DepositRefundEmailDto> SendDepositRefundEmail(
+        int id,
+        [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] SendDepositRefundEmailRequest? req,
+        CancellationToken ct)
+    {
+        var me = User.GetUserId();
+        var invoice = await db.Invoices.Include(i => i.Payments)
+            .FirstOrDefaultAsync(i => i.InvoiceId == id && i.CustomerId == me, ct)
+            ?? throw AppException.NotFound("Không tìm thấy hóa đơn");
+        if (invoice.InvoiceType != "DEPOSIT")
+            throw AppException.Conflict("Chỉ áp dụng xuất hóa đơn hoàn cọc cho hóa đơn đặt cọc");
+
+        var refundedPayments = invoice.Payments
+            .Where(p => p.Status == "Refunded")
+            .OrderByDescending(p => p.PaymentDate)
+            .ThenByDescending(p => p.PaymentId)
+            .ToList();
+        var targetPayment = req?.PaymentId is int pid
+            ? refundedPayments.FirstOrDefault(p => p.PaymentId == pid)
+                ?? throw AppException.NotFound("Không tìm thấy giao dịch hoàn cọc")
+            : refundedPayments.FirstOrDefault()
+                ?? throw AppException.Conflict("Hóa đơn cọc này chưa có giao dịch hoàn cọc nào");
+
+        var contractId = invoice.ContractId;
+        if (contractId is null && invoice.ReservationId is int rid)
+        {
+            contractId = await db.Contracts
+                .Where(c => c.ReservationId == rid)
+                .Select(c => (int?)c.ContractId)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        var email = await emailOutbox.QueueDepositRefundReceiptAsync(
+            targetPayment.PaymentId, contractId, invoice.ReservationId, manualResend: true, ct);
+        var receiptNumber = EmailOutboxService.FormatDepositRefundReceiptNumber(targetPayment.PaymentId);
+        db.ActivityLogs.Add(new ActivityLog
+        {
+            UserId = me,
+            Action = "CustomerDepositRefundInvoiceEmailed",
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+            Details = $"Invoice {invoice.InvoiceNumber}; emailed deposit refund receipt {receiptNumber} to {email.RecipientEmail}",
+            CreatedAt = clock.GetLocalNow().DateTime,
+        });
+        await db.SaveChangesAsync(ct);
+        return new DepositRefundEmailDto(email.EmailOutboxMessageId, targetPayment.PaymentId, receiptNumber,
+            email.RecipientEmail, email.Subject, email.Status, email.CreatedAt);
     }
 
     [HttpGet("facilities/{facilityId:int}")]

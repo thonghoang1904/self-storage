@@ -46,8 +46,9 @@ public sealed class EmailOutboxWorker(
         await using (var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct))
         {
             message = await db.EmailOutboxMessages
-                .Where(m => (m.EventKey.StartsWith("invoice-issued:")
-                    || m.EventKey.StartsWith("payment-received:"))
+                .Where(m => (m.EventKey.StartsWith(EmailOutboxService.InvoiceIssuedPrefix)
+                    || m.EventKey.StartsWith(EmailOutboxService.PaymentReceivedPrefix)
+                    || m.EventKey.StartsWith(EmailOutboxService.DepositRefundedPrefix))
                     && ((m.Status == "Pending" && m.NextAttemptAt <= now)
                     || (m.Status == "Processing" && m.LockedUntil <= now))
                 )

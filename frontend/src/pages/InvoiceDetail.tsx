@@ -5,7 +5,7 @@ import { useAuth } from '../auth'
 import { AppointmentPicker } from '../components/appointment'
 import { INVOICE_TYPE, moneyInWords, PAY_METHOD, PAY_STATUS, PayButtons, TYPE_ICON, useCheckout } from '../components/checkout'
 import { Icon, StatusBadge } from '../components/ui'
-import type { ContractDetail, Facility, Invoice, Reservation } from '../types'
+import type { ContractDetail, DepositRefundEmailResult, Facility, Invoice, Reservation } from '../types'
 import { termsHref } from './Terms'
 import { fillFees, useFees } from '../publicPolicy'
 
@@ -42,8 +42,28 @@ export default function InvoiceDetail() {
   const [reservation, setReservation] = useState<Reservation | null>(null)
   const [facility, setFacility] = useState<Facility | null>(null)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(true)
+  const [emailBusy, setEmailBusy] = useState(false)
   const { startingInvoiceId, startCheckout } = useCheckout(setError)
+
+  const sendRefundEmail = async () => {
+    if (!invoice) return
+    setError('')
+    setNotice('')
+    setEmailBusy(true)
+    try {
+      const res = await api<DepositRefundEmailResult>(`/api/invoices/${invoice.invoiceId}/deposit-refund-email`, {
+        method: 'POST',
+        body: {},
+      })
+      setNotice(`Đã xuất hóa đơn hoàn cọc ${res.receiptNumber} gửi qua email ${res.recipientEmail}.`)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setEmailBusy(false)
+    }
+  }
 
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true)
@@ -123,6 +143,11 @@ export default function InvoiceDetail() {
             </div>
           </div>
           <div className="row wrap no-print">
+            {invoice.invoiceType === 'DEPOSIT' && refunded > 0 && (
+              <button className="btn outline-light" onClick={() => void sendRefundEmail()} disabled={emailBusy}>
+                <Icon name="mail" size={15} /> {emailBusy ? 'Đang gửi…' : 'Xuất hóa đơn hoàn cọc qua mail'}
+              </button>
+            )}
             <button className="btn outline-light" onClick={() => window.print()}><Icon name="clipboard" size={15} /> In hóa đơn</button>
             <button className="btn outline-light" onClick={() => void load()} disabled={loading}><Icon name="refresh" size={15} /> Làm mới</button>
           </div>
@@ -130,6 +155,7 @@ export default function InvoiceDetail() {
       </section>
 
       <div className="container page-body invoice-detail">
+        {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
         {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
 
         <div className="invoice-detail-grid">
