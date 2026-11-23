@@ -483,13 +483,12 @@ function validateItemsForUnit(c: Ctr, rawItems: ItemSpec[], existing: StoredItem
       if (minItem > shortFloor + 1e-6 || maxItem > longFloor + 1e-6)
         throw bad(`Món "${name}" (đáy ${fmtN(l)}×${fmtN(w)} cm) tràn quá chiều dài/rộng mặt sàn kho (${fmtN(unitL)}×${fmtN(unitW)} cm)`)
       const maxLayers = fdiv(unitH, h)
-      const maxPerLayer = maxItem > shortFloor + 1e-6
-        ? fdiv(longFloor, maxItem) * fdiv(shortFloor, minItem)
-        : Math.abs(l - w) < 1e-6
-          ? fdiv(unitL, l) * fdiv(unitW, l)
-          : l + w > longFloor + 1e-6
-            ? Math.max(fdiv(unitL, l) * fdiv(unitW, w), fdiv(unitL, w) * fdiv(unitW, l))
-            : Math.min(fdiv(unitL * unitW, l * w), fdiv(unitL, minItem) * fdiv(unitW, minItem))
+      let maxPerLayer = 0
+      for (const [a, bb] of [[l, w], [w, l]]) {
+        const na = fdiv(unitL, a), nb = fdiv(unitW, bb)
+        if (!na || !nb) continue
+        maxPerLayer = Math.max(maxPerLayer, na * nb + fdiv(unitL - na * a, bb) * fdiv(unitW, a), na * nb + fdiv(unitL, bb) * fdiv(unitW - nb * bb, a))
+      }
       const maxQty = maxLayers * maxPerLayer
       if (qty > maxQty)
         throw bad(`Kho (${uLabel}) chỉ xếp được tối đa ${maxQty} món "${name}" (${fmtN(l)}×${fmtN(w)}×${fmtN(h)} cm)`)

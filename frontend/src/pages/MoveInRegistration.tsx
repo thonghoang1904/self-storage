@@ -79,21 +79,25 @@ const num = (s: string) => { const n = Number(s.trim().replace(',', '.')); retur
 const fmtCm = (v: number) => Number(v.toFixed(2)).toLocaleString('vi-VN', { maximumFractionDigits: 2 })
 const fmtVol = (v: number) => Number(v.toFixed(3)).toLocaleString('vi-VN', { maximumFractionDigits: 3 })
 const floorDiv = (a: number, b: number) => Math.floor(a / b + 1e-9)
-function maxItemQty(unitL: number, unitW: number, unitH: number, l: number, w: number, h: number): number {
-  const maxLayers = floorDiv(unitH, h)
-  const shortFloor = Math.min(unitL, unitW), longFloor = Math.max(unitL, unitW)
-  const minItem = Math.min(l, w), maxItem = Math.max(l, w)
-  let maxPerLayer: number
-  if (maxItem > shortFloor + 1e-6) {
-    maxPerLayer = floorDiv(longFloor, maxItem) * floorDiv(shortFloor, minItem)
-  } else if (Math.abs(l - w) < 1e-6) {
-    maxPerLayer = floorDiv(unitL, l) * floorDiv(unitW, l)
-  } else if (l + w > longFloor + 1e-6) {
-    maxPerLayer = Math.max(floorDiv(unitL, l) * floorDiv(unitW, w), floorDiv(unitL, w) * floorDiv(unitW, l))
-  } else {
-    maxPerLayer = Math.min(floorDiv(unitL * unitW, l * w), floorDiv(unitL, minItem) * floorDiv(unitW, minItem))
+/**
+ * Items of one size that fit on one floor layer: a grid in one orientation, plus the leftover strip filled with the
+ * item turned 90°; the best of both orientations and both strip directions. Every count is a real arrangement, so a
+ * declared quantity is never accepted when it cannot be placed (the old area ÷ footprint estimate over-counted).
+ */
+function perLayer(unitL: number, unitW: number, l: number, w: number): number {
+  let best = 0
+  for (const [a, b] of [[l, w], [w, l]]) {
+    const na = floorDiv(unitL, a), nb = floorDiv(unitW, b)
+    if (!na || !nb) continue
+    const base = na * nb
+    const stripL = floorDiv(unitL - na * a, b) * floorDiv(unitW, a)
+    const stripW = floorDiv(unitL, b) * floorDiv(unitW - nb * b, a)
+    best = Math.max(best, base + stripL, base + stripW)
   }
-  return maxLayers * maxPerLayer
+  return best
+}
+function maxItemQty(unitL: number, unitW: number, unitH: number, l: number, w: number, h: number): number {
+  return floorDiv(unitH, h) * perLayer(unitL, unitW, l, w)
 }
 function checkItemPlacement(it: Item, title: string, unitL: number, unitW: number, unitH: number, unitSizeLabel: string): string | null {
   if (!(unitL > 0 && unitW > 0 && unitH > 0)) return null
@@ -355,6 +359,8 @@ export default function MoveInRegistration() {
       const l = num(it.l), w = num(it.w), h = num(it.h)
       if (l < DIM_MIN || l > DIM_MAX || w < DIM_MIN || w > DIM_MAX || h < DIM_MIN || h > DIM_MAX)
         return `Kích thước "${title}" không hợp lệ (mỗi chiều từ 0,1 đến 2000 cm)`
+      if ([l, w, h].some((d) => Math.round(d * 100) !== d * 100 && Math.abs(Math.round(d * 100) - d * 100) > 1e-6))
+        return `Kích thước "${title}" chỉ nhập tối đa 2 chữ số thập phân (cm)`
       if (it.imageError) return `Ảnh của "${title}" không hợp lệ: ${it.imageError}`
       const placeErr = checkItemPlacement(it, title, unitL, unitW, unitH, unitSizeLabel)
       if (placeErr) return placeErr

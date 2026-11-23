@@ -27,6 +27,8 @@ const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const MAX_PHOTO = 5 * 1024 * 1024
 
 export const fmtM3 = (n: number) => (Number(n) || 0).toLocaleString('vi-VN', { maximumFractionDigits: 3 })
+/** More than 2 decimals (the backend keeps cm with 2). */
+const tooPrecise = (d: number) => Math.abs(Math.round(d * 100) - d * 100) > 1e-6
 const fmtCm = (n: number) => (Number(n) || 0).toLocaleString('vi-VN', { maximumFractionDigits: 1 })
 const num = (s: string) => { const n = Number(s.trim().replace(',', '.')); return Number.isFinite(n) ? n : NaN }
 
@@ -233,7 +235,8 @@ function EditItemForm({ url, item, onCancel, onDone }: { url: string; item: Stor
       : f.category.length > 80 ? 'Loại đồ tối đa 80 ký tự'
       : f.notes.length > 300 ? 'Ghi chú tối đa 300 ký tự'
       : !Number.isInteger(q) || q < 1 || q > 999 ? 'Số lượng mỗi món phải từ 1 đến 999'
-      : [l, w, h].some((d) => !(d >= 0.1 && d <= 2000)) ? 'Mỗi chiều kích thước từ 0,1 đến 2000 cm' : ''
+      : [l, w, h].some((d) => !(d >= 0.1 && d <= 2000)) ? 'Mỗi chiều kích thước từ 0,1 đến 2000 cm'
+        : [l, w, h].some(tooPrecise) ? 'Kích thước chỉ nhập tối đa 2 chữ số thập phân (cm)' : ''
     if (problem) { setError(problem); return }
     setBusy(true)
     setError('')
@@ -323,6 +326,7 @@ function AddItemForm({ url, onCancel, onDone }: { url: string; onCancel: () => v
     const problem = !f.name.trim() ? 'Vui lòng nhập tên món đồ'
       : !Number.isInteger(q) || q < 1 || q > 999 ? 'Số lượng mỗi món phải từ 1 đến 999'
       : [l, w, h].some((d) => !(d >= 0.1 && d <= 2000)) ? 'Nhập đủ 3 chiều, mỗi chiều từ 0,1 đến 2000 cm'
+      : [l, w, h].some(tooPrecise) ? 'Kích thước chỉ nhập tối đa 2 chữ số thập phân (cm)'
       : f.notes.length > 300 ? 'Ghi chú tối đa 300 ký tự' : ''
     if (problem) { setError(problem); return }
     setBusy(true)
