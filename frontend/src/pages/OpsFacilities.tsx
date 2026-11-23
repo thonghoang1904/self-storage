@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { api, fmtDate, saveTable } from '../api'
-import { Badge, Empty, Icon } from '../components/ui'
-import type { Facility, FacilityReport, OperationsReport } from '../types'
+import { Badge, Empty, Icon, splitTypeName } from '../components/ui'
+import { Roles, type Facility, type FacilityReport, type OperationsReport, type UnitType } from '../types'
+import { useAuth } from '../auth'
 import { FormField, useValidatedForm } from '../components/form'
 import { hotlineError, localToday, normalizePhone, PHONE_FILTER, operatingHoursError, textError } from '../validation'
 import { Select } from '../components/Select'
@@ -242,11 +243,41 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
   const f = form.values
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // New facility only, admin only (units are created through facility management): the units to open it with.
+  const { user } = useAuth()
+  const canAddUnits = !facility && user?.role === Roles.Admin
+  const [types, setTypes] = useState<UnitType[]>([])
+  const [plan, setPlan] = useState<Record<number, { count: string; prefix: string; floor: string }>>({})
+  useEffect(() => {
+    if (!canAddUnits) return
+    api<UnitType[]>('/api/unit-types').then((ts) => {
+      setTypes(ts)
+      setPlan(Object.fromEntries(ts.map((t, i) => [t.unitTypeId, { count: '', prefix: String.fromCharCode(65 + (i % 26)), floor: '1' }])))
+    }).catch(() => setTypes([]))
+  }, [canAddUnits])
+  const rows = types.map((t) => ({ t, p: plan[t.unitTypeId] ?? { count: '', prefix: '', floor: '1' } }))
+  const wanted = rows.filter((r) => Number(r.p.count) > 0)
+  const totalUnits = wanted.reduce((n, r) => n + Number(r.p.count), 0)
+  const setRow = (id: number, k: 'count' | 'prefix' | 'floor', v: string) =>
+    setPlan((cur) => ({ ...cur, [id]: { ...(cur[id] ?? { count: '', prefix: '', floor: '1' }), [k]: k === 'prefix' ? v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5) : v.replace(/\D/g, '').slice(0, 3) } }))
+  const planError = () => {
+    for (const { t, p } of rows) {
+      const name = splitTypeName(t.typeName).name
+      if (p.count && (!Number.isInteger(Number(p.count)) || Number(p.count) > 50)) return `Số kho "${name}" từ 0 đến 50`
+      if (Number(p.count) > 0 && !p.prefix) return `Nhập ký hiệu mã kho cho "${name}" (vd: A → A-01, A-02…)`
+      if (Number(p.count) > 0 && !(Number(p.floor) >= 1 && Number(p.floor) <= 100)) return `Tầng của "${name}" từ 1 đến 100`
+    }
+    const prefixes = wanted.map((r) => r.p.prefix)
+    if (new Set(prefixes).size !== prefixes.length) return 'Mỗi loại kho cần một ký hiệu mã kho khác nhau để không trùng mã'
+    return ''
+  }
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
     if (!form.validateAll()) return
+    const pe = canAddUnits ? planError() : ''
+    if (pe) { setError(pe); return }
     setBusy(true)
     const body = {
       facilityName: f.facilityName.trim(), address: f.address.trim(), district: f.district.trim(),
@@ -257,8 +288,31 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
         await api(`/api/operations/facilities/${facility.facilityId}`, { method: 'PUT', body: { ...body, status: f.status } })
         await onDone(`Đã cập nhật ${body.facilityName}.`)
       } else {
-        await api('/api/operations/facilities', { body })
-        await onDone(`Đã thêm cơ sở ${body.facilityName}. Thêm kho cho cơ sở này ở mục Kho từng cơ sở.`)
+        const created = await api<Facility>('/api/operations/facilities', { body })
+        if (!canAddUnits || !wanted.length || !created?.facilityId) {
+          await onDone(`Đã thêm cơ sở ${body.facilityName}. Thêm kho cho cơ sở này ở trang Kho Lưu Trữ.`)
+          return
+        }
+        // Units one by one; a failure leaves the facility and the units already made, and is reported.
+        let made = 0
+        const failed: string[] = []
+        for (const { t, p } of wanted) {
+          for (let i = 1; i <= Number(p.count); i++) {
+            const unitCode = `${p.prefix}-${String(i).padStart(2, '0')}`
+            try {
+              await api(`/api/facility-management/facilities/${created.facilityId}/units`, {
+                body: { unitTypeId: t.unitTypeId, unitCode, floorNumber: Number(p.floor), zoneArea: `Khu ${p.prefix}`, monthlyPrice: t.baseMonthlyRate },
+              })
+              made++
+            } catch (err) {
+              failed.push(`${unitCode} (${(err as Error).message})`)
+            }
+          }
+        }
+        const summary = wanted.map((r) => `${r.p.count} ${splitTypeName(r.t.typeName).name}`).join(', ')
+        await onDone(failed.length
+          ? `Đã thêm cơ sở ${body.facilityName} và ${made}/${totalUnits} kho. Chưa tạo được: ${failed.slice(0, 3).join('; ')}${failed.length > 3 ? '…' : ''}. Thêm tiếp ở trang Kho Lưu Trữ.`
+          : `Đã thêm cơ sở ${body.facilityName} kèm ${made} kho (${summary}). Khách đặt được ngay.`)
       }
     } catch (err) {
       setError((err as Error).message)
@@ -285,12 +339,41 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
           </label>
         )}
       </div>
+      {canAddUnits && types.length > 0 && (
+        <div className="stack-sm facility-units-plan">
+          <div>
+            <b>Kho ban đầu tại cơ sở (tùy chọn)</b>
+            <p className="muted">Nhập số kho muốn tạo cho từng loại. Mã kho tự đặt theo ký hiệu, vd ký hiệu A, 3 kho → A-01, A-02, A-03. Để trống nếu chưa muốn tạo.</p>
+          </div>
+          <div className="table-scroll">
+            <table className="plan-table">
+              <thead><tr><th>Loại kho</th><th>Số kho</th><th>Ký hiệu mã</th><th>Tầng</th><th>Mã sẽ tạo</th></tr></thead>
+              <tbody>
+                {rows.map(({ t, p }) => {
+                  const n = Number(p.count) || 0
+                  return (
+                    <tr key={t.unitTypeId} className={n > 0 ? 'on' : ''}>
+                      <td><b>{splitTypeName(t.typeName).name}</b><br /><small className="muted">{splitTypeName(t.typeName).size}{t.hasClimateControl ? ' · điều hòa' : ''}</small></td>
+                      <td><input inputMode="numeric" value={p.count} placeholder="0" onChange={(e) => setRow(t.unitTypeId, 'count', e.target.value)} aria-label={`Số kho ${t.typeName}`} /></td>
+                      <td><input value={p.prefix} onChange={(e) => setRow(t.unitTypeId, 'prefix', e.target.value)} aria-label={`Ký hiệu mã ${t.typeName}`} /></td>
+                      <td><input inputMode="numeric" value={p.floor} onChange={(e) => setRow(t.unitTypeId, 'floor', e.target.value)} aria-label={`Tầng ${t.typeName}`} /></td>
+                      <td><small className="muted">{n > 0 && p.prefix ? `${p.prefix}-01${n > 1 ? ` … ${p.prefix}-${String(n).padStart(2, '0')}` : ''}` : '—'}</small></td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          {totalUnits > 0 && <p className="hint"><Icon name="package" size={15} /> Sẽ tạo <b>{totalUnits} kho</b> cùng lúc với cơ sở.</p>}
+          <small className="muted">Chưa có loại kho phù hợp? Thêm ở mục "Loại kho & Hình ảnh" cuối trang trước, rồi mở lại form này.</small>
+        </div>
+      )}
       {facility && f.status !== 'Active' && f.status !== facility.status && (
         <p className="alert bad"><Icon name="alert" size={16} />Khách sẽ không đặt được kho mới tại cơ sở này khi không còn ở trạng thái "Đang hoạt động".</p>
       )}
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
       <div className="row">
-        <button className="btn primary sm" type="submit" disabled={busy}>{busy ? 'Đang lưu…' : facility ? 'Lưu thay đổi' : 'Thêm cơ sở'}</button>
+        <button className="btn primary sm" type="submit" disabled={busy}>{busy ? 'Đang lưu…' : facility ? 'Lưu thay đổi' : totalUnits ? `Thêm cơ sở & ${totalUnits} kho` : 'Thêm cơ sở'}</button>
         <button className="btn ghost sm" type="button" onClick={onCancel}>Hủy</button>
       </div>
     </form>
