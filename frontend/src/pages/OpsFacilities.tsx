@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { api, fmtDate, saveTable } from '../api'
 import { Badge, Empty, Icon } from '../components/ui'
-import type { Facility, FacilityReport, OperationsReport, UnitType } from '../types'
+import type { Facility, FacilityReport, OperationsReport } from '../types'
 import { FormField, useValidatedForm } from '../components/form'
 import { hotlineError, localToday, normalizePhone, PHONE_FILTER, operatingHoursError, textError } from '../validation'
 import { Select } from '../components/Select'
@@ -45,12 +45,6 @@ function badgeOf(f: Facility, r?: FacilityReport): { label: string; tone: 'ok' |
 export default function OpsFacilities() {
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [report, setReport] = useState<OperationsReport | null>(null)
-  /** Unit types still without a photo: the red count on the "Cơ Sở" menu entry points here. */
-  const [noPhoto, setNoPhoto] = useState<UnitType[]>([])
-  const loadPhotos = useCallback(() => {
-    api<UnitType[]>('/api/operations/unit-types').then((ts) => setNoPhoto(ts.filter((t) => !t.imageUrl))).catch(() => setNoPhoto([]))
-  }, [])
-  useEffect(() => { loadPhotos() }, [loadPhotos])
   const goToTypes = () => document.getElementById('unit-types')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   const [q, setQ] = useState('')
   const [area, setArea] = useState('all')
@@ -115,13 +109,6 @@ export default function OpsFacilities() {
           <button className="btn primary" onClick={() => { setNotice(''); setEditId(null); setCreating(true) }}><Icon name="building" size={16} /> Thêm cơ sở</button>
         </div>
       </div>
-
-      {noPhoto.length > 0 && (
-        <div className="alert warn row between wrap">
-          <span><Icon name="alert" size={16} /> <b>{noPhoto.length} loại kho chưa có ảnh</b> ({noPhoto.map((t) => t.typeName).join(', ')}). Khách đang thấy hình minh họa thay cho ảnh thật.</span>
-          <button type="button" className="btn outline sm" onClick={goToTypes}>Thêm ảnh ngay</button>
-        </div>
-      )}
 
       <div className="stat-grid">
         <Metric icon="building" tone="info" label="Tổng cơ sở" value={String(facilities.length)}
@@ -207,7 +194,7 @@ export default function OpsFacilities() {
           <h2 className="panel-title">Loại kho & Hình ảnh</h2>
           <p className="muted">Mọi loại kho của hệ thống kèm ảnh thật hiển thị cho khách. Thêm loại mới, đổi ảnh, giá và kích thước tại đây.</p>
         </div>
-        <UnitTypeManager onChanged={loadPhotos} />
+        <UnitTypeManager />
       </section>
 
       {report && (
