@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { api, fmtTime } from '../api'
 import { useAuth } from '../auth'
@@ -146,11 +147,19 @@ function SupportWorkspace({ admin = false, facilityId, facilities = [], onFacili
             {shown.map((r) => {
               const p = SupportPriorities[r.priority] ?? { label: r.priority, tone: 'muted' as const }
               return (
-                <button key={r.requestId} type="button" className={`ticket-item ${r.requestId === selectedId ? 'selected' : ''}`} onClick={() => setSelectedId(r.requestId)}>
-                  <span className="row between wrap"><small className="code">{r.requestCode}</small><span className="row"><span className={`badge ${p.tone}`}>{p.label}</span><StatusBadge status={r.status} /></span></span>
-                  <b>{r.title}</b>
-                  <small className="muted clamp-2">{r.description}</small>
-                  <small className="muted">{admin && r.facilityName ? `${r.facilityName} · ` : ''}Kho {r.unitCode}{admin && r.customerName ? ` · ${r.customerName}` : ''} · {SupportCategories[r.category] ?? r.category} · {fmtTime(r.createdAt)}{r.assignedStaffName ? ` · ${r.assignedStaffName}` : ''}{r.imageUrl ? ' · Có ảnh' : ''}</small>
+                <button key={r.requestId} type="button" className={`ticket-item ${r.imageUrl ? 'has-photo' : ''} ${r.requestId === selectedId ? 'selected' : ''}`} onClick={() => setSelectedId(r.requestId)}>
+                  <span className="ticket-item-body">
+                    <span className="row between wrap"><small className="code">{r.requestCode}</small><span className="row"><span className={`badge ${p.tone}`}>{p.label}</span><StatusBadge status={r.status} /></span></span>
+                    <b>{r.title}</b>
+                    <small className="muted clamp-2">{r.description}</small>
+                    <small className="muted">{admin && r.facilityName ? `${r.facilityName} · ` : ''}Kho {r.unitCode}{admin && r.customerName ? ` · ${r.customerName}` : ''} · {SupportCategories[r.category] ?? r.category} · {fmtTime(r.createdAt)}{r.assignedStaffName ? ` · ${r.assignedStaffName}` : ''}</small>
+                  </span>
+                  {r.imageUrl && (
+                    <span className="ticket-thumb" title="Khách có gửi ảnh">
+                      <img src={r.imageUrl} alt="" loading="lazy" />
+                      <span className="ticket-thumb-tag"><Icon name="camera" size={12} /> Ảnh</span>
+                    </span>
+                  )}
                 </button>
               )
             })}
@@ -173,6 +182,13 @@ function TicketDetail({ ticket: t, onChanged, base, admin }: { ticket: SupportRe
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [zoom, setZoom] = useState(false)
+  useEffect(() => {
+    if (!zoom) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setZoom(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [zoom])
 
   const loadDetail = useCallback(async () => {
     const [c, u] = await Promise.all([
@@ -228,19 +244,29 @@ function TicketDetail({ ticket: t, onChanged, base, admin }: { ticket: SupportRe
 
   return (
     <section className="panel ticket-detail">
+      {zoom && t.imageUrl && createPortal(
+        <div className="photo-lightbox" role="dialog" aria-label="Ảnh sự cố" onClick={() => setZoom(false)}>
+          <img src={t.imageUrl} alt="Ảnh sự cố khách hàng đính kèm" onClick={(e) => e.stopPropagation()} />
+          <button type="button" className="icon-btn photo-lightbox-close" aria-label="Đóng" onClick={() => setZoom(false)}><Icon name="x" /></button>
+          <small>{t.requestCode} · {t.title} · Kho {t.unitCode}</small>
+        </div>,
+        document.body,
+      )}
       <h2 className="panel-title">Chi tiết yêu cầu</h2>
       <div className="row between"><StatusBadge status={t.status} /><span className={`badge ${p.tone}`}>{p.label}</span></div>
       <div>
         <h3 className="issue-title">{t.title}</h3>
         <p className="muted">{t.description}</p>
-        {t.imageUrl && (
-          <div className="stack-sm">
-            <a href={t.imageUrl} target="_blank" rel="noreferrer" className="support-photo-link">
-              <img src={t.imageUrl} alt="Ảnh sự cố khách hàng đính kèm" className="support-photo" loading="lazy" />
-            </a>
-            <small className="muted">Bấm vào ảnh để xem kích thước đầy đủ</small>
-          </div>
-        )}
+      </div>
+      <div className="support-evidence">
+        <div className="row between wrap"><b><Icon name="camera" size={15} /> Ảnh khách gửi</b>
+          {t.imageUrl && <a href={t.imageUrl} target="_blank" rel="noreferrer" className="link"><small>Mở ảnh gốc ↗</small></a>}</div>
+        {t.imageUrl ? (
+          <button type="button" className="support-evidence-photo" onClick={() => setZoom(true)} title="Bấm để phóng to">
+            <img src={t.imageUrl} alt="Ảnh sự cố khách hàng đính kèm" loading="lazy" />
+            <span className="support-evidence-hint"><Icon name="search" size={13} /> Bấm để phóng to</span>
+          </button>
+        ) : <p className="muted support-evidence-none">Khách không gửi ảnh kèm yêu cầu này.</p>}
       </div>
       <div className="info-box">
         <div className="info-row"><span className="muted">Mã yêu cầu</span><b>{t.requestCode}</b></div>
