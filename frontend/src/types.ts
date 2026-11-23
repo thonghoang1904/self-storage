@@ -141,6 +141,8 @@ export interface StorageUnit {
   status: string
   unitTypeId: number
   unitTypeName: string
+  /** This unit's own photo (Cloudinary); the unit type's photo is used when it has none. */
+  imageUrl?: string | null
 }
 
 export interface Reservation {
@@ -333,6 +335,8 @@ export interface Contract {
   endDate: string
   monthlyRentFee: number
   status: string
+  unitImageUrl?: string | null
+  unitTypeImageUrl?: string | null
 }
 
 export interface ContractDetail {
@@ -366,6 +370,8 @@ export interface ContractDetail {
   operatingHours: string
   /** Photo of the unit type (Cloudinary URL), null when none was uploaded. */
   unitTypeImageUrl?: string | null
+  /** The rented unit's own photo, shown before the unit type's. */
+  unitImageUrl?: string | null
 }
 
 export interface Renewal {

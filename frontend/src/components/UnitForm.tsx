@@ -1,6 +1,7 @@
-import { type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, fmtMoney } from '../api'
 import { Icon, splitTypeName } from './ui'
+import { UnitTypePhoto } from './unitPhoto'
 import type { StorageUnit, UnitType } from '../types'
 import { CODE_FILTER, textError, unitCodeError } from '../validation'
 import { FieldNote, useInputFilter } from './form'
@@ -12,8 +13,16 @@ import { Select } from './Select'
  * its type and location stay fixed. The price always follows the unit type's listed rate.
  */
 
-export interface UnitFormValue { unitId: number | null; unitTypeId: number; unitCode: string; floorNumber: number; zoneArea: string }
+export interface UnitFormValue {
+  unitId: number | null; unitTypeId: number; unitCode: string; floorNumber: number; zoneArea: string
+  /** New photo of this unit to upload after saving, or a request to remove the current one. */
+  photo?: File | null; removePhoto?: boolean
+}
 export const EMPTY_UNIT_FORM: UnitFormValue = { unitId: null, unitTypeId: 0, unitCode: '', floorNumber: 1, zoneArea: '' }
+const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+/** Same rules as the backend (JPG, PNG or WebP, at most 5 MB). */
+export const unitPhotoError = (f: File) => !PHOTO_TYPES.includes(f.type) ? 'Chỉ hỗ trợ ảnh JPG, PNG hoặc WebP'
+  : f.size > 5 * 1024 * 1024 ? 'Ảnh không được vượt quá 5 MB' : f.size === 0 ? 'Tệp ảnh bị rỗng' : ''
 /** Statuses where only the unit code may change. */
 export const LOCKED_UNIT_STATUSES = ['Rented', 'OverdueLocked', 'Reserved']
 
@@ -32,13 +41,76 @@ export async function saveUnit(facilityId: number, form: UnitFormValue, units: S
   if (invalid) throw new Error(invalid)
   const body = { unitTypeId: type.unitTypeId, unitCode: code, floorNumber: form.floorNumber, zoneArea: form.zoneArea.trim() || null, monthlyPrice: type.baseMonthlyRate }
   const base = `/api/facility-management/facilities/${facilityId}/units`
-  if (!form.unitId) {
-    await api(base, { body })
-    return `Đã thêm kho ${code}.`
-  }
   const before = units.find((u) => u.unitId === form.unitId)
-  await api(`${base}/${form.unitId}`, { method: 'PUT', body })
-  return before && before.unitCode !== code ? `Đã đổi mã kho ${before.unitCode} thành ${code}.` : `Đã cập nhật kho ${code}.`
+  const saved = form.unitId
+    ? await api<StorageUnit>(`${base}/${form.unitId}`, { method: 'PUT', body })
+    : await api<StorageUnit>(base, { body })
+  const done = !form.unitId ? `Đã thêm kho ${code}.`
+    : before && before.unitCode !== code ? `Đã đổi mã kho ${before.unitCode} thành ${code}.` : `Đã cập nhật kho ${code}.`
+  const unitId = saved?.unitId ?? form.unitId
+  if (!unitId || (!form.photo && !form.removePhoto)) return done
+  // The unit is saved either way; a failed photo upload is reported so it can be tried again from "Sửa".
+  try {
+    if (form.photo) {
+      const fd = new FormData()
+      fd.append('file', form.photo)
+      await api(`${base}/${unitId}/image`, { body: fd })
+      return done.replace(/\.$/, ' kèm ảnh.')
+    }
+    if (before?.imageUrl) await api(`${base}/${unitId}/image`, { method: 'DELETE' })
+    return done.replace(/\.$/, ', đã gỡ ảnh.')
+  } catch (e) {
+    return `${done} Chưa ${form.photo ? 'tải' : 'gỡ'} được ảnh: ${(e as Error).message}. Bấm "Sửa" ở kho ${code} để thử lại.`
+  }
+}
+
+/** Photo of one unit: current photo or the new one picked, with change / remove. */
+function UnitPhotoPicker({ form, onChange, current, typePhoto, typeName, typeId }: {
+  form: UnitFormValue; onChange: (f: UnitFormValue) => void; current?: string | null; typePhoto?: string | null; typeName?: string; typeId?: number
+}) {
+  const input = useRef<HTMLInputElement>(null)
+  const [error, setError] = useState('')
+  const [preview, setPreview] = useState<string | null>(null)
+  useEffect(() => {
+    if (!form.photo) { setPreview(null); return }
+    const url = URL.createObjectURL(form.photo)
+    setPreview(url)
+    return () => URL.revokeObjectURL(url)
+  }, [form.photo])
+  const own = preview ?? (form.removePhoto ? null : current ?? null)
+  const pick = (f?: File) => {
+    if (!f) return
+    const err = unitPhotoError(f)
+    setError(err)
+    if (!err) onChange({ ...form, photo: f, removePhoto: false })
+  }
+  return (
+    <div className="field">
+      <span>Ảnh thực tế của kho này (tùy chọn)</span>
+      <div className="unit-photo-picker">
+        <div className="unit-type-thumb"><UnitTypePhoto src={own ?? typePhoto} typeName={typeName} typeId={typeId} alt="Ảnh kho" /></div>
+        <div className="stack-sm">
+          <div className="row wrap">
+            <button type="button" className="btn outline sm" onClick={() => input.current?.click()}>
+              <Icon name="plus" size={14} /> {own ? 'Đổi ảnh' : 'Chọn ảnh'}
+            </button>
+            {form.photo && <button type="button" className="btn ghost sm" onClick={() => onChange({ ...form, photo: null })}>Bỏ ảnh vừa chọn</button>}
+            {!form.photo && current && !form.removePhoto && (
+              <button type="button" className="btn ghost sm danger-text" onClick={() => onChange({ ...form, removePhoto: true })}>Gỡ ảnh hiện tại</button>
+            )}
+            {form.removePhoto && <button type="button" className="btn ghost sm" onClick={() => onChange({ ...form, removePhoto: false })}>Giữ lại ảnh</button>}
+          </div>
+          <small className="muted">
+            {own ? (form.photo ? 'Ảnh mới sẽ được tải lên khi lưu.' : 'Khách thuê kho này sẽ thấy ảnh này.')
+              : form.removePhoto ? 'Ảnh sẽ được gỡ khi lưu; kho dùng lại ảnh của loại kho.'
+                : 'Chưa có ảnh riêng: đang dùng ảnh của loại kho. JPG, PNG hoặc WebP, tối đa 5 MB.'}
+          </small>
+          {error && <small className="danger-text">{error}</small>}
+        </div>
+        <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(e) => { pick(e.target.files?.[0]); e.target.value = '' }} />
+      </div>
+    </div>
+  )
 }
 
 export function UnitForm({ form, onChange, units, types, busy, onSubmit, onClose, bare = false }: {
@@ -82,6 +154,8 @@ export function UnitForm({ form, onChange, units, types, busy, onSubmit, onClose
         </label>
       </div>
       {renameOnly && <p className="hint"><Icon name="alert" size={15} /> Kho đang có khách thuê hoặc giữ chỗ: chỉ đổi được mã kho, không đổi loại và vị trí.</p>}
+      <UnitPhotoPicker form={form} onChange={onChange} current={current?.imageUrl} typePhoto={selectedType?.imageUrl}
+        typeName={selectedType?.typeName} typeId={selectedType?.unitTypeId} />
       {selectedType && (
         <p className="hint"><Icon name="wallet" size={15} /> Giá thuê theo bảng giá loại kho: <b>{fmtMoney(selectedType.baseMonthlyRate)}/tháng</b> · {splitTypeName(selectedType.typeName).size}{selectedType.hasClimateControl ? ' · có điều hòa' : ''}</p>
       )}

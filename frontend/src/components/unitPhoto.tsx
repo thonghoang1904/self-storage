@@ -30,7 +30,7 @@ function contractType(contractId: number) {
   let p = typeByContract.get(contractId)
   if (!p) {
     p = api<ContractDetail>(`/api/contracts/${contractId}`)
-      .then((d) => (d.unitTypeName || d.unitTypeId ? { name: d.unitTypeName, id: d.unitTypeId, image: d.unitTypeImageUrl ?? null } : null))
+      .then((d) => (d.unitTypeName || d.unitTypeId ? { name: d.unitTypeName, id: d.unitTypeId, image: d.unitImageUrl ?? d.unitTypeImageUrl ?? null } : null))
       .catch(() => null)
     typeByContract.set(contractId, p)
   }
@@ -59,7 +59,7 @@ export function UnitTypePhoto({ src, typeName, typeId, alt }: { src?: string | n
 }
 
 /**
- * The photo of a contract's unit: its type's uploaded photo when there is one, else the drawn picture for its size.
+ * The photo of a contract's unit: the unit's own photo, else its type's uploaded photo, else the drawn picture for its size.
  * Known type (from the contract detail) is used straight away; otherwise the contract detail is read
  * (it carries the unit type, rented units included); the facility's public unit list is the last resort.
  */
@@ -71,7 +71,7 @@ export function ContractUnitArt({ facilityId, unitId, unitCode, contractId, unit
     let live = true
     const fromList = () => facilityUnits(facilityId).then((us) => {
       const u = us.find((x) => (unitId != null && x.unitId === unitId) || (unitCode != null && x.unitCode === unitCode))
-      return u ? { name: u.unitTypeName, id: u.unitTypeId, image: null } : null
+      return u ? { name: u.unitTypeName, id: u.unitTypeId, image: u.imageUrl ?? null } : null
     })
     const known = unitTypeName || unitTypeId ? Promise.resolve({ name: unitTypeName, id: unitTypeId, image: imageUrl ?? null }) : null
     void (known ?? (contractId != null ? contractType(contractId).then((t) => t ?? fromList()) : fromList()))

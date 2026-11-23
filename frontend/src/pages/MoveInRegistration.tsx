@@ -791,7 +791,7 @@ export default function MoveInRegistration() {
           <aside className="stack-lg">
             <section className="panel">
               <h3 className="panel-title">Kho nhận đồ</h3>
-              <div className="unit-photo sm"><ContractUnitArt facilityId={c.facilityId} unitId={c.unitId} unitTypeName={c.unitTypeName} unitTypeId={c.unitTypeId} /></div>
+              <div className="unit-photo sm"><ContractUnitArt facilityId={c.facilityId} unitId={c.unitId} unitTypeName={c.unitTypeName} unitTypeId={c.unitTypeId} imageUrl={c.unitImageUrl ?? c.unitTypeImageUrl} /></div>
               <div>
                 <h4 className="unit-title">Kho {c.unitCode}</h4>
                 <p className="muted">{c.unitTypeName || type?.typeName ? `${c.unitTypeName || type?.typeName} · ${fmtVol(capacity)} m³` : c.facilityName}</p>

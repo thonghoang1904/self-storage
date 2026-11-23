@@ -16,7 +16,7 @@ const DB_KEY = 'ss_mock_db_v12'
 // ------------------------------------------------------------------ data model
 
 interface User { userId: number; username: string; password: string; fullName: string; email: string; phoneNumber: string; citizenId: string | null; role: string; status?: string; address?: string | null }
-interface Unit { unitId: number; facilityId: number; unitTypeId: number; unitCode: string; floorNumber: number; zoneArea: string; monthlyPrice: number; status: string }
+interface Unit { unitId: number; facilityId: number; unitTypeId: number; unitCode: string; floorNumber: number; zoneArea: string; monthlyPrice: number; status: string; imageUrl?: string | null }
 interface Rsv { reservationId: number; reservationCode: string; customerId: number; facilityId: number; unitTypeId: number; assignedUnitId: number | null; expectedStartDate: string; checkInAppointmentAt?: string | null; durationMonths: number; depositAmount: number; estimatedTotalFee: number; status: string; depositDeadline: string; createdAt: string; promoCode?: string | null; promotionDiscountAmount?: number; depositWasPaid?: boolean }
 interface Ctr { contractId: number; contractNumber: string; customerId: number; unitId: number; startDate: string; endDate: string; monthlyRentFee: number; depositPaid: number; status: string; signedDate?: string; termsConditions?: string | null; earlyReturnFee?: number }
 interface Rnw { renewalId: number; contractId: number; oldEndDate: string; newEndDate: string; extensionMonths: number; renewalFee: number; status: string; requestedAt: string }
@@ -416,7 +416,8 @@ function reservationDto(r: Rsv): Reservation {
 function contractDto(c: Ctr): Contract {
   const u = unitById(c.unitId)
   const f = facilityById(u.facilityId)!
-  return { contractId: c.contractId, contractNumber: c.contractNumber, facilityId: f.facilityId, facilityName: f.facilityName, unitCode: u.unitCode, startDate: c.startDate, endDate: c.endDate, monthlyRentFee: c.monthlyRentFee, status: c.status }
+  return { contractId: c.contractId, contractNumber: c.contractNumber, facilityId: f.facilityId, facilityName: f.facilityName, unitCode: u.unitCode, startDate: c.startDate, endDate: c.endDate, monthlyRentFee: c.monthlyRentFee, status: c.status,
+    unitImageUrl: u.imageUrl ?? null, unitTypeImageUrl: typeById(u.unitTypeId).imageUrl ?? null }
 }
 
 const personDto = (p: AuthPerson): Person =>
@@ -803,7 +804,7 @@ const cancellationDto = (c: Cnl): CancellationRequest => ({
   customerName: userById(c.customerId).fullName, reason: c.reason, status: c.status, requestedAt: c.requestedAt,
   resolvedAt: c.resolvedAt, resolutionNotes: c.resolutionNotes, approvedRefundAmount: c.approvedRefundAmount,
 })
-const unitDto = (u: Unit): StorageUnit => ({ unitId: u.unitId, unitCode: u.unitCode, floorNumber: u.floorNumber, zoneArea: u.zoneArea || null, monthlyPrice: typeById(u.unitTypeId).baseMonthlyRate, status: u.status, unitTypeId: u.unitTypeId, unitTypeName: typeById(u.unitTypeId).typeName })
+const unitDto = (u: Unit): StorageUnit => ({ unitId: u.unitId, unitCode: u.unitCode, floorNumber: u.floorNumber, zoneArea: u.zoneArea || null, monthlyPrice: typeById(u.unitTypeId).baseMonthlyRate, status: u.status, unitTypeId: u.unitTypeId, unitTypeName: typeById(u.unitTypeId).typeName, imageUrl: u.imageUrl ?? null })
 /** Units of a type still free once open reservations hold theirs (used before taking a unit out of the free pool). */
 const spareUnits = (facilityId: number, unitTypeId: number) => {
   const now = localIso(new Date())
@@ -1056,7 +1057,7 @@ const routes: [string, RegExp, Handler][] = [
     const status = query.get('status')
     return db.units
       .filter((u) => u.facilityId === Number(m[1]) && (!status || u.status === status))
-      .map<StorageUnit>((u) => ({ unitId: u.unitId, unitCode: u.unitCode, floorNumber: u.floorNumber, zoneArea: u.zoneArea, monthlyPrice: u.monthlyPrice, status: u.status, unitTypeId: u.unitTypeId, unitTypeName: typeById(u.unitTypeId).typeName }))
+      .map<StorageUnit>((u) => ({ unitId: u.unitId, unitCode: u.unitCode, floorNumber: u.floorNumber, zoneArea: u.zoneArea, monthlyPrice: u.monthlyPrice, status: u.status, unitTypeId: u.unitTypeId, unitTypeName: typeById(u.unitTypeId).typeName, imageUrl: u.imageUrl ?? null }))
   }],
 
   // ---- reservations
@@ -1182,7 +1183,7 @@ const routes: [string, RegExp, Handler][] = [
       floorNumber: u.floorNumber, zoneArea: u.zoneArea, unitTypeId: u.unitTypeId, unitTypeName: typeById(u.unitTypeId).typeName,
       lengthMeters: typeById(u.unitTypeId).lengthMeters, widthMeters: typeById(u.unitTypeId).widthMeters, heightMeters: typeById(u.unitTypeId).heightMeters,
       volumeCubicMeters: typeById(u.unitTypeId).volumeCubicMeters, hasClimateControl: typeById(u.unitTypeId).hasClimateControl, operatingHours: f.operatingHours,
-      unitTypeImageUrl: typeById(u.unitTypeId).imageUrl ?? null,
+      unitTypeImageUrl: typeById(u.unitTypeId).imageUrl ?? null, unitImageUrl: u.imageUrl ?? null,
     }
     return d
   }],
@@ -2476,6 +2477,20 @@ const routes: [string, RegExp, Handler][] = [
   }],
 
   // ---- facility management (FacilityManagementController)
+  ['POST', /^\/api\/facility-management\/facilities\/(\d+)\/units\/(\d+)\/image$/, (m, { token, body }) => {
+    facilityStaff(token, Number(m[1]), UNIT_MANAGERS)
+    const u = db.units.find((x) => x.unitId === Number(m[2]) && x.facilityId === Number(m[1]))
+    if (!u) throw notFound('Không tìm thấy kho tại cơ sở này')
+    u.imageUrl = URL.createObjectURL(readImage(body as unknown))
+    return unitDto(u)
+  }],
+  ['DELETE', /^\/api\/facility-management\/facilities\/(\d+)\/units\/(\d+)\/image$/, (m, { token }) => {
+    facilityStaff(token, Number(m[1]), UNIT_MANAGERS)
+    const u = db.units.find((x) => x.unitId === Number(m[2]) && x.facilityId === Number(m[1]))
+    if (!u) throw notFound('Không tìm thấy kho tại cơ sở này')
+    u.imageUrl = null
+    return unitDto(u)
+  }],
   ['GET', /^\/api\/facility-management\/facilities\/(\d+)\/units$/, (m, { token }) => {
     const fid = Number(m[1])
     facilityStaff(token, fid, UNIT_MANAGERS)

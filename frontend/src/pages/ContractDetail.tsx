@@ -194,7 +194,7 @@ export default function ContractDetail() {
           <div className="stack-lg detail-main">
             {/* the unit: photo beside its specs */}
             <section className="panel cd-unit">
-              <div className="cd-unit-photo"><ContractUnitArt facilityId={c.facilityId} unitId={c.unitId} contractId={c.contractId} unitTypeName={c.unitTypeName} unitTypeId={c.unitTypeId} imageUrl={c.unitTypeImageUrl} /></div>
+              <div className="cd-unit-photo"><ContractUnitArt facilityId={c.facilityId} unitId={c.unitId} contractId={c.contractId} unitTypeName={c.unitTypeName} unitTypeId={c.unitTypeId} imageUrl={c.unitImageUrl ?? c.unitTypeImageUrl} /></div>
               <div className="cd-unit-info">
                 <div className="row between wrap">
                   <div>

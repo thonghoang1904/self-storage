@@ -5,6 +5,7 @@ import { Empty, Icon, splitTypeName, StatusBadge } from '../components/ui'
 import type { StorageUnit, UnitType } from '../types'
 import { Metric } from './FacilityOverview'
 import { Select } from '../components/Select'
+import { UnitTypePhoto } from '../components/unitPhoto'
 import { EMPTY_UNIT_FORM, LOCKED_UNIT_STATUSES, saveUnit, UnitForm, unitFormOf, type UnitFormValue } from '../components/UnitForm'
 
 /**
@@ -126,12 +127,13 @@ export default function FacilityUnits() {
       <section className="panel">
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Mã kho</th><th>Loại kho</th><th>Vị trí</th><th>Giá thuê</th><th>Trạng thái</th><th className="right">Thao tác</th></tr></thead>
+            <thead><tr><th>Ảnh</th><th>Mã kho</th><th>Loại kho</th><th>Vị trí</th><th>Giá thuê</th><th>Trạng thái</th><th className="right">Thao tác</th></tr></thead>
             <tbody>
               {shown.map((u) => {
                 const locked = LOCKED_UNIT_STATUSES.includes(u.status)
                 return (
                   <tr key={u.unitId}>
+                    <td><div className="unit-thumb-cell"><UnitTypePhoto src={u.imageUrl ?? types.find((t) => t.unitTypeId === u.unitTypeId)?.imageUrl} typeName={u.unitTypeName} typeId={u.unitTypeId} alt={`Kho ${u.unitCode}`} /></div></td>
                     <td className="code">{u.unitCode}</td>
                     <td>{splitTypeName(u.unitTypeName).name}<br /><small className="muted">{splitTypeName(u.unitTypeName).size}</small></td>
                     <td>Tầng {u.floorNumber}{u.zoneArea && ` · ${u.zoneArea}`}</td>

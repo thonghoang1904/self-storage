@@ -9,6 +9,7 @@ import type { AdminContract, Facility, StorageUnit, UnitType } from '../types'
 import { Select } from '../components/Select'
 import { UnitTypeForm } from '../components/UnitTypeManager'
 import { InventoryPanel } from '../components/InventoryPanel'
+import { UnitTypePhoto } from '../components/unitPhoto'
 import { resetUnitTypeImages } from '../components/unitPhoto'
 
 /**
@@ -23,7 +24,7 @@ import { resetUnitTypeImages } from '../components/unitPhoto'
  */
 
 type Unit = StorageUnit & { facilityId: number; facilityName: string }
-interface Tile { unit: Unit; status: StatusKey; contract?: AdminContract }
+interface Tile { unit: Unit; status: StatusKey; contract?: AdminContract; typePhoto?: string | null }
 
 const STATUS = {
   Available: { label: 'Trống', tone: 'ok' },
@@ -78,8 +79,8 @@ export default function AdminStorage() {
   const tiles = useMemo<Tile[]>(() => (units ?? []).map((unit) => {
     const contract = contracts?.find((c) => c.unitId === unit.unitId)
     const key = (contract?.status === 'Overdue' && unit.status === 'Rented' ? 'Overdue' : unit.status) as StatusKey
-    return { unit, contract, status: STATUS[key] ? key : 'Available' }
-  }).sort((a, b) => a.unit.facilityName.localeCompare(b.unit.facilityName) || a.unit.unitCode.localeCompare(b.unit.unitCode)), [units, contracts])
+    return { unit, contract, status: STATUS[key] ? key : 'Available', typePhoto: types.find((x) => x.unitTypeId === unit.unitTypeId)?.imageUrl }
+  }).sort((a, b) => a.unit.facilityName.localeCompare(b.unit.facilityName) || a.unit.unitCode.localeCompare(b.unit.unitCode)), [units, contracts, types])
 
   const term = search.trim().toLowerCase()
   const inFacility = tiles.filter((t) => !facilityId || t.unit.facilityId === Number(facilityId))
@@ -381,6 +382,10 @@ function UnitTile({ tile: t, actions }: { tile: Tile; actions: Actions }) {
   return (
     <article className={`unit-tile ${c ? 'clickable' : ''}`} onClick={c ? () => actions.view(c) : undefined}
       title={c ? `Xem hợp đồng ${c.contractNumber}` : undefined}>
+      <div className="unit-tile-photo">
+        <UnitTypePhoto src={u.imageUrl ?? t.typePhoto} typeName={u.unitTypeName} typeId={u.unitTypeId} alt={`Kho ${u.unitCode}`} />
+        <Badge tone={u.imageUrl ? 'ok' : 'muted'}>{u.imageUrl ? 'Ảnh thực tế' : t.typePhoto ? 'Ảnh loại kho' : 'Ảnh minh họa'}</Badge>
+      </div>
       <div className="row between">
         <h3><span className="stat-icon info"><Icon name="package" size={15} /></span>{u.unitCode}</h3>
         <Badge tone={s.tone}>{s.label}</Badge>
