@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { api, fmtDate, saveTable } from '../api'
 import { Badge, Empty, Icon, splitTypeName } from '../components/ui'
-import { Roles, type Facility, type FacilityReport, type OperationsReport, type UnitType } from '../types'
+import { Roles, type Facility, type FacilityReport, type OperationsReport, type StorageUnit, type UnitType } from '../types'
 import { useAuth } from '../auth'
 import { FormField, useValidatedForm } from '../components/form'
 import { hotlineError, localToday, normalizePhone, PHONE_FILTER, operatingHoursError, textError } from '../validation'
@@ -245,10 +245,50 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
   const f = form.values
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  // New facility only, admin only (units are created through facility management): the units to open it with.
+  // Units are created and removed through facility management, which only an admin (or the facility's manager) may use.
   const { user } = useAuth()
-  const canAddUnits = !facility && user?.role === Roles.Admin
+  const canAddUnits = user?.role === Roles.Admin
   const [types, setTypes] = useState<UnitType[]>([])
+  // Units the facility already has (editing only), grouped by unit type below.
+  const [units, setUnits] = useState<StorageUnit[]>([])
+  const [confirmDel, setConfirmDel] = useState<number | null>(null)
+  const [unitNotice, setUnitNotice] = useState('')
+  const loadUnits = useCallback(() => {
+    if (!facility) return
+    api<StorageUnit[]>(`/api/operations/facilities/${facility.facilityId}/units`).then(setUnits).catch(() => setUnits([]))
+  }, [facility])
+  useEffect(() => { loadUnits() }, [loadUnits])
+  const BUSY = ['Rented', 'Reserved', 'OverdueLocked']
+  const groups = [...new Set<number>(units.map((u) => u.unitTypeId))].map((id) => {
+    const list = units.filter((u) => u.unitTypeId === id).sort((a, b) => a.unitCode.localeCompare(b.unitCode))
+    return { id, name: list[0].unitTypeName, list, busy: list.filter((u) => BUSY.includes(u.status)).length, free: list.filter((u) => u.status === 'Available').length }
+  })
+  /** Prefix already used for a type at this facility ("B-03" → "B"), so new units continue its numbering. */
+  const prefixOf = (typeId: number) => units.find((u) => u.unitTypeId === typeId)?.unitCode.replace(/-?\d+$/, '') || ''
+  /** The next `n` free codes PREFIX-01, PREFIX-02… skipping those the facility already has. */
+  const codesFor = (prefix: string, n: number) => {
+    const taken = new Set(units.map((u) => u.unitCode.toUpperCase()))
+    const out: string[] = []
+    for (let i = 1; out.length < n && i < 1000; i++) {
+      const c = `${prefix}-${String(i).padStart(2, '0')}`
+      if (!taken.has(c)) out.push(c)
+    }
+    return out
+  }
+  const removeType = async (id: number) => {
+    if (!facility) return
+    const list = units.filter((u) => u.unitTypeId === id)
+    setBusy(true); setError(''); setUnitNotice('')
+    const failed: string[] = []
+    for (const u of list) {
+      try { await api(`/api/facility-management/facilities/${facility.facilityId}/units/${u.unitId}`, { method: 'DELETE' }) }
+      catch (err) { failed.push(`${u.unitCode}: ${(err as Error).message}`) }
+    }
+    setBusy(false); setConfirmDel(null); loadUnits()
+    const name = splitTypeName(list[0]?.unitTypeName ?? '').name
+    if (failed.length) setError(`Đã xóa ${list.length - failed.length}/${list.length} kho ${name}. Không xóa được ${failed.slice(0, 3).join('; ')}${failed.length > 3 ? '…' : ''}. Kho từng có hợp đồng thì chuyển sang bảo trì thay vì xóa.`)
+    else setUnitNotice(`Đã xóa ${list.length} kho ${name} khỏi cơ sở.`)
+  }
   const [plan, setPlan] = useState<Record<number, { count: string; prefix: string; floor: string }>>({})
   const [addingType, setAddingType] = useState(false)
   const [typeNotice, setTypeNotice] = useState('')
@@ -263,14 +303,14 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
   const rows = chosen.map((id) => types.find((t) => t.unitTypeId === id)).filter((t): t is UnitType => !!t)
     .map((t) => ({ t, p: plan[t.unitTypeId] ?? { count: '', prefix: '', floor: '1' } }))
   const nextPrefix = (cur: Record<number, { prefix: string }>, ids: number[]) => {
-    const used = new Set(ids.map((id) => cur[id]?.prefix))
+    const used = new Set([...ids.map((id) => cur[id]?.prefix), ...units.map((u) => u.unitCode.replace(/-?\d+$/, ''))])
     let c = 65
     while (used.has(String.fromCharCode(c)) && c < 90) c++
     return String.fromCharCode(c)
   }
   const addRow = (id: number) => {
     if (!id || chosen.includes(id)) return
-    setPlan((cur) => ({ ...cur, [id]: { count: '1', prefix: nextPrefix(cur, chosen), floor: '1' } }))
+    setPlan((cur) => ({ ...cur, [id]: { count: '1', prefix: prefixOf(id) || nextPrefix(cur, chosen), floor: '1' } }))
     setChosen((c) => [...c, id])
   }
   const removeRow = (id: number) => setChosen((c) => c.filter((x) => x !== id))
@@ -301,36 +341,39 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
       facilityName: f.facilityName.trim(), address: f.address.trim(), district: f.district.trim(),
       city: f.city.trim(), hotline: normalizePhone(f.hotline), operatingHours: f.operatingHours.trim().replace(/\s*-\s*/, ' - '),
     }
+    // Units one by one; a failure keeps the facility and the units already made, and is reported.
+    const createUnits = async (facilityId: number) => {
+      let made = 0
+      const failed: string[] = []
+      for (const { t, p } of wanted) {
+        for (const unitCode of codesFor(p.prefix, Number(p.count))) {
+          try {
+            await api(`/api/facility-management/facilities/${facilityId}/units`, {
+              body: { unitTypeId: t.unitTypeId, unitCode, floorNumber: Number(p.floor), zoneArea: `Khu ${p.prefix}`, monthlyPrice: t.baseMonthlyRate },
+            })
+            made++
+          } catch (err) {
+            failed.push(`${unitCode} (${(err as Error).message})`)
+          }
+        }
+      }
+      const summary = wanted.map((r) => `${r.p.count} ${splitTypeName(r.t.typeName).name}`).join(', ')
+      return failed.length
+        ? ` ${made}/${totalUnits} kho mới đã tạo. Chưa tạo được: ${failed.slice(0, 3).join('; ')}${failed.length > 3 ? '…' : ''}.`
+        : ` Đã thêm ${made} kho (${summary}).`
+    }
     try {
       if (facility) {
         await api(`/api/operations/facilities/${facility.facilityId}`, { method: 'PUT', body: { ...body, status: f.status } })
-        await onDone(`Đã cập nhật ${body.facilityName}.`)
+        const extra = canAddUnits && wanted.length ? await createUnits(facility.facilityId) : ''
+        await onDone(`Đã cập nhật ${body.facilityName}.${extra}`)
       } else {
         const created = await api<Facility>('/api/operations/facilities', { body })
         if (!canAddUnits || !wanted.length || !created?.facilityId) {
           await onDone(`Đã thêm cơ sở ${body.facilityName}. Thêm kho cho cơ sở này ở trang Kho Lưu Trữ.`)
           return
         }
-        // Units one by one; a failure leaves the facility and the units already made, and is reported.
-        let made = 0
-        const failed: string[] = []
-        for (const { t, p } of wanted) {
-          for (let i = 1; i <= Number(p.count); i++) {
-            const unitCode = `${p.prefix}-${String(i).padStart(2, '0')}`
-            try {
-              await api(`/api/facility-management/facilities/${created.facilityId}/units`, {
-                body: { unitTypeId: t.unitTypeId, unitCode, floorNumber: Number(p.floor), zoneArea: `Khu ${p.prefix}`, monthlyPrice: t.baseMonthlyRate },
-              })
-              made++
-            } catch (err) {
-              failed.push(`${unitCode} (${(err as Error).message})`)
-            }
-          }
-        }
-        const summary = wanted.map((r) => `${r.p.count} ${splitTypeName(r.t.typeName).name}`).join(', ')
-        await onDone(failed.length
-          ? `Đã thêm cơ sở ${body.facilityName} và ${made}/${totalUnits} kho. Chưa tạo được: ${failed.slice(0, 3).join('; ')}${failed.length > 3 ? '…' : ''}. Thêm tiếp ở trang Kho Lưu Trữ.`
-          : `Đã thêm cơ sở ${body.facilityName} kèm ${made} kho (${summary}). Khách đặt được ngay.`)
+        await onDone(`Đã thêm cơ sở ${body.facilityName}.${await createUnits(created.facilityId)} Khách đặt được ngay.`)
       }
     } catch (err) {
       setError((err as Error).message)
@@ -357,11 +400,52 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
           </label>
         )}
       </div>
+      {facility && (
+        <div className="stack-sm facility-units-plan">
+          <div>
+            <b>Các loại kho đang có tại cơ sở</b>
+            <p className="muted">{units.length ? `${units.length} kho thuộc ${groups.length} loại.` : 'Cơ sở chưa có kho nào.'}{canAddUnits && ' Xóa một loại = xóa mọi kho thuộc loại đó tại cơ sở; chỉ xóa được khi không kho nào đang cho thuê hoặc giữ chỗ.'}</p>
+          </div>
+          {groups.length > 0 && (
+            <div className="table-scroll">
+              <table className="plan-table">
+                <thead><tr><th>Loại kho</th><th className="right">Số kho</th><th className="right">Trống</th><th className="right">Đang dùng</th><th>Mã kho</th><th /></tr></thead>
+                <tbody>
+                  {groups.map((g) => (
+                    <tr key={g.id}>
+                      <td><b>{splitTypeName(g.name).name}</b><br /><small className="muted">{splitTypeName(g.name).size}</small></td>
+                      <td className="right">{g.list.length}</td>
+                      <td className="right">{g.free}</td>
+                      <td className="right">{g.busy}</td>
+                      <td><small className="muted">{g.list.slice(0, 6).map((u) => u.unitCode).join(', ')}{g.list.length > 6 ? ` … (+${g.list.length - 6})` : ''}</small></td>
+                      <td className="right">
+                        {canAddUnits && (confirmDel === g.id ? (
+                          <span className="row end">
+                            <button type="button" className="btn danger sm" disabled={busy} onClick={() => void removeType(g.id)}>Xóa {g.list.length} kho</button>
+                            <button type="button" className="btn ghost sm" onClick={() => setConfirmDel(null)}>Thôi</button>
+                          </span>
+                        ) : (
+                          <button type="button" className="icon-btn" disabled={busy || g.busy > 0}
+                            title={g.busy > 0 ? 'Còn kho đang cho thuê hoặc giữ chỗ, không xóa được' : 'Xóa loại kho này khỏi cơ sở'}
+                            aria-label={`Xóa ${g.name} khỏi cơ sở`} onClick={() => { setUnitNotice(''); setConfirmDel(g.id) }}><Icon name="trash" size={16} /></button>
+                        ))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {unitNotice && <p className="alert ok"><Icon name="check" size={16} />{unitNotice}</p>}
+        </div>
+      )}
       {canAddUnits && (
         <div className="stack-sm facility-units-plan">
           <div>
-            <b>Kho ban đầu tại cơ sở (tùy chọn)</b>
-            <p className="muted">Chọn các loại kho có tại cơ sở này và số kho mỗi loại. Mã kho tự đặt theo ký hiệu, vd ký hiệu A, 3 kho → A-01, A-02, A-03. Bấm thùng rác để bỏ một loại.</p>
+            <b>{facility ? 'Thêm kho vào cơ sở (tùy chọn)' : 'Kho ban đầu tại cơ sở (tùy chọn)'}</b>
+            <p className="muted">{facility
+              ? 'Thêm loại kho mới cho cơ sở, hoặc thêm kho cho loại đã có. Mã kho tiếp nối mã đang có, vd B-04, B-05. Kho được tạo khi bấm "Lưu thay đổi".'
+              : 'Chọn các loại kho có tại cơ sở này và số kho mỗi loại. Mã kho tự đặt theo ký hiệu, vd ký hiệu A, 3 kho → A-01, A-02, A-03. Bấm thùng rác để bỏ một loại.'}</p>
           </div>
           <div className="table-scroll">
             <table className="plan-table">
@@ -375,7 +459,7 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
                       <td><input inputMode="numeric" value={p.count} placeholder="0" onChange={(e) => setRow(t.unitTypeId, 'count', e.target.value)} aria-label={`Số kho ${t.typeName}`} /></td>
                       <td><input value={p.prefix} onChange={(e) => setRow(t.unitTypeId, 'prefix', e.target.value)} aria-label={`Ký hiệu mã ${t.typeName}`} /></td>
                       <td><input inputMode="numeric" value={p.floor} onChange={(e) => setRow(t.unitTypeId, 'floor', e.target.value)} aria-label={`Tầng ${t.typeName}`} /></td>
-                      <td><small className="muted">{n > 0 && p.prefix ? `${p.prefix}-01${n > 1 ? ` … ${p.prefix}-${String(n).padStart(2, '0')}` : ''}` : '—'}</small></td>
+                      <td><small className="muted">{(() => { const cs = n > 0 && p.prefix ? codesFor(p.prefix, n) : []; return cs.length ? `${cs[0]}${cs.length > 1 ? ` … ${cs[cs.length - 1]}` : ''}` : '—' })()}</small></td>
                       <td className="right"><button type="button" className="icon-btn" aria-label={`Bỏ ${t.typeName} khỏi bảng`} title="Bỏ loại kho này" onClick={() => removeRow(t.unitTypeId)}><Icon name="trash" size={16} /></button></td>
                     </tr>
                   )
@@ -384,7 +468,7 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
               </tbody>
             </table>
           </div>
-          {totalUnits > 0 && <p className="hint"><Icon name="package" size={15} /> Sẽ tạo <b>{totalUnits} kho</b> cùng lúc với cơ sở.</p>}
+          {totalUnits > 0 && <p className="hint"><Icon name="package" size={15} /> Sẽ tạo <b>{totalUnits} kho</b> {facility ? 'khi lưu thay đổi' : 'cùng lúc với cơ sở'}.</p>}
           {typeNotice && <p className="alert ok"><Icon name="check" size={16} />{typeNotice}</p>}
           <div className="row wrap">
             {types.some((t) => !chosen.includes(t.unitTypeId)) && (
@@ -419,7 +503,7 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
       )}
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
       <div className="row">
-        <button className="btn primary sm" type="submit" disabled={busy}>{busy ? 'Đang lưu…' : facility ? 'Lưu thay đổi' : totalUnits ? `Thêm cơ sở & ${totalUnits} kho` : 'Thêm cơ sở'}</button>
+        <button className="btn primary sm" type="submit" disabled={busy}>{busy ? 'Đang lưu…' : facility ? (totalUnits ? `Lưu & thêm ${totalUnits} kho` : 'Lưu thay đổi') : totalUnits ? `Thêm cơ sở & ${totalUnits} kho` : 'Thêm cơ sở'}</button>
         <button className="btn ghost sm" type="button" onClick={onCancel}>Hủy</button>
       </div>
     </form>
