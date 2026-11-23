@@ -6,7 +6,9 @@ import { useAuth } from '../auth'
 import { FormField, useValidatedForm } from '../components/form'
 import { hotlineError, localToday, normalizePhone, PHONE_FILTER, operatingHoursError, textError } from '../validation'
 import { Select } from '../components/Select'
-import { UnitTypeManager } from '../components/UnitTypeManager'
+import { UnitTypeForm, UnitTypeManager } from '../components/UnitTypeManager'
+import { Modal } from '../components/Modal'
+import { resetUnitTypeImages } from '../components/unitPhoto'
 
 /**
  * #44 Operations manager, Figma "facility-branch-management": every facility (GET /api/operations/facilities)
@@ -248,14 +250,30 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
   const canAddUnits = !facility && user?.role === Roles.Admin
   const [types, setTypes] = useState<UnitType[]>([])
   const [plan, setPlan] = useState<Record<number, { count: string; prefix: string; floor: string }>>({})
+  const [addingType, setAddingType] = useState(false)
+  const [typeNotice, setTypeNotice] = useState('')
   useEffect(() => {
     if (!canAddUnits) return
     api<UnitType[]>('/api/unit-types').then((ts) => {
       setTypes(ts)
-      setPlan(Object.fromEntries(ts.map((t, i) => [t.unitTypeId, { count: '', prefix: String.fromCharCode(65 + (i % 26)), floor: '1' }])))
     }).catch(() => setTypes([]))
   }, [canAddUnits])
-  const rows = types.map((t) => ({ t, p: plan[t.unitTypeId] ?? { count: '', prefix: '', floor: '1' } }))
+  /** Unit types put in the table, in the order added. */
+  const [chosen, setChosen] = useState<number[]>([])
+  const rows = chosen.map((id) => types.find((t) => t.unitTypeId === id)).filter((t): t is UnitType => !!t)
+    .map((t) => ({ t, p: plan[t.unitTypeId] ?? { count: '', prefix: '', floor: '1' } }))
+  const nextPrefix = (cur: Record<number, { prefix: string }>, ids: number[]) => {
+    const used = new Set(ids.map((id) => cur[id]?.prefix))
+    let c = 65
+    while (used.has(String.fromCharCode(c)) && c < 90) c++
+    return String.fromCharCode(c)
+  }
+  const addRow = (id: number) => {
+    if (!id || chosen.includes(id)) return
+    setPlan((cur) => ({ ...cur, [id]: { count: '1', prefix: nextPrefix(cur, chosen), floor: '1' } }))
+    setChosen((c) => [...c, id])
+  }
+  const removeRow = (id: number) => setChosen((c) => c.filter((x) => x !== id))
   const wanted = rows.filter((r) => Number(r.p.count) > 0)
   const totalUnits = wanted.reduce((n, r) => n + Number(r.p.count), 0)
   const setRow = (id: number, k: 'count' | 'prefix' | 'floor', v: string) =>
@@ -339,15 +357,15 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
           </label>
         )}
       </div>
-      {canAddUnits && types.length > 0 && (
+      {canAddUnits && (
         <div className="stack-sm facility-units-plan">
           <div>
             <b>Kho ban đầu tại cơ sở (tùy chọn)</b>
-            <p className="muted">Nhập số kho muốn tạo cho từng loại. Mã kho tự đặt theo ký hiệu, vd ký hiệu A, 3 kho → A-01, A-02, A-03. Để trống nếu chưa muốn tạo.</p>
+            <p className="muted">Chọn các loại kho có tại cơ sở này và số kho mỗi loại. Mã kho tự đặt theo ký hiệu, vd ký hiệu A, 3 kho → A-01, A-02, A-03. Bấm thùng rác để bỏ một loại.</p>
           </div>
           <div className="table-scroll">
             <table className="plan-table">
-              <thead><tr><th>Loại kho</th><th>Số kho</th><th>Ký hiệu mã</th><th>Tầng</th><th>Mã sẽ tạo</th></tr></thead>
+              <thead><tr><th>Loại kho</th><th>Số kho</th><th>Ký hiệu mã</th><th>Tầng</th><th>Mã sẽ tạo</th><th /></tr></thead>
               <tbody>
                 {rows.map(({ t, p }) => {
                   const n = Number(p.count) || 0
@@ -358,14 +376,42 @@ function FacilityForm({ facility, onCancel, onDone }: { facility?: Facility; onC
                       <td><input value={p.prefix} onChange={(e) => setRow(t.unitTypeId, 'prefix', e.target.value)} aria-label={`Ký hiệu mã ${t.typeName}`} /></td>
                       <td><input inputMode="numeric" value={p.floor} onChange={(e) => setRow(t.unitTypeId, 'floor', e.target.value)} aria-label={`Tầng ${t.typeName}`} /></td>
                       <td><small className="muted">{n > 0 && p.prefix ? `${p.prefix}-01${n > 1 ? ` … ${p.prefix}-${String(n).padStart(2, '0')}` : ''}` : '—'}</small></td>
+                      <td className="right"><button type="button" className="icon-btn" aria-label={`Bỏ ${t.typeName} khỏi bảng`} title="Bỏ loại kho này" onClick={() => removeRow(t.unitTypeId)}><Icon name="trash" size={16} /></button></td>
                     </tr>
                   )
                 })}
+                {rows.length === 0 && <tr><td colSpan={6} className="muted">Chưa chọn loại kho nào. Thêm loại kho có sẵn hoặc tạo loại mới bên dưới.</td></tr>}
               </tbody>
             </table>
           </div>
           {totalUnits > 0 && <p className="hint"><Icon name="package" size={15} /> Sẽ tạo <b>{totalUnits} kho</b> cùng lúc với cơ sở.</p>}
-          <small className="muted">Chưa có loại kho phù hợp? Thêm ở mục "Loại kho & Hình ảnh" cuối trang trước, rồi mở lại form này.</small>
+          {typeNotice && <p className="alert ok"><Icon name="check" size={16} />{typeNotice}</p>}
+          <div className="row wrap">
+            {types.some((t) => !chosen.includes(t.unitTypeId)) && (
+              <Select className="plan-add-select" value="" onChange={(e) => addRow(Number(e.target.value))} aria-label="Thêm loại kho vào cơ sở">
+                <option value="">+ Thêm loại kho có sẵn…</option>
+                {types.filter((t) => !chosen.includes(t.unitTypeId)).map((t) => <option key={t.unitTypeId} value={t.unitTypeId}>{splitTypeName(t.typeName).name}</option>)}
+              </Select>
+            )}
+            <button type="button" className="btn outline sm" onClick={() => { setTypeNotice(''); setAddingType(true) }}>
+              <Icon name="plus" size={14} /> Tạo loại kho mới
+            </button>
+          </div>
+          {addingType && (
+            <Modal title="Thêm loại kho mới" onClose={() => setAddingType(false)} wide>
+              {/* The dialog is portalled but React events still bubble to this facility form: keep its submit here. */}
+              <div onSubmit={(e) => e.stopPropagation()}>
+                <UnitTypeForm onCancel={() => setAddingType(false)} onSaved={async (msg, created) => {
+                  resetUnitTypeImages()
+                  setAddingType(false)
+                  if (!created) { setTypeNotice(msg); return }
+                  setTypes((ts) => [...ts, created])
+                  addRow(created.unitTypeId)
+                  setTypeNotice(`${msg} Đã thêm vào bảng với 1 kho, sửa số lượng nếu cần.`)
+                }} />
+              </div>
+            </Modal>
+          )}
         </div>
       )}
       {facility && f.status !== 'Active' && f.status !== facility.status && (

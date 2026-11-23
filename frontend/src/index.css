@@ -1596,3 +1596,4 @@ tr.row-selected td { background: var(--cyan-25); }
 .facility-units-plan { padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-tint); }
 .plan-table td input { width: 100%; min-width: 64px; max-width: 110px; height: 38px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; font: inherit; }
 .plan-table tr.on td { background: var(--cyan-25); }
+.plan-add-select { width: 300px; max-width: 100%; flex: none; }
