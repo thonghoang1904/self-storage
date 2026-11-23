@@ -65,7 +65,7 @@ export async function saveUnit(facilityId: number, form: UnitFormValue, units: S
 }
 
 /** Photo of one unit: current photo or the new one picked, with change / remove. */
-function UnitPhotoPicker({ form, onChange, current, typePhoto, typeName, typeId }: {
+export function UnitPhotoPicker({ form, onChange, current, typePhoto, typeName, typeId }: {
   form: UnitFormValue; onChange: (f: UnitFormValue) => void; current?: string | null; typePhoto?: string | null; typeName?: string; typeId?: number
 }) {
   const input = useRef<HTMLInputElement>(null)

@@ -4,7 +4,7 @@ import { api, fmtDate, fmtMoney } from '../api'
 import { daysUntil, fetchContracts } from '../consoleData'
 import { Badge, Empty, Icon, splitTypeName, StatusBadge } from '../components/ui'
 import { Modal } from '../components/Modal'
-import { EMPTY_UNIT_FORM, LOCKED_UNIT_STATUSES, saveUnit, UnitForm, unitFormOf, type UnitFormValue } from '../components/UnitForm'
+import { EMPTY_UNIT_FORM, LOCKED_UNIT_STATUSES, saveUnit, UnitForm, unitFormOf, UnitPhotoPicker, type UnitFormValue } from '../components/UnitForm'
 import type { AdminContract, Facility, StorageUnit, UnitType } from '../types'
 import { Select } from '../components/Select'
 import { UnitTypeForm } from '../components/UnitTypeManager'
@@ -61,6 +61,8 @@ export default function AdminStorage() {
   const [removing, setRemoving] = useState<number | null>(null)
   // The live contract shown in a dialog (card click or "Hợp đồng").
   const [viewing, setViewing] = useState<AdminContract | null>(null)
+  // The unit whose photo is being changed from its tile.
+  const [photoOf, setPhotoOf] = useState<Tile | null>(null)
 
   const load = useCallback(async () => {
     const list = await api<Facility[]>('/api/operations/facilities')
@@ -152,6 +154,7 @@ export default function AdminStorage() {
     busy,
     removing,
     edit: (u) => openForm({ facilityId: u.facilityId, value: unitFormOf(u) }),
+    photo: (t) => { setError(''); setNotice(''); setPhotoOf(t) },
     setStatus: (u, next) => void setUnitStatus(u, next),
     askRemove: (id) => { setRemoving(id); setError(''); setNotice('') },
     remove: (u) => void removeUnit(u),
@@ -236,6 +239,24 @@ export default function AdminStorage() {
       )}
 
       {viewing && <ContractDialog contract={viewing} onClose={() => setViewing(null)} />}
+      {photoOf && (
+        <UnitPhotoDialog tile={photoOf} busy={busy} onClose={() => setPhotoOf(null)}
+          onSave={async (value) => {
+            const u = photoOf.unit
+            const base = `/api/facility-management/facilities/${u.facilityId}/units/${u.unitId}/image`
+            const ok = await run(async () => {
+              if (value.photo) {
+                const fd = new FormData()
+                fd.append('file', value.photo)
+                await api(base, { body: fd })
+                return `Đã cập nhật ảnh kho ${u.unitCode}.`
+              }
+              await api(base, { method: 'DELETE' })
+              return `Đã gỡ ảnh riêng của kho ${u.unitCode}; kho dùng lại ảnh của loại kho.`
+            })
+            if (ok) setPhotoOf(null)
+          }} />
+      )}
 
       {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
@@ -344,6 +365,8 @@ interface Actions {
   busy: boolean
   removing: number | null
   edit: (u: Unit) => void
+  /** Change just the unit's photo (click on the tile's picture). */
+  photo: (t: Tile) => void
   setStatus: (u: Unit, next: 'Available' | 'UnderMaintenance') => void
   askRemove: (unitId: number | null) => void
   remove: (u: Unit) => void
@@ -374,6 +397,25 @@ function UnitActions({ tile: { unit: u, contract }, actions: a }: { tile: Tile; 
   )
 }
 
+/** Change only a unit's own photo, opened from the picture on its tile. */
+function UnitPhotoDialog({ tile: t, busy, onClose, onSave }: { tile: Tile; busy: boolean; onClose: () => void; onSave: (v: UnitFormValue) => Promise<void> }) {
+  const u = t.unit
+  const [value, setValue] = useState<UnitFormValue>(() => unitFormOf(u))
+  const changed = !!value.photo || (!!value.removePhoto && !!u.imageUrl)
+  return (
+    <Modal title={`Ảnh kho ${u.unitCode}`} onClose={onClose}>
+      <p className="muted">{u.facilityName} · {splitTypeName(u.unitTypeName).name} · Tầng {u.floorNumber}{u.zoneArea ? ` · ${u.zoneArea}` : ''}</p>
+      <UnitPhotoPicker form={value} onChange={setValue} current={u.imageUrl} typePhoto={t.typePhoto} typeName={u.unitTypeName} typeId={u.unitTypeId} />
+      <div className="row end">
+        <button type="button" className="btn ghost" onClick={onClose}>Hủy</button>
+        <button type="button" className="btn primary" disabled={busy || !changed} onClick={() => void onSave(value)}>
+          {busy ? 'Đang lưu…' : value.removePhoto && !value.photo ? 'Gỡ ảnh' : 'Lưu ảnh'}
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
 function UnitTile({ tile: t, actions }: { tile: Tile; actions: Actions }) {
   const s = STATUS[t.status]
   const c = t.contract
@@ -382,10 +424,12 @@ function UnitTile({ tile: t, actions }: { tile: Tile; actions: Actions }) {
   return (
     <article className={`unit-tile ${c ? 'clickable' : ''}`} onClick={c ? () => actions.view(c) : undefined}
       title={c ? `Xem hợp đồng ${c.contractNumber}` : undefined}>
-      <div className="unit-tile-photo">
+      <button type="button" className="unit-tile-photo" title={`Đổi ảnh kho ${u.unitCode}`}
+        onClick={(e) => { e.stopPropagation(); actions.photo(t) }}>
         <UnitTypePhoto src={u.imageUrl ?? t.typePhoto} typeName={u.unitTypeName} typeId={u.unitTypeId} alt={`Kho ${u.unitCode}`} />
         <Badge tone={u.imageUrl ? 'ok' : 'muted'}>{u.imageUrl ? 'Ảnh thực tế' : t.typePhoto ? 'Ảnh loại kho' : 'Ảnh minh họa'}</Badge>
-      </div>
+        <span className="unit-tile-photo-edit"><Icon name="camera" size={14} /> {u.imageUrl ? 'Đổi ảnh kho' : 'Thêm ảnh kho'}</span>
+      </button>
       <div className="row between">
         <h3><span className="stat-icon info"><Icon name="package" size={15} /></span>{u.unitCode}</h3>
         <Badge tone={s.tone}>{s.label}</Badge>

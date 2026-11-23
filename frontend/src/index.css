@@ -1568,7 +1568,8 @@ tr.row-selected td { background: var(--cyan-25); }
 .unit-photo-picker { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
 .unit-photo-picker .unit-type-thumb { width: 140px; height: 100px; }
 .unit-tile-photo { height: 130px; margin: -4px -4px 12px; border-radius: 10px; overflow: hidden; position: relative; background: var(--surface-2, #eef1f4); }
-.unit-tile-photo img, .unit-tile-photo svg { width: 100%; height: 100%; object-fit: cover; display: block; }
+.unit-tile-photo > img, .unit-tile-photo > svg, .unit-tile-photo > .photo-fill { width: 100%; height: 100%; object-fit: cover; display: block; }
+.unit-tile-photo-edit svg { width: 16px; height: 16px; flex: none; }
 .unit-tile-photo .badge { position: absolute; left: 8px; bottom: 8px; }
 .unit-thumb-cell { width: 64px; height: 46px; border-radius: 6px; overflow: hidden; }
 .unit-thumb-cell img, .unit-thumb-cell svg { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -1588,3 +1589,7 @@ tr.row-selected td { background: var(--cyan-25); }
 .photo-lightbox small { color: #cbd5e1; }
 .photo-lightbox-close { position: absolute; top: 16px; right: 16px; background: rgba(255, 255, 255, 0.12); color: #fff; }
 @media (max-width: 640px) { .ticket-thumb { width: 64px; } }
+.unit-tile-photo { display: block; width: calc(100% + 8px); padding: 0; border: 0; cursor: pointer; font: inherit; }
+.unit-tile-photo-edit { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 6px; background: rgba(11, 19, 43, 0.55); color: #fff; font-weight: 700; font-size: 14px; opacity: 0; transition: opacity 0.15s; }
+.unit-tile-photo:hover .unit-tile-photo-edit, .unit-tile-photo:focus-visible .unit-tile-photo-edit { opacity: 1; }
+@media (hover: none) { .unit-tile-photo-edit { opacity: 1; inset: auto 8px 8px auto; padding: 4px 10px; border-radius: 999px; font-size: 12px; } }
