@@ -82,12 +82,12 @@ public class ReservationsController(
                     && (r.Status == ReservationStatus.Confirmed
                         || (r.Status == ReservationStatus.PendingDeposit && r.DepositDeadline > now)), ct))
                 throw AppException.Conflict("Ưu đãi lần đầu đã được dùng cho một đơn đặt kho khác đang mở");
-            promotionDiscount = decimal.Round(unitType.BaseMonthlyRate * promotion.DiscountPercent / 100m, 2,
+            promotionDiscount = decimal.Round(unitType.BaseMonthlyRate * promotion.DiscountPercent / 100m, 0,
                 MidpointRounding.AwayFromZero);
             if (promotion.MaxDiscountAmount is decimal maxDiscount)
                 promotionDiscount = Math.Min(promotionDiscount, maxDiscount);
         }
-        var deposit = decimal.Round(unitType.BaseMonthlyRate * policy.DepositPercent / 100m, 2,
+        var deposit = decimal.Round(unitType.BaseMonthlyRate * policy.DepositPercent / 100m, 0,
             MidpointRounding.AwayFromZero);
         if (deposit <= 0)
             throw AppException.Conflict("Chính sách đặt cọc của cơ sở chưa được cấu hình hợp lệ");

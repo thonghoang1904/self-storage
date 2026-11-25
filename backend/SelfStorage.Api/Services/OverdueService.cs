@@ -174,7 +174,7 @@ public sealed class OverdueService(
             else
             {
                 var cancellationFee = decimal.Round(
-                    paidDeposit * policy.CancellationFeePercent / 100m, 2, MidpointRounding.AwayFromZero);
+                    paidDeposit * policy.CancellationFeePercent / 100m, 0, MidpointRounding.AwayFromZero);
                 approvedRefund = Math.Max(0m, paidDeposit - cancellationFee);
                 cancellation = new ReservationCancellationRequest
                 {
@@ -214,7 +214,7 @@ public sealed class OverdueService(
 
         var contracts = await db.Contracts.Include(c => c.Unit)
             .Where(c => c.EndDate <= today
-                && (c.Status == ContractStatus.Active || c.Status == ContractStatus.Overdue))
+                && (c.Status == ContractStatus.Active || c.Status == ContractStatus.Renewed || c.Status == ContractStatus.Overdue))
             .ToListAsync(ct);
         var lateFee = contracts.Count == 0
             ? null
@@ -247,7 +247,7 @@ public sealed class OverdueService(
             var dailyRate = lateFee!.CalculationMethod switch
             {
                 "DailyRate" => lateFee.DefaultAmount,
-                "Percentage" => decimal.Round(contract.MonthlyRentFee * lateFee.DefaultAmount / 3000m, 2,
+                "Percentage" => decimal.Round(contract.MonthlyRentFee * lateFee.DefaultAmount / 3000m, 0,
                     MidpointRounding.AwayFromZero),
                 _ => throw new InvalidOperationException("LATE_FEE_DAILY must use DailyRate or Percentage."),
             };
@@ -255,7 +255,7 @@ public sealed class OverdueService(
             overdue.AccumulatedLateFee = dailyRate * daysOverdue;
             overdue.ActionTaken = "UnitLocked";
             overdue.LockAppliedDate = lockAt;
-            overdue.Notes = $"Phí lưu kho quá hạn {dailyRate:N2}đ/ngày, cấn trừ tự động vào tiền cọc.";
+            overdue.Notes = $"Phí lưu kho quá hạn {dailyRate:N0}đ/ngày, cấn trừ tự động vào tiền cọc.";
             contract.Status = ContractStatus.Overdue;
             // A unit under maintenance keeps that status; the contract status alone blocks entry.
             if (contract.Unit.Status == UnitStatus.Rented) contract.Unit.Status = UnitStatus.OverdueLocked;

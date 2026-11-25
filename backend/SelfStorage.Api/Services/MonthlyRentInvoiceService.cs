@@ -41,7 +41,7 @@ public sealed class MonthlyRentInvoiceService(
                 && (i.InvoiceType == "MONTHLY_RENT" || i.InvoiceType == "EXTRA_CHARGE"))
             .ExecuteUpdateAsync(update => update.SetProperty(i => i.Status, "Overdue"), ct);
         var contracts = await db.Contracts
-            .Where(c => c.Status == ContractStatus.Active && c.StartDate < c.EndDate)
+            .Where(c => (c.Status == ContractStatus.Active || c.Status == ContractStatus.Renewed) && c.StartDate < c.EndDate)
             .Select(c => new
             {
                 c.ContractId,
@@ -73,7 +73,7 @@ public sealed class MonthlyRentInvoiceService(
                 var periodStart = contract.StartDate.AddMonths(month);
                 if (periodStart >= contract.EndDate || periodStart > generationThrough)
                     break;
-                if (hasUpcomingEarlyReturn && periodStart >= scheduledEarlyReturnDate)
+                if (hasUpcomingEarlyReturn && periodStart > contract.StartDate && periodStart >= scheduledEarlyReturnDate)
                     break;
                 var periodEnd = contract.StartDate.AddMonths(month + 1);
                 if (periodEnd > contract.EndDate)
