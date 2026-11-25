@@ -1086,9 +1086,12 @@ const routes: [string, RegExp, Handler][] = [
       if (!promo) throw bad('Mã khuyến mãi không hợp lệ hoặc đã hết hạn')
       if (months < promo.minRentalMonths) throw bad(`Mã khuyến mãi yêu cầu thuê tối thiểu ${promo.minRentalMonths} tháng`)
       if (db.contracts.some((c) => c.customerId === me.userId)) throw conflict('Mã khuyến mãi chỉ dành cho lần đầu tiên thuê kho')
-      discount = Math.round(type.baseMonthlyRate * promo.discountPercent) / 100
+      discount = Math.round(type.baseMonthlyRate * promo.discountPercent / 100)
       if (promo.maxDiscountAmount != null) discount = Math.min(discount, promo.maxDiscountAmount)
     }
+    const policy = policiesOf().filter((x) => x.isActive && (x.facilityId === facilityId || x.facilityId == null))
+      .sort((a, b) => (b.facilityId == null ? 0 : 1) - (a.facilityId == null ? 0 : 1))[0]
+    const deposit = Math.round(type.baseMonthlyRate * (policy?.depositPercent ?? 100) / 100)
     const r: Rsv = {
       promoCode: promo?.promoCode ?? null,
       promotionDiscountAmount: discount,
@@ -1096,7 +1099,7 @@ const routes: [string, RegExp, Handler][] = [
       reservationCode: `RSV-${dateOnly(now).replaceAll('-', '')}-${Math.floor(100000 + Math.random() * 900000)}`,
       customerId: me.userId, facilityId, unitTypeId, assignedUnitId: null,
       expectedStartDate: start, durationMonths: months,
-      depositAmount: type.baseMonthlyRate,
+      depositAmount: deposit,
       estimatedTotalFee: type.baseMonthlyRate * months,
       status: 'PendingDeposit',
       depositDeadline: localIso(addDays(now, 1)),
@@ -2456,8 +2459,9 @@ const routes: [string, RegExp, Handler][] = [
     if (approve && r.status !== 'PendingDeposit' && r.status !== 'Confirmed') throw conflict('Đơn đặt kho không còn ở trạng thái có thể hủy')
     if (approve) {
       const paid = r.status === 'Confirmed' ? r.depositAmount : 0
-      const policy = policiesOf().find((p) => p.isActive && (p.facilityId === fid || p.facilityId == null))
-      const fee = Math.round(paid * (policy?.cancellationFeePercent ?? 0)) / 100
+      const policy = policiesOf().filter((p) => p.isActive && (p.facilityId === fid || p.facilityId == null))
+        .sort((a, b) => (b.facilityId == null ? 0 : 1) - (a.facilityId == null ? 0 : 1))[0]
+      const fee = Math.round(paid * (policy?.cancellationFeePercent ?? 0) / 100)
       c.approvedRefundAmount = Math.max(0, paid - fee)
       r.depositWasPaid = paid > 0
       r.status = 'Cancelled'
@@ -2578,7 +2582,7 @@ const routes: [string, RegExp, Handler][] = [
     const feeCode = SQL_FEE_CODES[Number(body.feeTypeId) - 1]
     const fee = feesOf().find((f) => f.feeCode === feeCode)
     if (!fee) throw notFound('Không tìm thấy loại phí')
-    const unitPrice = fee.calculationMethod === 'Percentage' ? Math.round(c.monthlyRentFee * fee.defaultAmount) / 100 : fee.defaultAmount
+    const unitPrice = fee.calculationMethod === 'Percentage' ? Math.round(c.monthlyRentFee * fee.defaultAmount / 100) : fee.defaultAmount
     if (!(unitPrice > 0)) throw conflict('Loại phí chưa có đơn giá lớn hơn 0')
     const quantity = Number(body.quantity)
     if (!(Number.isInteger(quantity) && quantity >= 1 && quantity <= 365)) throw bad('Số lượng từ 1 đến 365')

@@ -384,7 +384,7 @@ public sealed class FacilityManagementController(
         var unitPrice = fee.CalculationMethod switch
         {
             "Fixed" or "DailyRate" => fee.DefaultAmount,
-            "Percentage" => decimal.Round(contract.MonthlyRentFee * fee.DefaultAmount / 100m, 2,
+            "Percentage" => decimal.Round(contract.MonthlyRentFee * fee.DefaultAmount / 100m, 0,
                 MidpointRounding.AwayFromZero),
             _ => throw AppException.Conflict("Loại phí có cách tính không được hỗ trợ"),
         };

@@ -18,7 +18,7 @@ public sealed record EffectiveRentalPolicy(
     public decimal CancellationRefund(decimal paidDeposit, DateTime bookedAt, DateTime cancelledAt)
     {
         if (cancelledAt <= bookedAt.AddHours(CancellationGraceHours)) return paidDeposit;
-        var fee = decimal.Round(paidDeposit * CancellationFeePercent / 100m, 2, MidpointRounding.AwayFromZero);
+        var fee = decimal.Round(paidDeposit * CancellationFeePercent / 100m, 0, MidpointRounding.AwayFromZero);
         return Math.Max(0m, paidDeposit - fee);
     }
 }

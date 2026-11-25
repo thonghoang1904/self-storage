@@ -438,7 +438,7 @@ public class ContractsController(
         var fee = await EarlyReturnFeeAsync(ct);
         var total = lateFees + fee;
         var deducted = Math.Min(contract.DepositPaid, total);
-        var cancelledIds = await BillsAfter(contract.ContractId, date).Select(i => i.InvoiceId).ToListAsync(ct);
+        var cancelledIds = await BillsAfter(contract.ContractId, contract.StartDate, date).Select(i => i.InvoiceId).ToListAsync(ct);
         // Unpaid rent/extra charges that stay owed are settled from the deposit at return, as ReturnUnit does.
         var open = (await OpenRentAndChargeInvoices(contract.ContractId).ToListAsync(ct))
             .Where(i => !cancelledIds.Contains(i.InvoiceId)).ToList();
@@ -957,15 +957,17 @@ public class ContractsController(
     private static string Truncate(string value, int maxLength) =>
         value.Length <= maxLength ? value : value[..maxLength];
 
-    /// <summary>Unpaid rent invoices for periods starting on or after the return date: no longer owed.</summary>
-    private IQueryable<Invoice> BillsAfter(int contractId, DateOnly returnDate) =>
+    /// <summary>Unpaid rent invoices for future periods (after the first billing period) starting on or after the return date: no longer owed.</summary>
+    private IQueryable<Invoice> BillsAfter(int contractId, DateOnly contractStartDate, DateOnly returnDate) =>
         db.Invoices.Where(i => i.ContractId == contractId && i.InvoiceType == "MONTHLY_RENT"
             && (i.Status == "Unpaid" || i.Status == "Overdue")
-            && i.BillingPeriodStart != null && i.BillingPeriodStart >= returnDate);
+            && i.BillingPeriodStart != null
+            && i.BillingPeriodStart > contractStartDate
+            && i.BillingPeriodStart >= returnDate);
 
     private async Task CancelBillsAfterAsync(Contract contract, DateOnly returnDate, string why, CancellationToken ct)
     {
-        var invoiceIds = await BillsAfter(contract.ContractId, returnDate).Select(i => i.InvoiceId).ToListAsync(ct);
+        var invoiceIds = await BillsAfter(contract.ContractId, contract.StartDate, returnDate).Select(i => i.InvoiceId).ToListAsync(ct);
         // A renewal still waiting for payment no longer makes sense once the unit is handed back.
         var renewals = await db.ContractRenewals.Where(r => r.ContractId == contract.ContractId && r.Status == "Pending")
             .ToListAsync(ct);

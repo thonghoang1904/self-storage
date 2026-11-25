@@ -7,6 +7,7 @@ import { FormField } from '../components/form'
 import { Icon, StatusBadge } from '../components/ui'
 import type { DepositRefund, DepositRefundEmailResult, DepositRefundSummary, EarlyReturnQuote, EarlyReturnRequest, Invoice, OverdueSummary, ReturnUnitResult, StaffContract } from '../types'
 import { Select } from '../components/Select'
+import { useRentalPolicy } from '../publicPolicy'
 
 /**
  * Figma "storage-return-inspection": find a contract, check its return schedule and deposit,
@@ -39,6 +40,7 @@ const sinceText = (from: Date) => {
 
 export default function StaffReturn() {
   const { facilityId } = useStaffFacility()
+  const policy = useRentalPolicy(facilityId)
   const navigate = useNavigate()
   const search = new URLSearchParams(useLocation().search)
   const wanted = Number(search.get('contract') ?? 0)
@@ -81,7 +83,7 @@ export default function StaffReturn() {
 
   // The queue: what staff should handle first. Overdue and past the return time, then customers who asked to return
   // early, then contracts ending within 7 days. Each contract appears once, under its most urgent reason.
-  const live = contracts.filter((c) => c.status === 'Active' || c.status === 'Overdue')
+  const live = contracts.filter((c) => c.status === 'Active' || c.status === 'Renewed' || c.status === 'Overdue')
   const pending = requests.filter((r) => r.status === 'Pending')
   const weekAhead = now.getTime() + 7 * 86400000
   const queue: QueueItem[] = []
@@ -167,7 +169,8 @@ export default function StaffReturn() {
         <div id="return-inspection">
           <Inspection key={selected.contractId} contract={selected} overdue={overdue.find((o) => o.contractId === selected.contractId)}
             request={requests.find((r) => r.contractId === selected.contractId)} onChanged={load}
-            invoices={invoices.filter((i) => i.contractId === selected.contractId)} />
+            invoices={invoices.filter((i) => i.contractId === selected.contractId)}
+            maxOverdueDaysBeforeLock={policy.maxOverdueDaysBeforeLock} />
         </div>
       )}
     </div>
@@ -196,8 +199,8 @@ function settle(deposit: number, fees: number, bills: Invoice[]) {
   return { deducted, offset, owedBills, refund: Math.max(0, deposit - deducted - offset - owedBills), feesOwed: fees - deducted }
 }
 
-function Inspection({ contract: c, overdue, request, onChanged, invoices }: {
-  contract: StaffContract; overdue?: OverdueSummary; request?: EarlyReturnRequest; onChanged: () => Promise<void>; invoices: Invoice[]
+function Inspection({ contract: c, overdue, request, onChanged, invoices, maxOverdueDaysBeforeLock }: {
+  contract: StaffContract; overdue?: OverdueSummary; request?: EarlyReturnRequest; onChanged: () => Promise<void>; invoices: Invoice[]; maxOverdueDaysBeforeLock: number
 }) {
   const [checked, setChecked] = useState<boolean[]>(() => CHECKLIST.map(() => false))
   const [damage, setDamage] = useState('')
@@ -214,7 +217,7 @@ function Inspection({ contract: c, overdue, request, onChanged, invoices }: {
   const [showErrors, setShowErrors] = useState(false)
 
   const appointment = new Date(c.returnAppointment)
-  const live = c.status === 'Active' || c.status === 'Overdue'
+  const live = c.status === 'Active' || c.status === 'Renewed' || c.status === 'Overdue'
   const returned = c.status === 'Terminated' || !!result
   const early = !returned && live && appointment > new Date()
   useEffect(() => {
@@ -229,7 +232,7 @@ function Inspection({ contract: c, overdue, request, onChanged, invoices }: {
   const charges = lateFee + earlyFee
   const todayIso = new Date().toLocaleDateString('sv')
   const openBills = invoices.filter((i) => (i.status === 'Unpaid' || i.status === 'Overdue')
-    && (i.invoiceType === 'EXTRA_CHARGE' || (i.invoiceType === 'MONTHLY_RENT' && !(i.billingPeriodStart && i.billingPeriodStart >= todayIso))))
+    && (i.invoiceType === 'EXTRA_CHARGE' || (i.invoiceType === 'MONTHLY_RENT' && !(i.billingPeriodStart && i.billingPeriodStart > c.startDate && i.billingPeriodStart >= todayIso))))
   const preview = settle(c.depositPaid, charges, openBills)
   const deducted = result ? result.lateFeesDeducted : preview.deducted
   const billsOffset = result ? result.unpaidInvoicesOffset ?? 0 : preview.offset
@@ -292,7 +295,7 @@ function Inspection({ contract: c, overdue, request, onChanged, invoices }: {
           <h3 className="panel-title">Lịch trả kho</h3>
           <Info label="Ngày hết hạn">{fmtDate(c.endDate)}</Info>
           <Info label="Giờ hẹn trả kho">{fmtTime(c.returnAppointment)}</Info>
-          <Info label="Khóa kho nếu chưa trả">{fmtTime(new Date(appointment.getTime() + 86400000).toISOString())}</Info>
+          <Info label="Khóa kho nếu chưa trả">{fmtTime(new Date(appointment.getTime() + maxOverdueDaysBeforeLock * 86400000).toISOString())}</Info>
           <Info label="Phí thuê tháng">{fmtMoney(c.monthlyRentFee)}</Info>
           <div className={`inspection-timer ${appointment <= new Date() ? (overdue ? 'bad' : 'ok') : 'muted'}`}>
             <Icon name="clock" size={16} />
