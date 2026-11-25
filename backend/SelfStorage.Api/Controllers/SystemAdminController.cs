@@ -236,37 +236,134 @@ public sealed class SystemAdminController(
             .ToListAsync(ct);
     }
 
-    /// <summary>All payments in the system, for reconciliation with VNPay/MoMo statements.</summary>
+    /// <summary>All payments in the system, for reconciliation with VNPay/MoMo statements and staff collection audit.</summary>
     [HttpGet("payments")]
     public async Task<List<AdminPaymentDto>> Payments(
         [FromQuery] string? status, [FromQuery] string? method, [FromQuery] string? search,
-        [FromQuery] int page = 1, [FromQuery] int pageSize = 50, CancellationToken ct = default)
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 50,
+        [FromQuery] int? facilityId = null, [FromQuery] int? staffId = null,
+        [FromQuery] string? invoiceType = null, [FromQuery] DateTime? from = null, [FromQuery] DateTime? to = null,
+        CancellationToken ct = default)
     {
         ValidatePaging(page, pageSize);
         if (status is not null && status is not ("Pending" or "Success" or "Failed" or "Refunded" or "RefundDue" or "Reversed"))
             throw AppException.BadRequest("Trạng thái giao dịch không hợp lệ");
         if (method is not null && method is not ("VNPay" or "MoMo" or "BankTransfer" or "Cash" or "CreditCard" or "DepositOffset"))
             throw AppException.BadRequest("Phương thức thanh toán không hợp lệ");
+        if (!string.IsNullOrWhiteSpace(invoiceType)
+            && invoiceType is not ("DEPOSIT" or "MONTHLY_RENT" or "RENEWAL" or "OVERDUE_FINE" or "EXTRA_CHARGE"))
+            throw AppException.BadRequest("Loại hóa đơn không hợp lệ");
+        if (from is not null && to is not null && from > to)
+            throw AppException.BadRequest("Ngày bắt đầu không được sau ngày kết thúc");
 
         var query = from p in db.Payments
                     join i in db.Invoices on p.InvoiceId equals i.InvoiceId
                     select new { Payment = p, Invoice = i };
         if (status is not null) query = query.Where(x => x.Payment.Status == status);
         if (method is not null) query = query.Where(x => x.Payment.PaymentMethod == method);
+        if (facilityId is not null)
+        {
+            query = query.Where(x =>
+                (x.Invoice.ContractId != null && db.Contracts.Any(c => c.ContractId == x.Invoice.ContractId
+                    && c.Unit.FacilityId == facilityId))
+                || (x.Invoice.ReservationId != null && db.Reservations.Any(r => r.ReservationId == x.Invoice.ReservationId
+                    && r.FacilityId == facilityId)));
+        }
+        if (staffId is not null) query = query.Where(x => x.Payment.ReceivedByStaffId == staffId);
+        if (!string.IsNullOrWhiteSpace(invoiceType)) query = query.Where(x => x.Invoice.InvoiceType == invoiceType);
+        if (from is not null) query = query.Where(x => x.Payment.PaymentDate >= from);
+        if (to is not null) query = query.Where(x => x.Payment.PaymentDate <= to);
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
             query = query.Where(x => x.Invoice.InvoiceNumber.Contains(term)
-                || (x.Payment.TransactionCode != null && x.Payment.TransactionCode.Contains(term)));
+                || (x.Payment.TransactionCode != null && x.Payment.TransactionCode.Contains(term))
+                || x.Invoice.Customer.FullName.Contains(term)
+                || (x.Payment.ReceivedByStaffId != null && db.Users.Any(u => u.UserId == x.Payment.ReceivedByStaffId
+                    && (u.FullName.Contains(term) || u.Username.Contains(term)))));
         }
 
         Response.Headers["X-Total-Count"] = (await query.CountAsync(ct)).ToString();
-        return await query.OrderByDescending(x => x.Payment.PaymentDate).ThenByDescending(x => x.Payment.PaymentId)
+        var rows = await query.OrderByDescending(x => x.Payment.PaymentDate).ThenByDescending(x => x.Payment.PaymentId)
             .Skip((page - 1) * pageSize).Take(pageSize)
-            .Select(x => new AdminPaymentDto(x.Payment.PaymentId, x.Invoice.InvoiceId, x.Invoice.InvoiceNumber,
-                x.Invoice.CustomerId, x.Invoice.Customer.FullName, x.Payment.PaymentMethod, x.Payment.Status,
-                x.Payment.AmountPaid, x.Payment.PaymentDate, x.Payment.TransactionCode))
+            .Select(x => new
+            {
+                x.Payment.PaymentId,
+                x.Invoice.InvoiceId,
+                x.Invoice.InvoiceNumber,
+                x.Invoice.InvoiceType,
+                x.Invoice.ContractId,
+                x.Invoice.ReservationId,
+                x.Invoice.CustomerId,
+                CustomerName = x.Invoice.Customer.FullName,
+                x.Payment.PaymentMethod,
+                x.Payment.Status,
+                x.Payment.AmountPaid,
+                x.Payment.PaymentDate,
+                x.Payment.TransactionCode,
+                x.Payment.ReceivedByStaffId,
+                x.Payment.PaymentNotes,
+            })
             .ToListAsync(ct);
+
+        var staffIds = rows.Where(r => r.ReceivedByStaffId is not null)
+            .Select(r => r.ReceivedByStaffId!.Value)
+            .Distinct()
+            .ToArray();
+        var staffNames = staffIds.Length == 0
+            ? new Dictionary<int, string>()
+            : await db.Users.Where(u => staffIds.Contains(u.UserId))
+                .ToDictionaryAsync(u => u.UserId, u => u.FullName, ct);
+
+        var contractIds = rows.Where(r => r.ContractId is not null).Select(r => r.ContractId!.Value).Distinct().ToArray();
+        var contractFacilities = contractIds.Length == 0
+            ? new Dictionary<int, (int FacilityId, string FacilityName)>()
+            : (await db.Contracts.Where(c => contractIds.Contains(c.ContractId))
+                .Select(c => new { c.ContractId, c.Unit.FacilityId, c.Unit.Facility.FacilityName })
+                .ToListAsync(ct))
+                .ToDictionary(c => c.ContractId, c => (c.FacilityId, c.FacilityName));
+
+        var reservationIds = rows.Where(r => r.ReservationId is not null).Select(r => r.ReservationId!.Value).Distinct().ToArray();
+        var reservationFacilities = reservationIds.Length == 0
+            ? new Dictionary<int, (int FacilityId, string FacilityName)>()
+            : (await db.Reservations.Where(r => reservationIds.Contains(r.ReservationId))
+                .Select(r => new { r.ReservationId, r.FacilityId, r.Facility.FacilityName })
+                .ToListAsync(ct))
+                .ToDictionary(r => r.ReservationId, r => (r.FacilityId, r.FacilityName));
+
+        return rows.Select(r =>
+        {
+            int? resolvedFacilityId = null;
+            string? resolvedFacilityName = null;
+            if (r.ContractId is int cid && contractFacilities.TryGetValue(cid, out var cf))
+            {
+                resolvedFacilityId = cf.FacilityId;
+                resolvedFacilityName = cf.FacilityName;
+            }
+            else if (r.ReservationId is int rid && reservationFacilities.TryGetValue(rid, out var rf))
+            {
+                resolvedFacilityId = rf.FacilityId;
+                resolvedFacilityName = rf.FacilityName;
+            }
+
+            return new AdminPaymentDto(
+                r.PaymentId,
+                r.InvoiceId,
+                r.InvoiceNumber,
+                r.CustomerId,
+                r.CustomerName,
+                r.PaymentMethod,
+                r.Status,
+                r.AmountPaid,
+                r.PaymentDate,
+                r.TransactionCode,
+                r.InvoiceType,
+                resolvedFacilityId,
+                resolvedFacilityName,
+                r.ReceivedByStaffId,
+                r.ReceivedByStaffId is int sid && staffNames.TryGetValue(sid, out var sname) ? sname : null,
+                r.PaymentNotes);
+        }).ToList();
     }
 
     /// <summary>System-wide counters for the administrator home screen.</summary>
