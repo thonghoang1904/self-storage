@@ -667,6 +667,31 @@ function allInvoices(): { customerId: number; facilityId: number; invoice: Invoi
   return [...fromRsv, ...fromRenewals, ...fromRent, ...fromExtra].sort((a, b) => b.invoice.createdAt.localeCompare(a.invoice.createdAt))
 }
 
+/** One invoice as AdminInvoiceDto: customer, facility, contract/reservation, unit, amounts paid and refunded. */
+function adminInvoice({ customerId, facilityId, invoice: i }: { customerId: number; facilityId: number; invoice: Invoice }) {
+  const cust = db.users.find((u) => u.userId === customerId)
+  const contract = i.contractId ? db.contracts.find((c) => c.contractId === i.contractId) : undefined
+  const rsv = i.reservationId ? db.reservations.find((r) => r.reservationId === i.reservationId) : undefined
+  const unitId = contract?.unitId ?? rsv?.assignedUnitId ?? null
+  const success = i.payments.filter((p) => p.status === 'Success')
+  const collector = [...success].reverse().find((p) => p.receivedByStaff)
+  return {
+    invoiceId: i.invoiceId, invoiceNumber: i.invoiceNumber, invoiceType: i.invoiceType, status: i.status,
+    customerId, customerName: cust?.fullName ?? '', customerEmail: cust?.email ?? '', customerPhoneNumber: cust?.phoneNumber ?? '',
+    facilityId, facilityName: db.facilities.find((f) => f.facilityId === facilityId)?.facilityName ?? null,
+    contractId: i.contractId, contractNumber: contract?.contractNumber ?? null,
+    reservationId: i.reservationId, reservationCode: rsv?.reservationCode ?? null,
+    unitCode: unitId ? unitById(unitId).unitCode : null,
+    subTotal: i.subTotal, discountAmount: i.discountAmount, totalAmount: i.totalAmount,
+    paidAmount: success.reduce((t, p) => t + p.amountPaid, 0),
+    refundedAmount: i.payments.filter((p) => p.status === 'Refunded').reduce((t, p) => t + p.amountPaid, 0),
+    dueDate: i.dueDate, createdAt: i.createdAt, billingPeriodStart: i.billingPeriodStart ?? null, billingPeriodEnd: i.billingPeriodEnd ?? null,
+    collectedByStaffId: null, collectedByStaffName: collector?.receivedByStaff ?? null,
+    details: i.details,
+    payments: i.payments.map((p) => ({ paymentId: p.paymentId, paymentMethod: p.paymentMethod, transactionCode: p.transactionCode, amountPaid: p.amountPaid,
+      paymentDate: p.paymentDate, status: p.status, paymentNotes: p.paymentNotes, receivedByStaffId: null, receivedByStaffName: p.receivedByStaff })),
+  }
+}
 
 // ------------------------------------------------------------------ system administrator (SystemAdminController)
 
@@ -1742,6 +1767,27 @@ const routes: [string, RegExp, Handler][] = [
       && (!q || p.invoiceNumber.toLowerCase().includes(q) || (p.transactionCode ?? '').toLowerCase().includes(q)))
       .slice((page - 1) * size, page * size)
       .map((p) => ({ paymentId: p.paymentId, invoiceId: p.invoiceId, invoiceNumber: p.invoiceNumber, customerId: p.customerId, customerName: p.customerName, paymentMethod: p.paymentMethod, status: p.status, amountPaid: p.amountPaid, paymentDate: p.paymentDate, transactionCode: p.transactionCode }))
+  }],
+  // ---- every invoice in the system (AdminInvoicesController)
+  ['GET', /^\/api\/admin\/invoices$/, (_m, { token, query }) => {
+    requireRole(currentUser(token), [Roles.Admin])
+    const page = Number(query.get('page') ?? 1); const size = Number(query.get('pageSize') ?? 50)
+    if (page < 1 || size < 1 || size > 200) throw bad('Trang phải từ 1 trở lên và pageSize từ 1 đến 200')
+    const fid = query.get('facilityId'); const st = query.get('status'); const type = query.get('invoiceType')
+    const from = query.get('from'); const to = query.get('to'); const q = (query.get('search') ?? '').trim().toLowerCase()
+    if (from && to && from > to) throw bad('Ngày bắt đầu không được sau ngày kết thúc')
+    return allInvoices().map(adminInvoice)
+      .filter((i) => (!fid || i.facilityId === Number(fid)) && (!st || i.status === st) && (!type || i.invoiceType === type)
+        && (!from || i.createdAt >= from) && (!to || i.createdAt <= to)
+        && (!q || [i.invoiceNumber, i.customerName, i.customerEmail, i.customerPhoneNumber, i.contractNumber, i.reservationCode, i.unitCode,
+          ...i.payments.map((p) => p.transactionCode)].some((v) => (v ?? '').toLowerCase().includes(q))))
+      .slice((page - 1) * size, page * size)
+  }],
+  ['GET', /^\/api\/admin\/invoices\/(\d+)$/, (m, { token }) => {
+    requireRole(currentUser(token), [Roles.Admin])
+    const row = allInvoices().find((x) => x.invoice.invoiceId === Number(m[1]))
+    if (!row) throw notFound('Không tìm thấy hóa đơn')
+    return adminInvoice(row)
   }],
   ['GET', /^\/api\/admin\/activity-logs$/, (_m, { token, query }) => {
     requireRole(currentUser(token), [Roles.Admin])

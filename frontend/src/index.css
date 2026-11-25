@@ -1597,3 +1597,10 @@ tr.row-selected td { background: var(--cyan-25); }
 .plan-table td input { width: 100%; min-width: 64px; max-width: 110px; height: 38px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; font: inherit; }
 .plan-table tr.on td { background: var(--cyan-25); }
 .plan-add-select { width: 300px; max-width: 100%; flex: none; }
+
+/* admin invoice list: totals of the rows on the page */
+.invoice-sum { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.invoice-sum > span { display: grid; gap: 2px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: #fafcfd; }
+.invoice-sum b { font-size: 17px; }
+.invoice-sum b.ok { color: var(--ok, #15803d); }
+.invoice-sum b.bad { color: var(--bad, #b91c1c); }

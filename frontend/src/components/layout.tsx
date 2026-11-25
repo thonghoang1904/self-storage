@@ -421,7 +421,7 @@ export function AdminLayout() {
       area="Admin"
       customerLink={false}
       todoKind="admin"
-      titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu & Thống Kê', '/admin/reports': 'Báo Cáo', '/admin/support': 'Hỗ Trợ Khách Hàng', '/admin/system': 'Giao Dịch & Nhật Ký',
+      titles={{ '/admin/users': 'Nhân Viên Hệ Thống', '/admin/contracts': 'Hợp Đồng', '/admin/emails': 'Email Hệ Thống', '/admin/revenue': 'Doanh Thu & Thống Kê', '/admin/reports': 'Báo Cáo', '/admin/support': 'Hỗ Trợ Khách Hàng', '/admin/system': 'Giao Dịch & Nhật Ký', '/admin/invoices': 'Hóa Đơn',
         '/admin/storage': 'Kho Lưu Trữ Hệ Thống', '/admin/facilities': 'Quản Lý Cơ Sở', '/admin/customers': 'Khách Hàng',
         '/admin': 'Tổng Quan Quản Lý' }}
       nav={[
@@ -432,6 +432,7 @@ export function AdminLayout() {
         { icon: 'grid', label: 'Cơ Sở', to: '/admin/facilities', todo: 'facilities' },
         { icon: 'phone', label: 'Hỗ Trợ', to: '/admin/support', todo: 'support' },
         { icon: 'file', label: 'Hợp Đồng', to: '/admin/contracts', todo: 'contracts' },
+        { icon: 'wallet', label: 'Hóa Đơn', to: '/admin/invoices' },
         { icon: 'chart', label: 'Doanh Thu', to: '/admin/revenue' },
         { icon: 'file', label: 'Báo Cáo', to: '/admin/reports' },
       ]}

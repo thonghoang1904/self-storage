@@ -32,6 +32,7 @@ import AccountSecurity from './pages/AccountSecurity'
 import AccountProfile from './pages/AccountProfile'
 import { AdminSupport } from './pages/StaffSupport'
 import AdminSystem from './pages/AdminSystem'
+import AdminInvoices from './pages/AdminInvoices'
 import AdminRevenue from './pages/AdminRevenue'
 import PickupAppointment from './pages/PickupAppointment'
 import { Login, Register } from './pages/Login'
@@ -124,6 +125,7 @@ export default function App() {
             <Route path="/admin/emails" element={<AdminEmails />} />
             <Route path="/admin/support" element={<AdminSupport />} />
             <Route path="/admin/system" element={<AdminSystem />} />
+            <Route path="/admin/invoices" element={<AdminInvoices />} />
             <Route path="/admin/revenue" element={<AdminRevenue />} />
             <Route path="/admin/reports" element={<OpsRevenue title="Báo Cáo" />} />
           </Route>
