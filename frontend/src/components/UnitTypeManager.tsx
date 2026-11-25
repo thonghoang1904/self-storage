@@ -96,7 +96,7 @@ export function UnitTypeManager({ query = '', onChanged }: { query?: string; onC
                     <b className="policy-amount">{fmtMoney(t.baseMonthlyRate)}<small>/tháng</small></b>
                   </div>
                   <b className="policy-title">{name} <small className="muted">{size}</small></b>
-                  <small className="muted">{t.lengthMeters} × {t.widthMeters} × {t.heightMeters} m · {m3(t.volumeCubicMeters || t.lengthMeters * t.widthMeters * t.heightMeters)} m³ · Giá ngày {fmtMoney(t.baseDailyRate)}</small>
+                  <small className="muted">{t.lengthMeters} × {t.widthMeters} × {t.heightMeters} m · {m3(t.volumeCubicMeters || t.lengthMeters * t.widthMeters * t.heightMeters)} m³</small>
                   {t.description && <small className="muted">{t.description}</small>}
                 </div>
               </div>
@@ -125,7 +125,6 @@ export function UnitTypeForm({ type, onCancel, onSaved }: { type?: UnitType; onC
     widthMeters: String(type?.widthMeters ?? ''),
     heightMeters: String(type?.heightMeters ?? ''),
     hasClimateControl: type?.hasClimateControl ?? false,
-    baseDailyRate: String(type?.baseDailyRate ?? ''),
     baseMonthlyRate: String(type?.baseMonthlyRate ?? ''),
     description: type?.description ?? '',
   }))
@@ -157,29 +156,25 @@ export function UnitTypeForm({ type, onCancel, onSaved }: { type?: UnitType; onC
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    const dailyRaw = f.baseDailyRate.trim()
     const monthlyRaw = f.baseMonthlyRate.trim()
-    const daily = dailyRaw ? Number(dailyRaw) : NaN
     const monthly = monthlyRaw ? Number(monthlyRaw) : NaN
-    const checkRate = (raw: string, parsed: number, label: string) =>
-      !raw ? `Vui lòng nhập ${label.toLowerCase()}`
-        : !Number.isFinite(parsed) || !Number.isInteger(parsed) ? `${label} phải là số tiền nguyên (đồng)`
-        : checkMoney(parsed, label, 1000)
+    const monthlyError = !monthlyRaw
+      ? 'Vui lòng nhập giá theo tháng'
+      : !Number.isFinite(monthly) || !Number.isInteger(monthly)
+        ? 'Giá theo tháng phải là số tiền nguyên (đồng)'
+        : checkMoney(monthly, 'Giá theo tháng', 1000)
 
     const body = {
       typeName: f.typeName.trim(),
       lengthMeters: Number(f.lengthMeters), widthMeters: Number(f.widthMeters), heightMeters: Number(f.heightMeters),
       hasClimateControl: f.hasClimateControl,
-      baseDailyRate: daily, baseMonthlyRate: monthly,
+      baseMonthlyRate: monthly,
       description: f.description.trim() || null,
     }
     const problem = firstError(
       checkText(f.typeName, 'Tên loại kho', 100, false, 2),
       dim(f.lengthMeters, 'Chiều dài'), dim(f.widthMeters, 'Chiều rộng'), dim(f.heightMeters, 'Chiều cao'),
-      checkRate(monthlyRaw, monthly, 'Giá theo tháng'),
-      checkRate(dailyRaw, daily, 'Giá theo ngày'),
-      Number.isFinite(daily) && Number.isFinite(monthly) && daily > monthly
-        ? 'Giá theo ngày không được lớn hơn giá theo tháng' : '',
+      monthlyError,
       checkText(f.description, 'Mô tả', 500, true),
     )
     if (problem) { setError(problem); return }
@@ -233,9 +228,7 @@ export function UnitTypeForm({ type, onCancel, onSaved }: { type?: UnitType; onC
         <label className="field"><span>Chiều dài (m) *</span><input type="number" min={0.1} max={20} step="0.01" value={f.lengthMeters} onChange={(e) => set('lengthMeters', e.target.value)} required /></label>
         <label className="field"><span>Chiều rộng (m) *</span><input type="number" min={0.1} max={20} step="0.01" value={f.widthMeters} onChange={(e) => set('widthMeters', e.target.value)} required /></label>
         <label className="field"><span>Chiều cao (m) *</span><input type="number" min={0.1} max={20} step="0.01" value={f.heightMeters} onChange={(e) => set('heightMeters', e.target.value)} required /></label>
-        <span />
         <label className="field"><span>Giá theo tháng (đ) *</span><input type="number" min={1000} step={1} value={f.baseMonthlyRate} onChange={(e) => set('baseMonthlyRate', e.target.value)} required /></label>
-        <label className="field"><span>Giá theo ngày (đ) *</span><input type="number" min={1000} step={1} value={f.baseDailyRate} onChange={(e) => set('baseDailyRate', e.target.value)} required /></label>
       </div>
       <label className="check-line"><input type="checkbox" checked={f.hasClimateControl} onChange={(e) => set('hasClimateControl', e.target.checked)} /><span>Có điều hòa kiểm soát nhiệt độ, độ ẩm</span></label>
       <div className="field">

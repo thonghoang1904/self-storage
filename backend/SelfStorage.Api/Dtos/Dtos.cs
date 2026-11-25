@@ -145,21 +145,19 @@ public record SaveUnitTypeRequest(
     [Range(typeof(decimal), "0.1", "20", ErrorMessage = "Chiều cao (m) phải từ 0,1 đến 20")]
     decimal HeightMeters,
     bool HasClimateControl,
-    [Required(ErrorMessage = "Vui lòng nhập giá theo ngày")]
-    [Range(typeof(decimal), "0.01", "9999999999999999", ErrorMessage = "Giá theo ngày phải lớn hơn 0")]
-    decimal? BaseDailyRate,
     [Required(ErrorMessage = "Vui lòng nhập giá theo tháng")]
     [Range(typeof(decimal), "0.01", "9999999999999999", ErrorMessage = "Giá theo tháng phải lớn hơn 0")]
     decimal? BaseMonthlyRate,
     [StringLength(500, ErrorMessage = "Mô tả tối đa 500 ký tự")]
-    string? Description = null);
+    string? Description = null,
+    [Range(typeof(decimal), "0", "9999999999999999", ErrorMessage = "Giá theo ngày không được âm")]
+    decimal? BaseDailyRate = null);
 public record UpdateUnitTypePricingRequest(
-    [Required(ErrorMessage = "Vui lòng nhập giá theo ngày")]
-    [Range(typeof(decimal), "0.01", "9999999999999999", ErrorMessage = "Giá theo ngày phải lớn hơn 0")]
-    decimal? BaseDailyRate,
     [Required(ErrorMessage = "Vui lòng nhập giá theo tháng")]
     [Range(typeof(decimal), "0.01", "9999999999999999", ErrorMessage = "Giá theo tháng phải lớn hơn 0")]
-    decimal? BaseMonthlyRate);
+    decimal? BaseMonthlyRate,
+    [Range(typeof(decimal), "0", "9999999999999999", ErrorMessage = "Giá theo ngày không được âm")]
+    decimal? BaseDailyRate = null);
 
 public record StorageUnitDto(int UnitId, string UnitCode, int FloorNumber, string? ZoneArea, decimal MonthlyPrice,
     string Status, int UnitTypeId, string UnitTypeName, string? ImageUrl = null);

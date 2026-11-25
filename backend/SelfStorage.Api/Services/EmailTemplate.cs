@@ -189,23 +189,15 @@ public static class EmailTemplate
     public static EmailContent DepositRefundReceipt(
         string customerName,
         string receiptNumber,
-        string depositInvoiceNumber,
         string refundReasonLabel,
         string? contractNumber,
         string? reservationCode,
-        string? facilityName,
         string? unitCode,
-        decimal depositPaid,
-        decimal deductedAmount,
-        decimal settledInvoicesAmount,
-        decimal refundableTotal,
-        decimal refundedThisTime,
-        decimal totalRefunded,
+        decimal refundedAmount,
         decimal remainingRefund,
         DateTime refundDate,
         string paymentMethod,
         string? transactionCode,
-        string? staffName,
         string? notes)
     {
         var method = paymentMethod switch
@@ -217,40 +209,32 @@ public static class EmailTemplate
         var rows = new List<(string Label, string Value)>
         {
             ("Mã hóa đơn hoàn cọc", receiptNumber),
-            ("Hóa đơn cọc gốc", depositInvoiceNumber),
             ("Nội dung", refundReasonLabel),
         };
-        if (contractNumber is not null || reservationCode is null)
-            rows.Add(("Hợp đồng", contractNumber ?? "—"));
-        if (reservationCode is not null)
+        if (contractNumber is not null)
+            rows.Add(("Hợp đồng", string.IsNullOrWhiteSpace(unitCode) ? contractNumber : $"{contractNumber} (Kho {unitCode})"));
+        else if (reservationCode is not null)
             rows.Add(("Mã đặt kho", reservationCode));
-        rows.Add(("Cơ sở", facilityName ?? "—"));
-        if (!string.IsNullOrWhiteSpace(unitCode))
-            rows.Add(("Mã kho", unitCode));
-        rows.Add(("Tiền cọc đã nộp", FormatMoney(depositPaid)));
-        rows.Add(("Phí đã cấn trừ", FormatMoney(deductedAmount)));
-        if (contractNumber is not null || settledInvoicesAmount > 0)
-            rows.Add(("Hóa đơn đã cấn trừ từ cọc", FormatMoney(settledInvoicesAmount)));
-        rows.Add(("Tổng cọc được hoàn", FormatMoney(refundableTotal)));
-        rows.Add(("Số tiền hoàn đợt này", FormatMoney(refundedThisTime)));
-        rows.Add(("Đã hoàn lũy kế", FormatMoney(totalRefunded)));
-        rows.Add(("Còn lại chưa hoàn", FormatMoney(remainingRefund)));
+        rows.Add(("Số tiền đã hoàn", FormatMoney(refundedAmount)));
+        if (remainingRefund > 0)
+            rows.Add(("Còn lại chưa hoàn", FormatMoney(remainingRefund)));
         rows.Add(("Thời gian hoàn", refundDate.ToString("dd/MM/yyyy HH:mm", VietnameseCulture)));
-        rows.Add(("Phương thức hoàn", method));
-        rows.Add(("Mã giao dịch", transactionCode ?? "—"));
-        rows.Add(("Nhân viên thực hiện", staffName ?? "—"));
-        rows.Add(("Ghi chú", string.IsNullOrWhiteSpace(notes) ? "—" : notes));
+        rows.Add(("Phương thức", method));
+        if (!string.IsNullOrWhiteSpace(transactionCode))
+            rows.Add(("Mã giao dịch", transactionCode.Trim()));
+        if (!string.IsNullOrWhiteSpace(notes))
+            rows.Add(("Ghi chú", notes.Trim()));
 
         var html = $"""
             <p>Kính chào <strong>{Encode(customerName)}</strong>,</p>
-            <p>Hệ thống Self-Storage gửi bạn hóa đơn xác nhận giao dịch hoàn tiền đặt cọc dưới đây. Vui lòng lưu email để đối chiếu khi cần.</p>
+            <p>Hệ thống Self-Storage đã ghi nhận khoản hoàn tiền đặt cọc dưới đây. Vui lòng lưu email để đối chiếu khi cần.</p>
             {DetailsTable([.. rows])}
-            <p>Nếu cần đối chiếu hoặc có thắc mắc về khoản hoàn cọc này, vui lòng liên hệ cơ sở và cung cấp mã hóa đơn hoàn cọc <strong>{Encode(receiptNumber)}</strong>.</p>
+            <p>Nếu thông tin chưa chính xác, vui lòng liên hệ cơ sở và cung cấp mã <strong>{Encode(receiptNumber)}</strong> để được hỗ trợ.</p>
             """;
         var text = $"Kính chào {customerName},\r\n\r\n" +
-                   $"Self-Storage xác nhận hoàn tiền đặt cọc ({receiptNumber}).\r\n" +
+                   $"Self-Storage xác nhận đã hoàn tiền đặt cọc ({receiptNumber}).\r\n" +
                    string.Join("\r\n", rows.Select(r => $"{r.Label}: {r.Value}")) +
-                   $"\r\n\r\nVui lòng lưu email này và liên hệ cơ sở kèm mã {receiptNumber} nếu cần hỗ trợ.";
+                   $"\r\n\r\nVui lòng liên hệ cơ sở kèm mã {receiptNumber} nếu cần hỗ trợ.";
         return Layout($"Hóa đơn hoàn cọc {receiptNumber}", "Hóa đơn hoàn cọc", html, text);
     }
 

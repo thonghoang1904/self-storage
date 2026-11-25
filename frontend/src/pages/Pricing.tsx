@@ -81,7 +81,6 @@ export default function Pricing() {
     { label: 'Kích thước (Dài × Rộng × Cao)', value: (t) => `${t.lengthMeters} × ${t.widthMeters} × ${t.heightMeters} m` },
     { label: 'Thể tích', value: (t) => `${t.volumeCubicMeters.toLocaleString('vi-VN')} m³` },
     { label: 'Điều hòa, kiểm soát độ ẩm', value: (t) => (t.hasClimateControl ? <Icon name="check" size={16} className="cyan" /> : <span className="muted">—</span>) },
-    { label: 'Giá thuê theo ngày', value: (t) => fmtMoney(t.baseDailyRate) },
     { label: 'Giá thuê theo tháng', value: (t) => <b>{fmtMoney(t.baseMonthlyRate)}</b> },
     { label: `Tiền cọc (${policy.depositPercent}% giá tháng)`, value: (t) => fmtMoney(depositFor(t.baseMonthlyRate, policy)) },
     { label: 'Kho đang trống', value: (t) => (free ? `${free[t.unitTypeId] ?? 0} kho` : '…') },

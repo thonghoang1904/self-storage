@@ -77,7 +77,6 @@ public sealed class EmailOutboxService(SelfStorageDbContext db, TimeProvider clo
             {
                 p.PaymentId,
                 p.InvoiceId,
-                p.ReceivedByStaffId,
                 p.AmountPaid,
                 p.PaymentDate,
                 p.PaymentMethod,
@@ -93,7 +92,6 @@ public sealed class EmailOutboxService(SelfStorageDbContext db, TimeProvider clo
             .Select(i => new
             {
                 i.InvoiceId,
-                i.InvoiceNumber,
                 i.ContractId,
                 i.ReservationId,
                 i.TotalAmount,
@@ -101,10 +99,6 @@ public sealed class EmailOutboxService(SelfStorageDbContext db, TimeProvider clo
                 CustomerName = i.Customer.FullName,
             })
             .SingleAsync(ct);
-
-        var staffName = payment.ReceivedByStaffId is int staffId
-            ? await db.Users.Where(u => u.UserId == staffId).Select(u => u.FullName).SingleOrDefaultAsync(ct)
-            : null;
 
         var effectiveContractId = contractId ?? invoice.ContractId;
         if (effectiveContractId is null && invoice.ReservationId is int invRid)
@@ -123,12 +117,7 @@ public sealed class EmailOutboxService(SelfStorageDbContext db, TimeProvider clo
         string refundReasonLabel;
         string? contractNumber = null;
         string? reservationCode = null;
-        string? facilityName = null;
         string? unitCode = null;
-        decimal depositPaid;
-        decimal deductedAmount;
-        decimal settledInvoicesAmount;
-        decimal refundableTotal;
         decimal remainingRefund;
 
         if (effectiveContractId is int cid)
@@ -138,17 +127,9 @@ public sealed class EmailOutboxService(SelfStorageDbContext db, TimeProvider clo
                 {
                     c.ContractNumber,
                     c.DepositPaid,
-                    c.ReservationId,
-                    FacilityName = c.Unit.Facility.FacilityName,
                     UnitCode = c.Unit.UnitCode,
                 })
                 .SingleAsync(ct);
-            effectiveReservationId ??= contract.ReservationId;
-            if (effectiveReservationId is int crid)
-            {
-                reservationCode = await db.Reservations.Where(r => r.ReservationId == crid)
-                    .Select(r => r.ReservationCode).SingleOrDefaultAsync(ct);
-            }
 
             var latestOverdueFee = await db.OverdueRecords.Where(o => o.ContractId == cid)
                 .OrderByDescending(o => o.OverdueId)
@@ -157,9 +138,8 @@ public sealed class EmailOutboxService(SelfStorageDbContext db, TimeProvider clo
             var earlyReturnFees = await db.EarlyReturnRequests
                 .Where(r => r.ContractId == cid && r.Status == EarlyReturnStatus.Completed)
                 .SumAsync(r => (decimal?)r.EarlyReturnFee, ct) ?? 0m;
-            depositPaid = contract.DepositPaid;
-            deductedAmount = Math.Min(depositPaid, latestOverdueFee + earlyReturnFees);
-            settledInvoicesAmount = await db.Payments
+            var deductedAmount = Math.Min(contract.DepositPaid, latestOverdueFee + earlyReturnFees);
+            var settledInvoicesAmount = await db.Payments
                 .Where(p => p.PaymentMethod == "DepositOffset" && p.Status == "Success"
                     && db.Invoices.Any(i => i.InvoiceId == p.InvoiceId && i.ContractId == cid))
                 .SumAsync(p => (decimal?)p.AmountPaid, ct) ?? 0m;
@@ -167,11 +147,10 @@ public sealed class EmailOutboxService(SelfStorageDbContext db, TimeProvider clo
                 .Where(i => i.ContractId == cid && (i.Status == "Unpaid" || i.Status == "Overdue"))
                 .SumAsync(i => (decimal?)i.TotalAmount, ct) ?? 0m;
 
-            refundableTotal = Math.Max(0m, depositPaid - deductedAmount - settledInvoicesAmount - stillOwed);
+            var refundableTotal = Math.Max(0m, contract.DepositPaid - deductedAmount - settledInvoicesAmount - stillOwed);
             remainingRefund = Math.Max(0m, refundableTotal - totalRefunded);
             refundReasonLabel = "Hoàn tiền đặt cọc khi trả kho";
             contractNumber = contract.ContractNumber;
-            facilityName = contract.FacilityName;
             unitCode = contract.UnitCode;
         }
         else if (effectiveReservationId is int rid)
@@ -181,7 +160,6 @@ public sealed class EmailOutboxService(SelfStorageDbContext db, TimeProvider clo
                 {
                     r.ReservationCode,
                     r.DepositAmount,
-                    FacilityName = r.Facility.FacilityName,
                     AssignedUnitCode = r.AssignedUnit != null ? r.AssignedUnit.UnitCode : null,
                 })
                 .SingleAsync(ct);
@@ -191,23 +169,16 @@ public sealed class EmailOutboxService(SelfStorageDbContext db, TimeProvider clo
                 .Select(r => new { r.ApprovedRefundAmount })
                 .FirstOrDefaultAsync(ct);
 
-            depositPaid = invoice.TotalAmount > 0 ? invoice.TotalAmount : reservation.DepositAmount;
-            refundableTotal = cancellation?.ApprovedRefundAmount ?? depositPaid;
-            deductedAmount = Math.Max(0m, depositPaid - refundableTotal);
-            settledInvoicesAmount = 0m;
+            var depositPaid = invoice.TotalAmount > 0 ? invoice.TotalAmount : reservation.DepositAmount;
+            var refundableTotal = cancellation?.ApprovedRefundAmount ?? depositPaid;
             remainingRefund = Math.Max(0m, refundableTotal - totalRefunded);
             refundReasonLabel = "Hoàn tiền đặt cọc khi hủy đơn đặt kho";
             reservationCode = reservation.ReservationCode;
-            facilityName = reservation.FacilityName;
             unitCode = reservation.AssignedUnitCode;
         }
         else
         {
-            depositPaid = invoice.TotalAmount;
-            refundableTotal = depositPaid;
-            deductedAmount = 0m;
-            settledInvoicesAmount = 0m;
-            remainingRefund = Math.Max(0m, refundableTotal - totalRefunded);
+            remainingRefund = Math.Max(0m, invoice.TotalAmount - totalRefunded);
             refundReasonLabel = "Hoàn tiền đặt cọc";
         }
 
@@ -215,23 +186,15 @@ public sealed class EmailOutboxService(SelfStorageDbContext db, TimeProvider clo
         var content = EmailTemplate.DepositRefundReceipt(
             invoice.CustomerName,
             receiptNumber,
-            invoice.InvoiceNumber,
             refundReasonLabel,
             contractNumber,
             reservationCode,
-            facilityName,
             unitCode,
-            depositPaid,
-            deductedAmount,
-            settledInvoicesAmount,
-            refundableTotal,
             payment.AmountPaid,
-            totalRefunded,
             remainingRefund,
             payment.PaymentDate,
             payment.PaymentMethod,
             payment.TransactionCode,
-            staffName,
             payment.PaymentNotes);
 
         var eventKey = manualResend

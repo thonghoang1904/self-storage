@@ -350,12 +350,14 @@ function checkUnitType(body: Body, exceptId: number | null): Omit<UnitType, 'uni
   const typeName = String(body.typeName ?? '').trim()
   const [l, w, h] = [body.lengthMeters, body.widthMeters, body.heightMeters].map(Number)
   const rawDaily = body.baseDailyRate, rawMonthly = body.baseMonthlyRate
-  const daily = rawDaily === null || rawDaily === undefined || rawDaily === '' ? NaN : Number(rawDaily)
+  const dailyProvided = rawDaily !== null && rawDaily !== undefined && rawDaily !== ''
+  const daily = dailyProvided ? Number(rawDaily) : 0
   const monthly = rawMonthly === null || rawMonthly === undefined || rawMonthly === '' ? NaN : Number(rawMonthly)
   if (typeName.length < 2 || typeName.length > 100) throw bad('Tên loại kho dài từ 2 đến 100 ký tự')
   if (![l, w, h].every((d) => d >= 0.1 && d <= 20)) throw bad('Kích thước kho từ 0,1 đến 20 m')
   if (![l, w, h].every((d) => Math.round(d * 100) / 100 === d)) throw bad('Kích thước (m) chỉ hỗ trợ tối đa 2 chữ số thập phân')
-  if (!(daily >= 0.01) || !(monthly >= 0.01)) throw bad('Vui lòng nhập đầy đủ giá theo ngày và giá theo tháng lớn hơn 0')
+  if (!(monthly >= 0.01)) throw bad('Vui lòng nhập giá theo tháng lớn hơn 0')
+  if (!Number.isFinite(daily) || daily < 0) throw bad('Giá theo ngày không được âm')
   if (daily > monthly) throw bad('Giá theo ngày không được lớn hơn giá theo tháng')
   if (db.unitTypes.some((t) => t.typeName === typeName && t.unitTypeId !== exceptId)) throw conflict('Tên loại kho đã tồn tại')
   return {
@@ -2271,9 +2273,11 @@ const routes: [string, RegExp, Handler][] = [
     const t = db.unitTypes.find((x) => x.unitTypeId === Number(m[1]))
     if (!t) throw notFound('Không tìm thấy loại kho')
     const dailyRaw = body.baseDailyRate, monthlyRaw = body.baseMonthlyRate
-    const daily = dailyRaw === null || dailyRaw === undefined || dailyRaw === '' ? NaN : Number(dailyRaw)
+    const dailyProvided = dailyRaw !== null && dailyRaw !== undefined && dailyRaw !== ''
+    const daily = dailyProvided ? Number(dailyRaw) : 0
     const monthly = monthlyRaw === null || monthlyRaw === undefined || monthlyRaw === '' ? NaN : Number(monthlyRaw)
-    if (!(daily >= 0.01) || !(monthly >= 0.01)) throw bad('Vui lòng nhập đầy đủ giá theo ngày và giá theo tháng lớn hơn 0')
+    if (!(monthly >= 0.01)) throw bad('Vui lòng nhập giá theo tháng lớn hơn 0')
+    if (!Number.isFinite(daily) || daily < 0) throw bad('Giá theo ngày không được âm')
     if (daily > monthly) throw bad('Giá theo ngày không được lớn hơn giá theo tháng')
     t.baseDailyRate = daily
     t.baseMonthlyRate = monthly
