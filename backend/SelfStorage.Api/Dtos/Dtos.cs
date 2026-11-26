@@ -138,11 +138,11 @@ public record SaveUnitTypeRequest(
     [Required(ErrorMessage = "Vui lòng nhập tên loại kho")]
     [StringLength(100, MinimumLength = 2, ErrorMessage = "Tên loại kho dài từ 2 đến 100 ký tự")]
     string TypeName,
-    [Range(typeof(decimal), "0.1", "20", ErrorMessage = "Chiều dài (m) phải từ 0,1 đến 20")]
+    [Range(typeof(decimal), "0.1", "30", ErrorMessage = "Chiều dài (m) phải từ 0,1 đến 30")]
     decimal LengthMeters,
-    [Range(typeof(decimal), "0.1", "20", ErrorMessage = "Chiều rộng (m) phải từ 0,1 đến 20")]
+    [Range(typeof(decimal), "0.1", "30", ErrorMessage = "Chiều rộng (m) phải từ 0,1 đến 30")]
     decimal WidthMeters,
-    [Range(typeof(decimal), "0.1", "20", ErrorMessage = "Chiều cao (m) phải từ 0,1 đến 20")]
+    [Range(typeof(decimal), "0.1", "15", ErrorMessage = "Chiều cao (m) phải từ 0,1 đến 15")]
     decimal HeightMeters,
     bool HasClimateControl,
     [Required(ErrorMessage = "Vui lòng nhập giá theo tháng")]

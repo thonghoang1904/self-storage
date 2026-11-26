@@ -114,7 +114,7 @@ export function UnitTypeManager({ query = '', onChanged }: { query?: string; onC
 }
 
 /**
- * Add or edit a unit type. Sizes are inside measurements in metres, 0.1–20 with at most 2 decimals (SaveUnitTypeRequest).
+ * Add or edit a unit type. Sizes are inside measurements in metres, length/width 0.1–30 and height 0.1–15 with at most 2 decimals (SaveUnitTypeRequest).
  * The type is saved first; its photo goes after it, so a failed upload keeps the type and says to upload again.
  */
 /** Add/edit form for one unit type (with its photo); also used from the "Thêm kho mới" dialog. */
@@ -148,9 +148,9 @@ export function UnitTypeForm({ type, onCancel, onSaved }: { type?: UnitType; onC
     setPreview(URL.createObjectURL(picked))
   }
 
-  const dim = (v: string, label: string) => {
+  const dim = (v: string, label: string, max: number) => {
     const n = Number(v)
-    if (!v.trim() || !Number.isFinite(n) || n < 0.1 || n > 20) return `${label} từ 0,1 đến 20 m`
+    if (!v.trim() || !Number.isFinite(n) || n < 0.1 || n > max) return `${label} từ 0,1 đến ${max} m`
     return Math.round(n * 100) / 100 === n ? '' : `${label} tối đa 2 chữ số thập phân`
   }
 
@@ -173,7 +173,7 @@ export function UnitTypeForm({ type, onCancel, onSaved }: { type?: UnitType; onC
     }
     const problem = firstError(
       checkText(f.typeName, 'Tên loại kho', 100, false, 2),
-      dim(f.lengthMeters, 'Chiều dài'), dim(f.widthMeters, 'Chiều rộng'), dim(f.heightMeters, 'Chiều cao'),
+      dim(f.lengthMeters, 'Chiều dài', 30), dim(f.widthMeters, 'Chiều rộng', 30), dim(f.heightMeters, 'Chiều cao', 15),
       monthlyError,
       checkText(f.description, 'Mô tả', 500, true),
     )
@@ -225,9 +225,9 @@ export function UnitTypeForm({ type, onCancel, onSaved }: { type?: UnitType; onC
       <div className="form-grid">
         <label className="field"><span>Tên loại kho *</span><input value={f.typeName} maxLength={100} placeholder="VD: Kho Siêu Lớn XL (4.0m x 5.0m)" onChange={(e) => set('typeName', e.target.value)} required /></label>
         <label className="field"><span>Mô tả</span><input value={f.description} maxLength={500} onChange={(e) => set('description', e.target.value)} /></label>
-        <label className="field"><span>Chiều dài (m) *</span><input type="number" min={0.1} max={20} step="0.01" value={f.lengthMeters} onChange={(e) => set('lengthMeters', e.target.value)} required /></label>
-        <label className="field"><span>Chiều rộng (m) *</span><input type="number" min={0.1} max={20} step="0.01" value={f.widthMeters} onChange={(e) => set('widthMeters', e.target.value)} required /></label>
-        <label className="field"><span>Chiều cao (m) *</span><input type="number" min={0.1} max={20} step="0.01" value={f.heightMeters} onChange={(e) => set('heightMeters', e.target.value)} required /></label>
+        <label className="field"><span>Chiều dài (m) *</span><input type="number" min={0.1} max={30} step="0.01" value={f.lengthMeters} onChange={(e) => set('lengthMeters', e.target.value)} required /></label>
+        <label className="field"><span>Chiều rộng (m) *</span><input type="number" min={0.1} max={30} step="0.01" value={f.widthMeters} onChange={(e) => set('widthMeters', e.target.value)} required /></label>
+        <label className="field"><span>Chiều cao (m) *</span><input type="number" min={0.1} max={15} step="0.01" value={f.heightMeters} onChange={(e) => set('heightMeters', e.target.value)} required /></label>
         <label className="field"><span>Giá theo tháng (đ) *</span><input type="number" min={1000} step={1} value={f.baseMonthlyRate} onChange={(e) => set('baseMonthlyRate', e.target.value)} required /></label>
       </div>
       <label className="check-line"><input type="checkbox" checked={f.hasClimateControl} onChange={(e) => set('hasClimateControl', e.target.checked)} /><span>Có điều hòa kiểm soát nhiệt độ, độ ẩm</span></label>

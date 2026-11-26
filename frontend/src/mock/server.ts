@@ -354,7 +354,9 @@ function checkUnitType(body: Body, exceptId: number | null): Omit<UnitType, 'uni
   const daily = dailyProvided ? Number(rawDaily) : 0
   const monthly = rawMonthly === null || rawMonthly === undefined || rawMonthly === '' ? NaN : Number(rawMonthly)
   if (typeName.length < 2 || typeName.length > 100) throw bad('Tên loại kho dài từ 2 đến 100 ký tự')
-  if (![l, w, h].every((d) => d >= 0.1 && d <= 20)) throw bad('Kích thước kho từ 0,1 đến 20 m')
+  if (!(l >= 0.1 && l <= 30)) throw bad('Chiều dài (m) phải từ 0,1 đến 30')
+  if (!(w >= 0.1 && w <= 30)) throw bad('Chiều rộng (m) phải từ 0,1 đến 30')
+  if (!(h >= 0.1 && h <= 15)) throw bad('Chiều cao (m) phải từ 0,1 đến 15')
   if (![l, w, h].every((d) => Math.round(d * 100) / 100 === d)) throw bad('Kích thước (m) chỉ hỗ trợ tối đa 2 chữ số thập phân')
   if (!(monthly >= 0.01)) throw bad('Vui lòng nhập giá theo tháng lớn hơn 0')
   if (!Number.isFinite(daily) || daily < 0) throw bad('Giá theo ngày không được âm')
