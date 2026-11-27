@@ -221,7 +221,7 @@ export default function AdminStorage() {
             </div>
           ) : (
             <>
-              <UnitForm form={form.value} onChange={(value) => setForm({ ...form, value })} units={formUnits} types={types} busy={busy}
+              <UnitForm form={form.value} onChange={(value) => { setForm({ ...form, value }); setError('') }} units={formUnits} types={types} busy={busy}
                 onSubmit={save} onClose={closeForm} bare />
               {!form.value.unitId && (
                 <p className="muted small">
@@ -259,7 +259,7 @@ export default function AdminStorage() {
       )}
 
       {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
-      {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
+      {error && !form && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}
 
       <div className="panel filter-bar">
         <div className="filter-controls">

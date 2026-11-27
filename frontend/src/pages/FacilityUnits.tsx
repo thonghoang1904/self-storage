@@ -98,7 +98,7 @@ export default function FacilityUnits() {
         <Metric icon="settings" tone="warn" label="Đang bảo trì" value={String(count('UnderMaintenance'))} note="không nhận khách mới" />
       </div>
 
-      {form && <UnitForm form={form} onChange={setForm} units={units} types={types} busy={busy} onSubmit={save} onClose={() => setForm(null)} />}
+      {form && <UnitForm form={form} onChange={(v) => { setForm(v); setError('') }} units={units} types={types} busy={busy} onSubmit={save} onClose={() => setForm(null)} />}
 
       {notice && <p className="alert ok"><Icon name="check" size={16} />{notice}</p>}
       {error && <p className="alert bad"><Icon name="alert" size={16} />{error}</p>}

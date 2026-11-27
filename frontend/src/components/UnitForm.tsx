@@ -113,6 +113,25 @@ export function UnitPhotoPicker({ form, onChange, current, typePhoto, typeName, 
   )
 }
 
+/**
+ * Suggested code for a new unit of `typeId`: the prefix this facility already uses for that type (or the next free
+ * letter for a type it does not have yet), numbered after the highest one, e.g. A-12 → A-13.
+ */
+export function nextUnitCode(units: StorageUnit[], typeId: number): string {
+  const prefixOf = (code: string) => code.toUpperCase().replace(/-?\d+$/, '')
+  const sameType = units.filter((u) => u.unitTypeId === typeId)
+  let prefix = sameType.length ? prefixOf(sameType[sameType.length - 1].unitCode) : ''
+  if (!prefix) {
+    const used = new Set(units.map((u) => prefixOf(u.unitCode)))
+    prefix = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').find((l) => !used.has(l)) ?? 'K'
+  }
+  const taken = new Set(units.map((u) => u.unitCode.toUpperCase()))
+  const numbers = units.filter((u) => prefixOf(u.unitCode) === prefix).map((u) => Number(u.unitCode.match(/(\d+)$/)?.[1] ?? 0))
+  let n = Math.max(0, ...numbers) + 1
+  while (taken.has(`${prefix}-${String(n).padStart(2, '0')}`)) n++
+  return `${prefix}-${String(n).padStart(2, '0')}`
+}
+
 export function UnitForm({ form, onChange, units, types, busy, onSubmit, onClose, bare = false }: {
   form: UnitFormValue
   onChange: (form: UnitFormValue) => void
@@ -128,6 +147,14 @@ export function UnitForm({ form, onChange, units, types, busy, onSubmit, onClose
   const current = units.find((u) => u.unitId === form.unitId)
   const renameOnly = !!current && LOCKED_UNIT_STATUSES.includes(current.status)
   const selectedType = types.find((t) => t.unitTypeId === form.unitTypeId) ?? types[0]
+  // A new unit gets the next code for its type and follows the type picked, until the code is typed by hand.
+  const suggested = form.unitId ? '' : nextUnitCode(units, selectedType?.unitTypeId ?? 0)
+  const edited = useRef(false)
+  useEffect(() => {
+    if (form.unitId || !suggested || edited.current || form.unitCode === suggested) return
+    onChange({ ...form, unitCode: suggested })
+  }, [suggested, form, onChange])
+  const isSuggested = !form.unitId && !!suggested && form.unitCode === suggested
   return (
     <form className={bare ? 'stack' : 'panel'} onSubmit={onSubmit}>
       {!bare && (
@@ -138,8 +165,9 @@ export function UnitForm({ form, onChange, units, types, busy, onSubmit, onClose
       )}
       <div className="form-grid four">
         <label className="field"><span>Mã kho</span>
-          <input value={form.unitCode} onChange={(e) => onChange({ ...form, unitCode: code.keep(e.target.value) })} placeholder="vd: B-04" maxLength={30} required autoFocus />
+          <input value={form.unitCode} onChange={(e) => { edited.current = true; onChange({ ...form, unitCode: code.keep(e.target.value) }) }} placeholder="vd: B-04" maxLength={30} required autoFocus />
           <FieldNote text={code.hint} />
+          {isSuggested && !code.hint && <small className="muted">Tự sinh theo loại kho, sửa được.</small>}
         </label>
         <label className="field"><span>Loại kho</span>
           <Select value={form.unitTypeId} onChange={(e) => onChange({ ...form, unitTypeId: Number(e.target.value) })} disabled={renameOnly} required>
