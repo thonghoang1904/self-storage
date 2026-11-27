@@ -505,6 +505,8 @@ public sealed class OperationsManagementController(
     {
         if (baseMonthlyRate is null || baseMonthlyRate <= 0)
             throw AppException.BadRequest("Vui lòng nhập giá theo tháng lớn hơn 0");
+        if (baseMonthlyRate.Value > 100_000_000m)
+            throw AppException.BadRequest("Giá theo tháng không được vượt quá 100.000.000đ");
         var dailyRate = baseDailyRate ?? 0m;
         if (dailyRate < 0)
             throw AppException.BadRequest("Giá theo ngày không được âm");

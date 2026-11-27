@@ -146,7 +146,7 @@ public record SaveUnitTypeRequest(
     decimal HeightMeters,
     bool HasClimateControl,
     [Required(ErrorMessage = "Vui lòng nhập giá theo tháng")]
-    [Range(typeof(decimal), "0.01", "9999999999999999", ErrorMessage = "Giá theo tháng phải lớn hơn 0")]
+    [Range(typeof(decimal), "0.01", "100000000", ErrorMessage = "Giá theo tháng phải lớn hơn 0 và không vượt quá 100.000.000đ")]
     decimal? BaseMonthlyRate,
     [StringLength(500, ErrorMessage = "Mô tả tối đa 500 ký tự")]
     string? Description = null,
@@ -154,7 +154,7 @@ public record SaveUnitTypeRequest(
     decimal? BaseDailyRate = null);
 public record UpdateUnitTypePricingRequest(
     [Required(ErrorMessage = "Vui lòng nhập giá theo tháng")]
-    [Range(typeof(decimal), "0.01", "9999999999999999", ErrorMessage = "Giá theo tháng phải lớn hơn 0")]
+    [Range(typeof(decimal), "0.01", "100000000", ErrorMessage = "Giá theo tháng phải lớn hơn 0 và không vượt quá 100.000.000đ")]
     decimal? BaseMonthlyRate,
     [Range(typeof(decimal), "0", "9999999999999999", ErrorMessage = "Giá theo ngày không được âm")]
     decimal? BaseDailyRate = null);
