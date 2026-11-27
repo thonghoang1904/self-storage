@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useRef, useState, type ChangeEvent } 
 import { Link } from 'react-router-dom'
 import { api, fmtTime } from '../api'
 import { Badge, Empty, Icon } from './ui'
-import { StoredItemStatuses, type ContractInventory, type StoredItem } from '../types'
+import { StoredItemStatuses, type ContractInventory, type StoredItem, type VisitRegistration } from '../types'
 
 /**
  * "Tồn kho & mức lưu trữ" of one contract: how full the unit is (stored + waiting to move in) and the items in it.
@@ -92,6 +92,17 @@ export function InventoryPanel({ mode, contractId, facilityId, canEdit = false, 
   }, [base, query, mode, facilityId])
   useEffect(() => { void load() }, [load])
 
+  // Items waiting to move in show the booked entry time of their move-in registration, not when they were declared.
+  const [slots, setSlots] = useState<Record<number, string>>({})
+  useEffect(() => {
+    const url = mode === 'customer' ? `/api/contracts/${contractId}/visit-registrations`
+      : mode === 'staff' && facilityId ? `/api/gate/facilities/${facilityId}/visit-registrations` : null
+    if (!url) return
+    api<VisitRegistration[]>(url)
+      .then((rs) => setSlots(Object.fromEntries(rs.filter((r) => r.contractId === contractId).map((r) => [r.visitRegistrationId, r.scheduledEntryAt]))))
+      .catch(() => setSlots({}))
+  }, [mode, contractId, facilityId])
+
   const done = async (msg: string) => { setOpen(null); setAdding(false); setNotice(msg); await load() }
 
   return (
@@ -133,7 +144,9 @@ export function InventoryPanel({ mode, contractId, facilityId, canEdit = false, 
                       <td className="right nowrap">{fmtM3(it.totalVolumeM3)} m³</td>
                       <td><Badge tone={st.tone}>{st.label}</Badge></td>
                       <td className="nowrap"><small>
-                        {it.movedInAt ? `Vào ${fmtTime(it.movedInAt)}` : `Khai báo ${fmtTime(it.createdAt)}`}
+                        {it.movedInAt ? `Vào ${fmtTime(it.movedInAt)}`
+                          : it.visitRegistrationId != null && slots[it.visitRegistrationId] ? <>Hẹn vào {fmtTime(slots[it.visitRegistrationId])}<br /><span className="muted">Khai báo {fmtTime(it.createdAt)}</span></>
+                            : `Khai báo ${fmtTime(it.createdAt)}`}
                         {it.removedAt && <><br />Ra {fmtTime(it.removedAt)}</>}
                       </small></td>
                       {mode === 'customer' && (
