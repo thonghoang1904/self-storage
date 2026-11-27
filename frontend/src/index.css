@@ -1604,3 +1604,8 @@ tr.row-selected td { background: var(--cyan-25); }
 .invoice-sum b { font-size: 17px; }
 .invoice-sum b.ok { color: var(--ok, #15803d); }
 .invoice-sum b.bad { color: var(--bad, #b91c1c); }
+
+/* number fields: no up/down spinner arrows, the value is typed */
+input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
