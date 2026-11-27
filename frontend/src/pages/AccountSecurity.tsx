@@ -16,7 +16,8 @@ import type { AccessRecord, Contract, Invoice } from '../types'
 export const mask = (s: string | null | undefined, keep = 3) => (s ? `${'•'.repeat(Math.max(0, s.length - keep))}${s.slice(-keep)}` : '—')
 export const maskEmail = (e: string) => { const [n, d] = e.split('@'); return d ? `${n.slice(0, 2)}${'•'.repeat(Math.max(1, n.length - 2))}@${d}` : e }
 
-type LogRow = { key: string; at: string; group: 'access' | 'payment' | 'contract'; title: string; detail: string; result: string; to?: string }
+/** `exit` only on access rows: when the visitor left (null while still inside or when entry was refused). */
+type LogRow = { key: string; at: string; group: 'access' | 'payment' | 'contract'; title: string; detail: string; result: string; to?: string; exit?: string | null }
 const GROUPS: { key: '' | LogRow['group']; label: string; icon: string }[] = [
   { key: '', label: 'Tất cả', icon: 'history' },
   { key: 'access', label: 'Ra vào kho', icon: 'lock' },
@@ -41,9 +42,9 @@ export default function AccountSecurity() {
       api<Invoice[]>('/api/invoices/my').catch(() => [] as Invoice[]),
     ])
     const access = await Promise.all(contracts.map((c) => api<AccessRecord[]>(`/api/contracts/${c.contractId}/access-history`).catch(() => [] as AccessRecord[])))
-    access.forEach((rs, ci) => rs.forEach((r, n) => rows.push({ key: `r${r.accessRecordId}-${ci}-${n}`, at: r.entryTime, group: 'access',
+    access.forEach((rs, ci) => rs.forEach((r, n) => rows.push({ key: `r${r.accessRecordId}-${ci}-${n}`, at: r.entryTime, exit: r.exitTime, group: 'access',
       title: `${r.result === 'Granted' ? 'Vào kho' : 'Bị từ chối vào kho'} ${r.unitCode}`,
-      detail: [r.visitorName, r.exitTime && `ra lúc ${fmtTime(r.exitTime)}`, r.verifiedBy && `NV ${r.verifiedBy}`].filter(Boolean).join(' · '), result: r.result })))
+      detail: [r.visitorName, r.purpose, r.verifiedBy && `NV ${r.verifiedBy}`].filter(Boolean).join(' · '), result: r.result })))
     invoices.forEach((i) => i.payments.forEach((p, n) => rows.push({ key: `p${i.invoiceId}-${p.paymentId}-${n}`, at: p.paymentDate, group: 'payment', to: `/invoices/${i.invoiceId}`,
       title: `${p.status === 'Refunded' ? 'Hoàn tiền' : 'Thanh toán'} ${i.invoiceNumber}`, detail: `${fmtMoney(p.amountPaid)} · ${p.paymentMethod}`,
       result: p.status === 'Success' ? 'Success' : p.status === 'Refunded' ? 'Refunded' : p.status === 'Failed' ? 'Failed' : 'Warning' })))
@@ -82,11 +83,11 @@ export default function AccountSecurity() {
           <h3 className="panel-title with-icon"><Icon name={current.icon} size={17} className="cyan" /> {current.label}</h3>
           <div className="table-scroll">
             <table>
-              <thead><tr><th>Thời gian</th><th>Hoạt động</th><th>Trạng thái</th><th /></tr></thead>
+              <thead><tr><th>{group === 'access' ? 'Giờ vào – ra kho' : 'Thời gian'}</th><th>Hoạt động</th><th>Trạng thái</th><th /></tr></thead>
               <tbody>
                 {shown.map((r) => {
                   const st = RESULT[r.result] ?? { label: r.result, tone: 'muted' }
-                  return <tr key={r.key}><td>{fmtTime(r.at)}</td><td><b>{r.title}</b><br /><small className="muted">{r.detail}</small></td><td><span className={`badge ${st.tone}`}>{st.label}</span></td>
+                  return <tr key={r.key}><td>{r.group === 'access' ? <AccessTimes row={r} /> : fmtTime(r.at)}</td><td><b>{r.title}</b><br /><small className="muted">{r.detail}</small></td><td><span className={`badge ${st.tone}`}>{st.label}</span></td>
                     <td className="right">{r.to && <Link to={r.to} className="link with-icon nowrap">Xem chi tiết <Icon name="arrowRight" size={13} /></Link>}</td></tr>
                 })}
               </tbody>
@@ -96,5 +97,16 @@ export default function AccountSecurity() {
         </section>
       </div>
     </>
+  )
+}
+
+/** An access row shows when the visitor went in and came out, not when the record was written. */
+function AccessTimes({ row: r }: { row: LogRow }) {
+  if (r.result !== 'Granted') return <span><small className="muted block">Đến cổng</small>{fmtTime(r.at)}</span>
+  return (
+    <span className="access-times">
+      <span><small className="muted">Vào</small> {fmtTime(r.at)}</span>
+      <span><small className="muted">Ra</small> {r.exit ? fmtTime(r.exit) : <span className="badge info">Đang ở trong</span>}</span>
+    </span>
   )
 }

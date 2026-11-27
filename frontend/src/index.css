@@ -1617,3 +1617,7 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
 .reg-facts dt { display: inline-flex; align-items: center; gap: 5px; color: var(--muted, #64748b); white-space: nowrap; }
 .reg-facts dd { margin: 0; color: var(--text-strong, #0f172a); font-weight: 500; }
 @media (max-width: 560px) { .reg-facts { grid-template-columns: 1fr; } .reg-facts dd { margin-bottom: 4px; } }
+
+/* account log: entry and exit time of an access row */
+.access-times { display: grid; gap: 2px; white-space: nowrap; }
+.access-times small { display: inline-block; min-width: 22px; }
