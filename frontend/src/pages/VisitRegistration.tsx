@@ -6,7 +6,7 @@ import { parseOperatingHours } from '../components/appointment'
 import { useAuth } from '../auth'
 import { Empty, Icon } from '../components/ui'
 import { ContractUnitArt } from '../components/unitPhoto'
-import { MOVE_IN_PREFIX, VisitPurposes, type Contract, type ContractDetail, type Facility, type Person, type VisitRegistration } from '../types'
+import { buildTakeOutPurpose, MOVE_IN_PREFIX, TAKE_OUT_PREFIX, VisitPurposes, type Contract, type ContractDetail, type ContractInventory, type StoredItem, type Facility, type Person, type VisitRegistration } from '../types'
 import { FieldNote, useInputFilter } from '../components/form'
 import { Select } from '../components/Select'
 
@@ -171,6 +171,9 @@ export default function VisitRegistrationPage({ contractId, picker }: { contract
   const [citizenId, setCitizenId] = useState('')
   const cid = useInputFilter(CITIZEN_ID_FILTER)
   const [agree, setAgree] = useState(false)
+  /** "Lấy đồ ra": items in the unit and how many of each the customer will take (itemId → quantity). */
+  const [stored, setStored] = useState<StoredItem[]>([])
+  const [picks, setPicks] = useState<Record<number, string>>({})
 
   // Registrations to bring items in are listed on the move-in page, not here.
   const loadRows = useCallback(() => api<VisitRegistration[]>(`/api/contracts/${id}/visit-registrations`)
@@ -184,6 +187,7 @@ export default function VisitRegistrationPage({ contractId, picker }: { contract
       if (d.startDate > addDays(today, 1)) setDate(d.startDate)
     }).catch((e) => setError((e as Error).message))
     api<Person[]>(`/api/contracts/${id}/authorized-persons`).then(setPeople).catch(() => {})
+    api<ContractInventory>(`/api/contracts/${id}/items`).then((inv) => setStored(inv.items.filter((i) => i.status === 'Stored'))).catch(() => {})
     void loadRows()
   }, [id, loadRows, today])
 
@@ -211,7 +215,11 @@ export default function VisitRegistrationPage({ contractId, picker }: { contract
   const locked = c.unitStatus === 'OverdueLocked' || c.status === 'Overdue'
   const visitor = who == null ? null : people.find((p) => p.authorizedPersonId === who) ?? null
   const visitorName = visitor ? visitor.fullName : user?.fullName ?? 'Chủ hợp đồng'
-  const finalPurpose = purpose === 'Khác' ? otherPurpose.trim() : purpose
+  const takingOut = purpose === TAKE_OUT_PREFIX
+  const pickedQty = (i: StoredItem) => Math.min(i.quantity, Number(picks[i.storedItemId]) || 0)
+  const picked = stored.filter((i) => pickedQty(i) > 0)
+  const finalPurpose = purpose === 'Khác' ? otherPurpose.trim()
+    : takingOut ? buildTakeOutPurpose(picked.map((i) => ({ name: i.itemName, quantity: pickedQty(i) }))) : purpose
   const pending = rows.filter((r) => r.status === 'Pending').length
   const latest = rows[0]
 
@@ -221,7 +229,8 @@ export default function VisitRegistrationPage({ contractId, picker }: { contract
     setNotice('')
     const errs: typeof fieldErr = {
       time: !entrySlots.includes(entry) || !exit ? 'Ngày này không còn khung giờ trống, vui lòng chọn ngày khác' : undefined,
-      purpose: textError(finalPurpose ?? '', 'Mục đích vào kho', 3, 255) ?? undefined,
+      purpose: (takingOut && stored.filter((i) => i.storedItemId in picks && pickedQty(i) < 1).map((i) => `Nhập số lượng sẽ lấy cho "${i.itemName}" (từ 1 đến ${i.quantity}) hoặc bỏ chọn món này`)[0])
+        || (textError(finalPurpose ?? '', 'Mục đích vào kho', 3, 255) ?? undefined),
       citizenId: citizenIdError(citizenId) ?? undefined,
       agree: agree ? undefined : 'Vui lòng tích xác nhận cam kết trước khi gửi đăng ký',
     }
@@ -247,6 +256,7 @@ export default function VisitRegistrationPage({ contractId, picker }: { contract
       setNotice(`Đã gửi đăng ký vào kho ${r.unitCode} lúc ${hhmm(r.scheduledEntryAt)} ngày ${dmy(r.scheduledEntryAt)}. Nhân viên cơ sở sẽ duyệt trước giờ hẹn.`)
       setCitizenId('')
       setAgree(false)
+      setPicks({})
       await loadRows()
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (err) {
@@ -351,6 +361,40 @@ export default function VisitRegistrationPage({ contractId, picker }: { contract
                     </Select>
                     {purpose !== 'Khác' && <FieldNote text={fieldErr.purpose} />}
                   </label>
+                  {takingOut && (
+                    <div className="take-out stack-sm">
+                      <b>Đồ sẽ lấy ra <small className="muted">(không bắt buộc, giúp nhân viên chuẩn bị và cập nhật kho)</small></b>
+                      {stored.length === 0 ? <p className="muted small">Kho chưa có món nào được ghi nhận đang lưu.</p> : stored.map((i) => {
+                        const on = i.storedItemId in picks
+                        const toggle = (checked: boolean) => setPicks((p) => {
+                          const next = { ...p }
+                          if (checked) next[i.storedItemId] = String(i.quantity)
+                          else delete next[i.storedItemId]
+                          return next
+                        })
+                        // Typed quantity: digits only, never more than what is stored.
+                        const type = (v: string) => {
+                          const d = v.replace(/\D/g, '').slice(0, 4)
+                          setPicks((p) => ({ ...p, [i.storedItemId]: d && Number(d) > i.quantity ? String(i.quantity) : d }))
+                        }
+                        return (
+                          <div key={i.storedItemId} className={`take-out-row ${on ? 'on' : ''}`}>
+                            <label className="check-line grow">
+                              <input type="checkbox" checked={on} onChange={(e) => toggle(e.target.checked)} />
+                              <span><b>{i.itemName}</b> <small className="muted">đang lưu {i.quantity} · {i.lengthCm}×{i.widthCm}×{i.heightCm} cm</small></span>
+                            </label>
+                            {on && (
+                              <label className="row take-out-qty"><span className="muted">Lấy</span>
+                                <input inputMode="numeric" maxLength={4} value={picks[i.storedItemId]} aria-label={`Số lượng ${i.itemName} sẽ lấy`}
+                                  onChange={(e) => type(e.target.value)} />
+                                <span className="muted">/ {i.quantity}</span>
+                              </label>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                   <p className="hint"><Icon name="package" size={15} /> Mang đồ vào kho? <Link to={`/my-units/${c.contractId}/move-in`} className="link">Dùng Đăng ký đưa đồ vào kho</Link> để khai báo danh sách đồ, phương tiện và người phụ.</p>
                   {purpose === 'Khác' && (
                     <label className={`field ${fieldErr.purpose ? 'has-error' : ''}`}><span>Ghi rõ mục đích *</span>

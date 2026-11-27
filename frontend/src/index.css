@@ -1621,3 +1621,10 @@ input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin
 /* account log: entry and exit time of an access row */
 .access-times { display: grid; gap: 2px; white-space: nowrap; }
 .access-times small { display: inline-block; min-width: 22px; }
+
+/* visit registration: items the customer will take out */
+.take-out { padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: #fafcfd; }
+.take-out-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 8px; border-radius: 8px; }
+.take-out-row.on { background: var(--cyan-50); }
+.take-out-qty input { width: 64px; text-align: center; }
+.pill.warn-pill { background: var(--warn-bg); color: var(--warn); }

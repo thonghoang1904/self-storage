@@ -3,12 +3,13 @@ import { Link } from 'react-router-dom'
 import { api, billingLink, fmtDate, fmtTime, IS_DEMO } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
-import { DenyReasons, parseMoveIn, type AccessRecord, type Person, type StoredItem, type VisitCandidate, type VisitRegistration } from '../types'
+import { DenyReasons, parseMoveIn, parseTakeOut, type AccessRecord, type Person, type StoredItem, type VisitCandidate, type VisitRegistration } from '../types'
 import { CITIZEN_ID_FILTER } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
 import { Select } from '../components/Select'
 import { scrollToList } from '../components/StatCard'
 import { InventoryPanel } from '../components/InventoryPanel'
+import { Modal } from '../components/Modal'
 
 const REFRESH_MS = 5000
 const hhmm = (iso: string) => iso.slice(11, 16)
@@ -110,6 +111,8 @@ export default function Gate() {
     }
   }
 
+  /** A "Lấy đồ ra" visitor about to leave: staff updates the items taken before confirming the exit. */
+  const [leaving, setLeaving] = useState<AccessRecord | null>(null)
   const confirmExit = async (r: AccessRecord) => {
     const key = `x${r.accessRecordId}`
     if (inFlight.current.has(key)) return
@@ -241,14 +244,59 @@ export default function Gate() {
                   <b>{r.visitorName}</b>{(r.companionCount ?? 0) > 0 && <small className="muted"> +{r.companionCount} người</small>}
                   <small className="muted block">Vào {fmtTime(r.entryTime)}{r.purpose ? ` · ${r.purpose}` : ''}</small>
                 </div>
-                <button className="btn outline sm" onClick={() => confirmExit(r)} title={`HĐ ${r.contractNumber} · duyệt bởi ${r.verifiedBy}`}><Icon name="logout" size={14} /> Đã ra</button>
+                <button className="btn outline sm" onClick={() => (parseTakeOut(r.purpose) !== null && facilityId ? setLeaving(r) : confirmExit(r))} title={`HĐ ${r.contractNumber} · duyệt bởi ${r.verifiedBy}`}><Icon name="logout" size={14} /> Đã ra</button>
               </div>
             ))}
             {inside.length === 0 && <Empty icon="door">Không có ai trong kho.</Empty>}
           </div>
         </aside>
       </div>
+      {leaving && facilityId && (
+        <TakeOutExit facilityId={facilityId} record={leaving} onClose={() => setLeaving(null)}
+          onExit={async () => { await confirmExit(leaving); setLeaving(null) }} />
+      )}
     </div>
+  )
+}
+
+/**
+ * Exit of a "Lấy đồ ra" visit: what the customer said they would take, and the unit's items (finds the contract
+ * by its number at this facility) so staff marks what actually left before confirming the visitor is out.
+ */
+function TakeOutExit({ facilityId, record: r, onClose, onExit }: { facilityId: number; record: AccessRecord; onClose: () => void; onExit: () => Promise<void> }) {
+  const [contractId, setContractId] = useState<number | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    api<VisitCandidate[]>(`/api/gate/facilities/${facilityId}/lookup?q=${encodeURIComponent(r.contractNumber)}`)
+      .then((list) => {
+        const v = list.find((x) => x.contractNumber === r.contractNumber)
+        if (v) setContractId(v.contractId)
+        else setError('Không tìm thấy hợp đồng tại cơ sở này')
+      })
+      .catch((e) => setError((e as Error).message))
+  }, [facilityId, r.contractNumber])
+  const planned = parseTakeOut(r.purpose)
+  return (
+    <Modal title={`${r.visitorName} ra khỏi kho ${r.unitCode}`} onClose={onClose} wide>
+      <div className="stack">
+        <p className="alert warn"><Icon name="package" size={16} />
+          <span>Khách vào để <b>lấy đồ ra</b>. Bấm <b>Lấy ra</b> ở từng món khách mang đi (nhập số lượng nếu chỉ lấy một phần), rồi xác nhận khách đã ra.</span></p>
+        <div className="info-box">
+          <div className="info-row"><span className="muted">Khách đăng ký sẽ lấy</span><b>{planned || 'Không chọn trước'}</b></div>
+          <div className="info-row"><span className="muted">Hợp đồng</span><b>{r.contractNumber}</b></div>
+        </div>
+        {error ? <p className="alert bad"><Icon name="alert" size={16} />{error}</p>
+          : contractId === null ? <p className="muted">Đang tải đồ trong kho…</p>
+            : <InventoryPanel mode="staff" contractId={contractId} facilityId={facilityId} />}
+        <div className="row end">
+          <button type="button" className="btn ghost" onClick={onClose}>Để sau</button>
+          <button type="button" className="btn primary" disabled={busy} onClick={async () => { setBusy(true); try { await onExit() } finally { setBusy(false) } }}>
+            <Icon name="logout" size={15} /> {busy ? 'Đang lưu…' : 'Xác nhận khách đã ra'}
+          </button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 
@@ -325,6 +373,17 @@ function RegistrationsPanel({ facilityId, regs, onReview }: { facilityId: number
  */
 function RegSummary({ reg: r }: { reg: VisitRegistration }) {
   const m = parseMoveIn(r.purpose)
+  const takeOut = parseTakeOut(r.purpose)
+  if (takeOut !== null) {
+    return (
+      <div className="reg-summary">
+        <small className="muted block">HĐ {r.contractNumber} · <span className="pill warn-pill">Lấy đồ ra</span></small>
+        <dl className="reg-facts">
+          <div><dt><Icon name="package" size={13} /> Đồ sẽ lấy</dt><dd>{takeOut || <span className="muted">Khách không chọn trước, hỏi khách khi ra</span>}</dd></div>
+        </dl>
+      </div>
+    )
+  }
   if (!m) return <small className="muted block">HĐ {r.contractNumber} · Mục đích: <b>{r.purpose}</b></small>
   const items = r.items ?? []
   const pieces = items.reduce((n, i) => n + i.quantity, 0)

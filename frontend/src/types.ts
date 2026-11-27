@@ -711,6 +711,32 @@ export interface VisitRegistration {
 export const VisitPurposes = ['Lấy đồ ra', 'Kiểm tra đồ trong kho', 'Sắp xếp lại đồ', 'Tham quan kho', 'Khác']
 /** Purpose text of registrations made with "Đăng ký đưa đồ vào kho" starts with this. */
 export const MOVE_IN_PREFIX = 'Gửi đồ vào kho'
+/** Purpose of a visit to take items out; the items the customer picked follow: "Lấy đồ ra: Tivi ×1, Thùng sách ×2". */
+export const TAKE_OUT_PREFIX = 'Lấy đồ ra'
+
+/** The take-out purpose with the picked items, kept within the API's 255 characters ("+N món khác" when cut). */
+export function buildTakeOutPurpose(picks: { name: string; quantity: number }[], max = 255): string {
+  if (!picks.length) return TAKE_OUT_PREFIX
+  const parts = picks.map((p) => `${p.name.trim()} ×${p.quantity}`)
+  let text = `${TAKE_OUT_PREFIX}: `
+  let shown = 0
+  for (const t of parts) {
+    const extra = `${shown ? ', ' : ''}${t}`
+    const rest = parts.length - shown - 1
+    if ((text + extra + (rest ? `, +${rest} món khác` : '')).length > max) break
+    text += extra
+    shown++
+  }
+  if (shown < parts.length) text += `${shown ? ', ' : ''}+${parts.length - shown} món khác`
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text
+}
+
+/** The items named in a take-out purpose ('' when none were picked), or null for any other purpose. */
+export function parseTakeOut(purpose: string | null | undefined): string | null {
+  if (!purpose || !purpose.startsWith(TAKE_OUT_PREFIX)) return null
+  return purpose.slice(TAKE_OUT_PREFIX.length).replace(/^:\s*/, '').trim()
+}
+
 /** How the goods come in ("Đăng ký đưa đồ vào kho"); the choice is written into the purpose text. */
 export const MOVE_IN_VEHICLES = ['Tự mang (xe máy)', 'Ô tô con', 'Xe ba gác', 'Xe tải ≤ 1,25 tấn', 'Xe tải > 1,25 tấn']
 
