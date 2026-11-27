@@ -18,6 +18,7 @@ import { Roles, type Facility, type UnitType } from '../types'
 
 const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const MAX_PHOTO = 5 * 1024 * 1024
+const MAX_MONTHLY_RATE = 100_000_000
 const m3 = (n: number) => (Number(n) || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })
 
 export function UnitTypeManager({ query = '', onChanged }: { query?: string; onChanged?: () => void }) {
@@ -162,7 +163,9 @@ export function UnitTypeForm({ type, onCancel, onSaved }: { type?: UnitType; onC
       ? 'Vui lòng nhập giá theo tháng'
       : !Number.isFinite(monthly) || !Number.isInteger(monthly)
         ? 'Giá theo tháng phải là số tiền nguyên (đồng)'
-        : checkMoney(monthly, 'Giá theo tháng', 1000)
+        : monthly > MAX_MONTHLY_RATE
+          ? 'Giá theo tháng không được vượt quá 100.000.000đ'
+          : checkMoney(monthly, 'Giá theo tháng', 1000, MAX_MONTHLY_RATE)
 
     const body = {
       typeName: f.typeName.trim(),
@@ -228,7 +231,7 @@ export function UnitTypeForm({ type, onCancel, onSaved }: { type?: UnitType; onC
         <label className="field"><span>Chiều dài (m) *</span><input type="number" min={0.1} max={30} step="0.01" value={f.lengthMeters} onChange={(e) => set('lengthMeters', e.target.value)} required /></label>
         <label className="field"><span>Chiều rộng (m) *</span><input type="number" min={0.1} max={30} step="0.01" value={f.widthMeters} onChange={(e) => set('widthMeters', e.target.value)} required /></label>
         <label className="field"><span>Chiều cao (m) *</span><input type="number" min={0.1} max={15} step="0.01" value={f.heightMeters} onChange={(e) => set('heightMeters', e.target.value)} required /></label>
-        <label className="field"><span>Giá theo tháng (đ) *</span><input type="number" min={1000} step={1} value={f.baseMonthlyRate} onChange={(e) => set('baseMonthlyRate', e.target.value)} required /></label>
+        <label className="field"><span>Giá theo tháng (đ) *</span><input type="number" min={1000} max={MAX_MONTHLY_RATE} step={1} value={f.baseMonthlyRate} onChange={(e) => set('baseMonthlyRate', e.target.value)} required /></label>
       </div>
       <label className="check-line"><input type="checkbox" checked={f.hasClimateControl} onChange={(e) => set('hasClimateControl', e.target.checked)} /><span>Có điều hòa kiểm soát nhiệt độ, độ ẩm</span></label>
       <div className="field">

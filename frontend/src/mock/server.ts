@@ -359,6 +359,7 @@ function checkUnitType(body: Body, exceptId: number | null): Omit<UnitType, 'uni
   if (!(h >= 0.1 && h <= 15)) throw bad('Chiều cao (m) phải từ 0,1 đến 15')
   if (![l, w, h].every((d) => Math.round(d * 100) / 100 === d)) throw bad('Kích thước (m) chỉ hỗ trợ tối đa 2 chữ số thập phân')
   if (!(monthly >= 0.01)) throw bad('Vui lòng nhập giá theo tháng lớn hơn 0')
+  if (monthly > 100_000_000) throw bad('Giá theo tháng không được vượt quá 100.000.000đ')
   if (!Number.isFinite(daily) || daily < 0) throw bad('Giá theo ngày không được âm')
   if (daily > monthly) throw bad('Giá theo ngày không được lớn hơn giá theo tháng')
   if (db.unitTypes.some((t) => t.typeName === typeName && t.unitTypeId !== exceptId)) throw conflict('Tên loại kho đã tồn tại')
@@ -2328,6 +2329,7 @@ const routes: [string, RegExp, Handler][] = [
     const daily = dailyProvided ? Number(dailyRaw) : 0
     const monthly = monthlyRaw === null || monthlyRaw === undefined || monthlyRaw === '' ? NaN : Number(monthlyRaw)
     if (!(monthly >= 0.01)) throw bad('Vui lòng nhập giá theo tháng lớn hơn 0')
+    if (monthly > 100_000_000) throw bad('Giá theo tháng không được vượt quá 100.000.000đ')
     if (!Number.isFinite(daily) || daily < 0) throw bad('Giá theo ngày không được âm')
     if (daily > monthly) throw bad('Giá theo ngày không được lớn hơn giá theo tháng')
     t.baseDailyRate = daily
