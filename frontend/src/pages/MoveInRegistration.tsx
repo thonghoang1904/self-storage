@@ -221,13 +221,23 @@ export default function MoveInRegistration() {
   }, [id, loadRows, loadInventory, today])
 
   const hoursText = c?.operatingHours || facility?.operatingHours
-  // A 24-hour facility closes at 24:00; cap at 23:30 so no "24:00" time is sent.
-  const [open, close] = parseOperatingHours(hoursText).map((t) => Math.min(t, 23 * 60 + 30))
-  const entrySlots: string[] = []
+  // Any arrival minute inside opening hours (a 24-hour facility closes at 23:59); today at least 15 minutes ahead.
+  const [open, close] = parseOperatingHours(hoursText).map((t) => Math.min(t, 23 * 60 + 59))
   const nowMin = date === today ? new Date().getHours() * 60 + new Date().getMinutes() + 15 : 0
-  for (let t = Math.ceil(Math.max(open, nowMin) / 30) * 30; t + 30 <= close; t += 30) entrySlots.push(toHHMM(t))
-  useEffect(() => { if (entrySlots.length && !entrySlots.includes(entry)) setEntry(entrySlots[0]) }, [date, entrySlots.join()]) // eslint-disable-line react-hooks/exhaustive-deps
-  const exitMin = Math.min(toMin(entry) + duration, close, date === c?.endDate ? 20 * 60 : close)
+  const earliest = Math.max(open, nowMin)
+  const latestEntry = Math.min(close, date === c?.endDate ? 20 * 60 : close) - 30
+  const dayFull = earliest > latestEntry
+  const entryMinutes = /^\d{2}:\d{2}$/.test(entry) ? toMin(entry) : NaN
+  const entryError = dayFull ? 'Ngày này đã hết giờ nhận đồ, vui lòng chọn ngày khác'
+    : Number.isNaN(entryMinutes) ? 'Vui lòng nhập giờ đến'
+    : entryMinutes < open || entryMinutes > latestEntry ? `Giờ đến từ ${toHHMM(open)} đến ${toHHMM(latestEntry)} (cần ít nhất 30 phút bốc xếp)`
+    : entryMinutes < nowMin ? 'Giờ đến phải sau hiện tại ít nhất 15 phút' : ''
+  // A new date suggests the next half hour only when the typed time no longer fits it.
+  useEffect(() => {
+    if (dayFull || !entryError) return
+    setEntry(toHHMM(Math.min(Math.ceil(earliest / 30) * 30, latestEntry)))
+  }, [date, open, close]) // eslint-disable-line react-hooks/exhaustive-deps
+  const exitMin = Math.min((Number.isNaN(entryMinutes) ? 0 : entryMinutes) + duration, close, date === c?.endDate ? 20 * 60 : close)
   const exit = toHHMM(exitMin)
 
   if (!c) {
@@ -402,7 +412,7 @@ export default function MoveInRegistration() {
     setNotice('')
     const errs: typeof fieldErr = {
       items: validateItems(),
-      entry: !entrySlots.includes(entry) ? 'Giờ đến không còn hợp lệ, vui lòng chọn lại giờ'
+      entry: entryError ? entryError
         : exitMin <= toMin(entry) ? 'Giờ chuyển đồ vượt quá giờ đóng cửa của kho, vui lòng chọn giờ sớm hơn' : undefined,
       citizenId: checkCitizenId(citizenId, 'Số CCCD người vào kho') || undefined,
       phone: checkPhone(phone, 'SĐT liên hệ', true) || undefined,
@@ -645,9 +655,9 @@ export default function MoveInRegistration() {
                     <label className="field"><span>Ngày chuyển đồ *</span>
                       <input type="date" value={date} min={c.startDate > today ? c.startDate : today} max={c.endDate} onChange={(e) => setDate(e.target.value)} required />
                     </label>
-                    <label className={`field ${fieldErr.entry ? 'has-error' : ''}`}><span>Giờ đến *</span>
-                      <Select id="movein-entry" value={entry} onChange={(e) => { setEntry(e.target.value); clearErr('entry') }} aria-invalid={fieldErr.entry ? true : undefined}>{entrySlots.map((s) => <option key={s}>{s}</option>)}</Select>
-                      <FieldNote text={fieldErr.entry} />
+                    <label className={`field ${fieldErr.entry || entryError ? 'has-error' : ''}`}><span>Giờ đến *</span>
+                      <input id="movein-entry" type="time" step={60} value={entry} min={toHHMM(open)} max={toHHMM(Math.max(open, latestEntry))} onChange={(e) => { setEntry(e.target.value); clearErr('entry') }} aria-invalid={fieldErr.entry || entryError ? true : undefined} />
+                      <FieldNote text={fieldErr.entry || entryError} />
                     </label>
                     <label className="field"><span>Thời gian bốc xếp dự kiến</span>
                       <Select value={duration} onChange={(e) => setDuration(Number(e.target.value))}>{DURATIONS.map((d) => <option key={d} value={d}>{d < 60 ? `${d} phút` : `${d / 60} giờ`}</option>)}</Select>

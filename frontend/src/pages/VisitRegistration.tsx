@@ -23,6 +23,7 @@ const hhmm = (iso: string) => iso.slice(11, 16)
 const dmy = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/')
 
 const toHHMM = (t: number) => `${pad(Math.floor(t / 60))}:${pad(t % 60)}`
+const toMin = (s: string) => (/^\d{2}:\d{2}$/.test(s) ? Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5)) : NaN)
 
 const VISIT_STATE: Record<string, { label: string; tone: string; icon: string }> = {
   Pending: { label: 'Chờ nhân viên duyệt', tone: 'warn', icon: 'clock' },
@@ -191,16 +192,33 @@ export default function VisitRegistrationPage({ contractId, picker }: { contract
     void loadRows()
   }, [id, loadRows, today])
 
-  // A 24-hour facility closes at 24:00; the last slot offered is 23:30 so no "24:00" time is sent.
-  const [open, close] = parseOperatingHours(facility?.operatingHours).map((t) => Math.min(t, 23 * 60 + 30))
-  const slots: string[] = []
-  for (let t = Math.ceil(open / 30) * 30; t <= close; t += 30) slots.push(toHHMM(t))
-  // Today only future times; on the last day of the contract the visit must end before 20:00.
-  const nowHHMM = toHHMM(new Date().getHours() * 60 + new Date().getMinutes())
-  const entrySlots = slots.slice(0, -1).filter((s) => (date !== today || s > nowHHMM) && (date !== c?.endDate || s < '19:30'))
-  const exitSlots = slots.filter((s) => s > entry && (date !== c?.endDate || s < '20:00'))
-  useEffect(() => { if (entrySlots.length && !entrySlots.includes(entry)) setEntry(entrySlots[0]) }, [date, entrySlots.join()]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (!exitSlots.includes(exit)) setExit(exitSlots[1] ?? exitSlots[0] ?? '') }, [entry, date, exitSlots.join()]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Any minute inside opening hours (a 24-hour facility closes at 23:59 so no "24:00" is sent);
+  // today only future times; on the contract's last day the visit must end before 20:00.
+  const [open, close] = parseOperatingHours(facility?.operatingHours).map((t) => Math.min(t, 23 * 60 + 59))
+  const lastDay = date === c?.endDate
+  const endLimit = lastDay ? Math.min(close, 20 * 60 - 1) : close
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes()
+  const earliest = date === today ? Math.max(open, nowMin + 1) : open
+  const dayFull = earliest >= endLimit
+  const entryMin = toMin(entry)
+  const exitMin = toMin(exit)
+  const entryError = dayFull ? 'Ngày này đã hết giờ hoạt động, vui lòng chọn ngày khác'
+    : Number.isNaN(entryMin) ? 'Vui lòng nhập giờ đến'
+    : entryMin < open || entryMin >= close ? `Giờ đến phải trong giờ hoạt động ${toHHMM(open)}–${toHHMM(close)}`
+    : date === today && entryMin <= nowMin ? 'Giờ đến phải sau thời điểm hiện tại'
+    : entryMin >= endLimit ? `Giờ đến phải trước ${toHHMM(endLimit)}` : ''
+  const exitError = entryError ? ''
+    : Number.isNaN(exitMin) ? 'Vui lòng nhập giờ rời kho'
+    : exitMin <= entryMin ? 'Giờ rời kho phải sau giờ đến'
+    : lastDay && exitMin >= 20 * 60 ? 'Ngày cuối hợp đồng phải rời kho trước 20:00'
+    : exitMin > close ? `Giờ rời kho không quá giờ đóng cửa ${toHHMM(close)}` : ''
+  // A new date suggests the next half hour (and one hour inside) only when the typed times no longer fit it.
+  useEffect(() => {
+    if (dayFull || !entryError) return
+    const start = Math.min(Math.ceil(earliest / 30) * 30, endLimit - 1)
+    setEntry(toHHMM(start))
+    setExit(toHHMM(Math.min(start + 60, endLimit)))
+  }, [date, open, close]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!c) {
     return (
@@ -228,7 +246,7 @@ export default function VisitRegistrationPage({ contractId, picker }: { contract
     setError('')
     setNotice('')
     const errs: typeof fieldErr = {
-      time: !entrySlots.includes(entry) || !exit ? 'Ngày này không còn khung giờ trống, vui lòng chọn ngày khác' : undefined,
+      time: entryError || exitError || undefined,
       purpose: (takingOut && stored.filter((i) => i.storedItemId in picks && pickedQty(i) < 1).map((i) => `Nhập số lượng sẽ lấy cho "${i.itemName}" (từ 1 đến ${i.quantity}) hoặc bỏ chọn món này`)[0])
         || (textError(finalPurpose ?? '', 'Mục đích vào kho', 3, 255) ?? undefined),
       citizenId: citizenIdError(citizenId) ?? undefined,
@@ -338,20 +356,17 @@ export default function VisitRegistrationPage({ contractId, picker }: { contract
                     <div><dt>Hợp đồng áp dụng</dt><dd>{c.contractNumber} • đến {fmtDate(c.endDate)}</dd></div>
                   </dl>
                   <div className="form-grid three">
-                    <label className={`field ${fieldErr.time ? 'has-error' : ''}`}><span>Ngày vào kho dự kiến *</span>
-                      <input id="visit-time" type="date" value={date} min={c.startDate > today ? c.startDate : today} max={c.endDate} onChange={(e) => { setDate(e.target.value); clearErr('time') }} required aria-invalid={fieldErr.time ? true : undefined} />
-                      <FieldNote text={fieldErr.time} />
+                    <label className={`field ${dayFull ? 'has-error' : ''}`}><span>Ngày vào kho dự kiến *</span>
+                      <input id="visit-time" type="date" value={date} min={c.startDate > today ? c.startDate : today} max={c.endDate} onChange={(e) => { setDate(e.target.value); clearErr('time') }} required aria-invalid={dayFull ? true : undefined} />
+                      <FieldNote text={dayFull ? entryError : undefined} />
                     </label>
-                    <label className="field"><span>Giờ đến dự kiến *</span>
-                      <Select value={entry} onChange={(e) => setEntry(e.target.value)}>
-                        {entrySlots.map((s) => <option key={s} value={s}>{s}</option>)}
-                        {entrySlots.length === 0 && <option value="">Hết giờ trong ngày, chọn ngày khác</option>}
-                      </Select>
+                    <label className={`field ${entryError && !dayFull ? 'has-error' : ''}`}><span>Giờ đến dự kiến *</span>
+                      <input type="time" step={60} value={entry} min={toHHMM(open)} max={toHHMM(endLimit)} onChange={(e) => { setEntry(e.target.value); clearErr('time') }} required aria-invalid={entryError ? true : undefined} />
+                      <FieldNote text={dayFull ? undefined : entryError} />
                     </label>
-                    <label className="field"><span>Giờ rời kho dự kiến *</span>
-                      <Select value={exit} onChange={(e) => setExit(e.target.value)}>
-                        {exitSlots.map((s) => <option key={s} value={s}>{s}</option>)}
-                      </Select>
+                    <label className={`field ${exitError ? 'has-error' : ''}`}><span>Giờ rời kho dự kiến *</span>
+                      <input type="time" step={60} value={exit} min={entry} max={toHHMM(endLimit)} onChange={(e) => { setExit(e.target.value); clearErr('time') }} required aria-invalid={exitError ? true : undefined} />
+                      <FieldNote text={exitError} />
                     </label>
                   </div>
                   <p className="hint"><Icon name="clock" size={15} /> Giờ hoạt động: {facility?.operatingHours ?? '—'} hằng ngày. Lịch trên là đề xuất, chưa được xác nhận.</p>
@@ -438,7 +453,7 @@ export default function VisitRegistrationPage({ contractId, picker }: { contract
                   <FieldNote text={fieldErr.agree} />
                   {fieldErr.submit && <p className="alert bad"><Icon name="alert" size={16} />{fieldErr.submit}</p>}
                   <div className="row wrap">
-                    <button className="btn primary" type="submit" disabled={busy || !entrySlots.length || !exit}><Icon name="calendar" size={15} /> {busy ? 'Đang gửi…' : 'Gửi đăng ký vào kho'}</button>
+                    <button className="btn primary" type="submit" disabled={busy || dayFull}><Icon name="calendar" size={15} /> {busy ? 'Đang gửi…' : 'Gửi đăng ký vào kho'}</button>
                     <Link to={`/my-units/${c.contractId}`} className="btn outline">Để sau</Link>
                   </div>
                 </section>
