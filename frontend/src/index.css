@@ -1609,3 +1609,11 @@ tr.row-selected td { background: var(--cyan-25); }
 input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* gate: what a visit registration is for, as labelled lines */
+.reg-summary { margin: 2px 0 2px; }
+.reg-facts { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; margin: 6px 0 0; font-size: 13px; }
+.reg-facts > div { display: contents; }
+.reg-facts dt { display: inline-flex; align-items: center; gap: 5px; color: var(--muted, #64748b); white-space: nowrap; }
+.reg-facts dd { margin: 0; color: var(--text-strong, #0f172a); font-weight: 500; }
+@media (max-width: 560px) { .reg-facts { grid-template-columns: 1fr; } .reg-facts dd { margin-bottom: 4px; } }

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { api, billingLink, fmtDate, fmtTime, IS_DEMO } from '../api'
 import { useStaffFacility } from '../components/layout'
 import { Empty, Icon, StatusBadge } from '../components/ui'
-import { DenyReasons, type AccessRecord, type Person, type StoredItem, type VisitCandidate, type VisitRegistration } from '../types'
+import { DenyReasons, parseMoveIn, type AccessRecord, type Person, type StoredItem, type VisitCandidate, type VisitRegistration } from '../types'
 import { CITIZEN_ID_FILTER } from '../validation'
 import { FieldNote, useInputFilter } from '../components/form'
 import { Select } from '../components/Select'
@@ -278,8 +278,6 @@ function RegistrationsPanel({ facilityId, regs, onReview }: { facilityId: number
         {shown.map((r) => {
           const live = new Date(r.scheduledEntryAt).getTime() <= now && new Date(r.scheduledExitAt).getTime() >= now
           const open = openId === r.visitRegistrationId
-          const itemCount = r.items?.length ?? 0
-          const itemPhotoCount = r.items?.filter((x) => Boolean(x.imageUrl)).length ?? 0
           return (
             <Fragment key={r.visitRegistrationId}>
             <div className={`reg-row ${open ? 'open' : ''}`}>
@@ -287,7 +285,7 @@ function RegistrationsPanel({ facilityId, regs, onReview }: { facilityId: number
               <span className="unit-code">{r.unitCode}</span>
               <div className="grow">
                 <b>{r.visitorName}</b> {r.authorizedPersonId != null && <span className="pill muted">Người vào kho</span>}
-                <small className="muted block">HĐ {r.contractNumber} · {r.purpose}{itemCount > 0 ? ` · ${itemCount} món${itemPhotoCount > 0 ? ` (${itemPhotoCount} ảnh)` : ''}` : ''}</small>
+                <RegSummary reg={r} />
                 <button type="button" className="link-btn" aria-expanded={open} onClick={() => setOpenId(open ? null : r.visitRegistrationId)}>
                   <Icon name={open ? 'x' : 'eye'} size={13} /> {open ? 'Ẩn thông tin' : 'Xem thông tin người đăng ký'}
                 </button>
@@ -318,6 +316,33 @@ function RegistrationsPanel({ facilityId, regs, onReview }: { facilityId: number
         {shown.length === 0 && <Empty icon="calendar">{tab === 'Pending' ? 'Không có lịch nào chờ duyệt.' : 'Chưa có lịch đã duyệt sắp tới.'}</Empty>}
       </div>
     </section>
+  )
+}
+
+/**
+ * What a registration is for, laid out as labelled lines. A move-in shows what comes in (from the declared items when
+ * the API sends them, else from the purpose text), the vehicle, the phone of whoever brings it and the note.
+ */
+function RegSummary({ reg: r }: { reg: VisitRegistration }) {
+  const m = parseMoveIn(r.purpose)
+  if (!m) return <small className="muted block">HĐ {r.contractNumber} · Mục đích: <b>{r.purpose}</b></small>
+  const items = r.items ?? []
+  const pieces = items.reduce((n, i) => n + i.quantity, 0)
+  const photos = items.filter((i) => i.imageUrl).length
+  const what = items.length
+    ? items.map((i) => `${i.itemName} ×${i.quantity} (${i.lengthCm}×${i.widthCm}×${i.heightCm} cm)`).join(', ')
+    : m.items
+  return (
+    <div className="reg-summary">
+      <small className="muted block">HĐ {r.contractNumber} · <span className="pill">Gửi đồ vào kho</span></small>
+      <dl className="reg-facts">
+        <div><dt><Icon name="package" size={13} /> Đồ mang vào</dt>
+          <dd>{what || '—'}{items.length > 0 && <small className="muted"> · {items.length} loại, {pieces} món{photos > 0 ? ` · ${photos} ảnh` : ''}</small>}</dd></div>
+        {(m.vehicle || m.helpers) && <div><dt><Icon name="truck" size={13} /> Phương tiện</dt><dd>{[m.vehicle, m.helpers].filter(Boolean).join(' · ')}</dd></div>}
+        {m.phone && <div><dt><Icon name="phone" size={13} /> SĐT người chở đồ</dt><dd>{m.phone}</dd></div>}
+        {m.note && <div><dt><Icon name="file" size={13} /> Ghi chú</dt><dd>{m.note}</dd></div>}
+      </dl>
+    </div>
   )
 }
 

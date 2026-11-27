@@ -19,7 +19,7 @@ import { termsHref } from './Terms'
  */
 
 export { MOVE_IN_PREFIX } from '../types'
-import { MOVE_IN_PREFIX } from '../types'
+import { MOVE_IN_PREFIX, MOVE_IN_VEHICLES } from '../types'
 import { Select } from '../components/Select'
 const PURPOSE_MAX = 255
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
@@ -36,7 +36,7 @@ function validateImageFile(file: File): string | null {
 }
 
 const CATEGORIES = ['Đồ nội thất', 'Điện tử - điện máy', 'Thùng hàng / carton', 'Quần áo - chăn màn', 'Sách - hồ sơ giấy tờ', 'Dụng cụ - thể thao', 'Khác']
-const VEHICLES = ['Tự mang (xe máy)', 'Ô tô con', 'Xe ba gác', 'Xe tải ≤ 1,25 tấn', 'Xe tải > 1,25 tấn']
+const VEHICLES = MOVE_IN_VEHICLES
 const DURATIONS = [30, 60, 90, 120, 180]
 const FORBIDDEN = 'Chất cháy nổ, xăng dầu, bình gas; hóa chất, chất độc; thực phẩm tươi sống, đồ dễ hư thối; động vật, cây sống; vũ khí, hàng cấm, hàng không rõ nguồn gốc.'
 

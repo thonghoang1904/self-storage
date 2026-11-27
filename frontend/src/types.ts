@@ -711,6 +711,28 @@ export interface VisitRegistration {
 export const VisitPurposes = ['Lấy đồ ra', 'Kiểm tra đồ trong kho', 'Sắp xếp lại đồ', 'Tham quan kho', 'Khác']
 /** Purpose text of registrations made with "Đăng ký đưa đồ vào kho" starts with this. */
 export const MOVE_IN_PREFIX = 'Gửi đồ vào kho'
+/** How the goods come in ("Đăng ký đưa đồ vào kho"); the choice is written into the purpose text. */
+export const MOVE_IN_VEHICLES = ['Tự mang (xe máy)', 'Ô tô con', 'Xe ba gác', 'Xe tải ≤ 1,25 tấn', 'Xe tải > 1,25 tấn']
+
+/**
+ * Reads back a move-in purpose built by buildPurpose: "Gửi đồ vào kho: <items> | <vehicle>; <n> người phụ; SĐT <phone>; <note>".
+ * Returns null for any other purpose.
+ */
+export function parseMoveIn(purpose: string) {
+  if (!purpose.startsWith(MOVE_IN_PREFIX)) return null
+  const body = purpose.slice(MOVE_IN_PREFIX.length).replace(/^:\s*/, '')
+  const [itemPart, logistics = ''] = body.split(' | ')
+  const out = { items: itemPart.trim(), vehicle: '', helpers: '', phone: '', note: [] as string[] }
+  for (const raw of logistics.split('; ')) {
+    const part = raw.trim()
+    if (!part) continue
+    if (MOVE_IN_VEHICLES.includes(part)) out.vehicle = part
+    else if (/^\d+ người phụ$/.test(part)) out.helpers = part
+    else if (part.startsWith('SĐT ')) out.phone = part.slice(4)
+    else out.note.push(part)
+  }
+  return { ...out, note: out.note.join('; ') }
+}
 
 // ---- operations manager: rental policies, fee table, promotions (OperationsManagementController)
 
