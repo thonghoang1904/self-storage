@@ -27,6 +27,7 @@ public class AppExceptionHandler(
         ["UQ_Users_Username"] = "Tên đăng nhập đã được sử dụng",
         ["UQ_Users_Email"] = "Email đã được sử dụng",
         ["UQ_Users_CitizenID"] = "Số CCCD đã được đăng ký cho tài khoản khác",
+        ["UX_Users_CitizenID"] = "Số CCCD đã được đăng ký cho tài khoản khác",
         ["UX_Users_GoogleSubject"] = "Tài khoản Google này đã được liên kết với tài khoản khác",
         ["UQ_AuthPersons_Contract_Citizen"] = "Người này đã có trong danh sách được ủy quyền",
         ["UQ_Contracts_Reservation"] = "Đơn đặt kho này đã được bàn giao",

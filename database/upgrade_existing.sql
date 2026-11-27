@@ -21,3 +21,4 @@
 :r database\21_support_request_images.sql
 :r database\22_unit_type_images.sql
 :r database\23_storage_unit_images.sql
+:r database\24_citizen_id_optional.sql
